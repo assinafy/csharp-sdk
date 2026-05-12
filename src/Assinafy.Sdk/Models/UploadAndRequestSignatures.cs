@@ -1,9 +1,13 @@
+using System.Text.Json.Serialization;
+
 namespace Assinafy.Sdk.Models;
 
 public sealed class UploadAndRequestSignaturesSigner
 {
     public required string FullName { get; set; }
     public string? Email { get; set; }
+
+    [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 }
 

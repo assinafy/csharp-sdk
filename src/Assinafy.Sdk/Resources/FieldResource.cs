@@ -8,6 +8,7 @@ public sealed class FieldResource : BaseResource
     internal FieldResource(HttpClient http, string? defaultAccountId = null)
         : base(http, defaultAccountId) { }
 
+    /// <summary><c>POST /accounts/{accountId}/fields</c> — create a workspace-scoped field definition.</summary>
     public Task<FieldDefinition> CreateAsync(
         CreateFieldDefinitionRequest request,
         string? accountId = null,
@@ -25,6 +26,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{accountId}/fields</c> — list field definitions. Use <see cref="FieldListParams"/> to include inactive or standard built-ins.</summary>
     public Task<PaginatedResult<FieldDefinition>> ListAsync(
         FieldListParams? parameters = null,
         string? accountId = null,
@@ -37,6 +39,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{accountId}/fields/{field_id}</c> — fetch a single field definition.</summary>
     public Task<FieldDefinition> GetAsync(
         string fieldId,
         string? accountId = null,
@@ -50,6 +53,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /accounts/{account_id}/fields/{field_id}</c> — update a field definition.</summary>
     public Task<FieldDefinition> UpdateAsync(
         string fieldId,
         UpdateFieldDefinitionRequest request,
@@ -67,6 +71,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>DELETE /accounts/{account_id}/fields/{field_id}</c> — delete a field definition. Will fail if the field has already been used on a document.</summary>
     public Task DeleteAsync(
         string fieldId,
         string? accountId = null,
@@ -81,6 +86,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /accounts/{accountId}/fields/{field_id}/validate</c> — validate a single value against a field definition. Pass a signer access code when calling on a signer's behalf.</summary>
     public Task<FieldValidationResult> ValidateAsync(
         string fieldId,
         ValidateFieldValueRequest request,
@@ -103,6 +109,7 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /accounts/{accountId}/fields/validate-multiple</c> — validate multiple values at once.</summary>
     public async Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(
         IReadOnlyList<ValidateFieldValueItem> values,
         string? signerAccessCode = null,
@@ -125,6 +132,7 @@ public sealed class FieldResource : BaseResource
         return result ?? [];
     }
 
+    /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
     public async Task<IReadOnlyList<FieldTypeInfo>> ListTypesAsync(
         CancellationToken cancellationToken = default)
     {

@@ -41,7 +41,10 @@ public sealed class SigningResourceTests
             [new SignAssignmentValue { ItemId = "item", FieldId = "field", PageId = "page", Value = "value" }]);
 
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
-        body.RootElement[0].GetProperty("item_id").GetString().Should().Be("item");
+        body.RootElement[0].GetProperty("itemId").GetString().Should().Be("item");
+        body.RootElement[0].GetProperty("fieldId").GetString().Should().Be("field");
+        body.RootElement[0].GetProperty("pageId").GetString().Should().Be("page");
+        body.RootElement[0].GetProperty("value").GetString().Should().Be("value");
     }
 
     [Fact]

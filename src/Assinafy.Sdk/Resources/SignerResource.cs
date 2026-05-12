@@ -13,6 +13,7 @@ public sealed partial class SignerResource : BaseResource
     internal SignerResource(HttpClient http, string? defaultAccountId = null)
         : base(http, defaultAccountId) { }
 
+    /// <summary><c>POST /accounts/{account_id}/signers</c> — create a signer within the workspace.</summary>
     public Task<Signer> CreateAsync(
         CreateSignerRequest request,
         string? accountId = null,
@@ -30,6 +31,7 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{account_id}/signers/{signer_id}</c> — fetch a single signer's profile.</summary>
     public Task<Signer> GetAsync(
         string signerId,
         string? accountId = null,
@@ -41,6 +43,7 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{account_id}/signers</c> — list signers with optional <c>search</c>, <c>sort</c>, <c>page</c>, <c>per-page</c> filters.</summary>
     public Task<PaginatedResult<Signer>> ListAsync(
         IDictionary<string, string?>? queryParams = null,
         string? accountId = null,
@@ -50,6 +53,7 @@ public sealed partial class SignerResource : BaseResource
         return CallListAsync<Signer>($"accounts/{id}/signers", queryParams, cancellationToken);
     }
 
+    /// <summary><c>PUT /accounts/{account_id}/signers/{signer_id}</c> — update a signer. Verification integrity rules may block changing email or WhatsApp phone for in-flight signers.</summary>
     public Task<Signer> UpdateAsync(
         string signerId,
         UpdateSignerRequest request,
@@ -68,6 +72,7 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>DELETE /accounts/{account_id}/signers/{signer_id}</c> — remove a signer from the workspace.</summary>
     public Task DeleteAsync(
         string signerId,
         string? accountId = null,
@@ -79,6 +84,7 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>Convenience helper: page through <see cref="ListAsync"/> filtered by email and return an exact match if any.</summary>
     public async Task<Signer?> FindByEmailAsync(
         string email,
         string? accountId = null,
@@ -96,6 +102,7 @@ public sealed partial class SignerResource : BaseResource
             string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary><c>GET /signers/self</c> — signer-facing endpoint: load the signer's own profile using only an access code.</summary>
     public Task<Signer> GetSelfAsync(
         string signerAccessCode,
         CancellationToken cancellationToken = default)
@@ -109,6 +116,7 @@ public sealed partial class SignerResource : BaseResource
         return CallAsync<Signer>(path, HttpMethod.Get, cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /signers/accept-terms</c> — signer-facing endpoint: record acceptance of the terms of use.</summary>
     public Task<Signer> AcceptTermsAsync(
         string signerAccessCode,
         CancellationToken cancellationToken = default)
@@ -121,6 +129,7 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /verify</c> — signer-facing endpoint: verify the OTP code emailed to the signer.</summary>
     public Task<VerifyEmailResult> VerifyEmailAsync(
         string signerAccessCode,
         string verificationCode,
@@ -140,6 +149,11 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// <c>PUT /documents/{document_id}/signers/confirm-data</c> — signer-facing endpoint:
+    /// confirm or supply email / WhatsApp number for a virtual assignment, optionally accepting terms.
+    /// Virtual assignments require this call to succeed before <see cref="SigningResource.SignAsync"/>.
+    /// </summary>
     public Task ConfirmDataAsync(
         string documentId,
         string signerAccessCode,

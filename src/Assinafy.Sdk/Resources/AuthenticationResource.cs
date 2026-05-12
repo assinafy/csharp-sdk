@@ -7,6 +7,7 @@ public sealed class AuthenticationResource : BaseResource
 {
     internal AuthenticationResource(HttpClient http) : base(http) { }
 
+    /// <summary><c>POST /login</c> — exchange email and password for an access token and account list.</summary>
     public Task<AuthenticationResult> LoginAsync(
         LoginRequest request,
         CancellationToken cancellationToken = default)
@@ -22,6 +23,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /authentication/social-login</c> — exchange a third-party provider token (e.g. Google) for an Assinafy access token.</summary>
     public Task<AuthenticationResult> SocialLoginAsync(
         SocialLoginRequest request,
         CancellationToken cancellationToken = default)
@@ -37,6 +39,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /users/api-keys</c> — generate a personal API key. Replaces any previous key for the user.</summary>
     public Task<ApiKeyResult> CreateApiKeyAsync(
         CreateApiKeyRequest request,
         CancellationToken cancellationToken = default)
@@ -51,6 +54,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /users/api-keys</c> — fetch a masked representation of the user's current API key.</summary>
     public Task<ApiKeyResult> GetApiKeyAsync(CancellationToken cancellationToken = default)
     {
         return CallAsync<ApiKeyResult>(
@@ -59,6 +63,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>DELETE /users/api-keys</c> — revoke the user's current API key.</summary>
     public Task DeleteApiKeyAsync(CancellationToken cancellationToken = default)
     {
         return CallVoidAsync(
@@ -67,6 +72,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /authentication/change-password</c> — change the user's password while authenticated.</summary>
     public Task<EmailResult> ChangePasswordAsync(
         ChangePasswordRequest request,
         CancellationToken cancellationToken = default)
@@ -83,6 +89,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /authentication/request-password-reset</c> — email the user a password reset token.</summary>
     public Task<EmailResult> RequestPasswordResetAsync(
         RequestPasswordResetRequest request,
         CancellationToken cancellationToken = default)
@@ -97,6 +104,7 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /authentication/reset-password</c> — set a new password using the reset token from <see cref="RequestPasswordResetAsync"/>.</summary>
     public Task<EmailResult> ResetPasswordAsync(
         ResetPasswordRequest request,
         CancellationToken cancellationToken = default)

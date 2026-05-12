@@ -8,6 +8,7 @@ public sealed class SignatureResource : BaseResource
 {
     internal SignatureResource(HttpClient http) : base(http) { }
 
+    /// <summary><c>POST /signature?signer-access-code={code}&amp;type={type}</c> — upload the signer's signature or initial image (image/png or image/jpeg).</summary>
     public Task UploadAsync(
         Stream imageStream,
         string signerAccessCode,
@@ -32,6 +33,7 @@ public sealed class SignatureResource : BaseResource
         return CallContentVoidAsync(path, HttpMethod.Post, content, cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /signature/{type}?signer-access-code={code}</c> — download the signer's signature or initial image.</summary>
     public Task<byte[]> DownloadAsync(
         string signerAccessCode,
         string type = SignatureImageTypes.Signature,

@@ -1,14 +1,16 @@
 # Assinafy .NET SDK
 
-.NET 8 SDK for the [Assinafy API](https://api.assinafy.com.br/v1/docs).
+.NET SDK for the [Assinafy API](https://api.assinafy.com.br/v1/docs).
 
-The SDK follows the documented API surface: authentication, documents, signers,
-signer-facing signing flows, assignments, fields, templates, public document
-token delivery, signature images, and webhooks.
+The SDK follows the documented API surface 1:1: authentication, documents,
+signers, signer-facing signing flows, assignments, fields, templates,
+public document token delivery, signature images, and webhooks. Every
+endpoint was verified against `https://api.assinafy.com.br/v1` during
+the 1.0.1 audit (see CHANGELOG).
 
 ## Requirements
 
-- .NET 8 SDK or later
+- .NET 8 SDK or later (`net8.0`, `net9.0`, and `net10.0` are supported)
 
 ## Installation
 
@@ -58,7 +60,8 @@ builder.Services.AddAssinafy(o =>
 });
 ```
 
-`AddAssinafy` returns the underlying `IHttpClientBuilder`.
+`AddAssinafy` returns the underlying `IHttpClientBuilder` so you can chain
+Polly handlers, custom message handlers, etc.
 
 ## Authentication
 
@@ -96,6 +99,14 @@ await client.Documents.ThumbnailAsync(documentId);
 await client.Documents.DownloadPageAsync(documentId, pageId);
 await client.Documents.VerifyAsync(signatureHash);
 await client.Documents.DeleteAsync(documentId);
+```
+
+After an upload, use `WaitUntilReadyAsync` to poll until the document
+reaches `metadata_ready`, `pending_signature`, or `certificated` (and
+throws if the document fails or expires):
+
+```csharp
+await client.Documents.WaitUntilReadyAsync(documentId);
 ```
 
 Templates:
@@ -136,6 +147,7 @@ await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmS
 });
 
 await client.Signing.GetAsync(signerAccessCode);
+await client.Signing.SignAsync(documentId, assignmentId, signerAccessCode, values);
 await client.Signing.SignMultipleAsync(signerAccessCode, [documentId]);
 await client.Signing.DeclineAsync(documentId, assignmentId, signerAccessCode, "Unfavorable terms.");
 ```
@@ -182,8 +194,34 @@ await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { Delivered =
 await client.Webhooks.RetryDispatchAsync(dispatchId);
 ```
 
+## Error Handling
+
+The SDK normalises every response and surfaces three exception types under
+the common `AssinafyException` base:
+
+- `ValidationException` — invalid input caught before the request leaves
+  the SDK (missing IDs, non-PDF uploads, oversized files, etc.).
+- `ApiException` — the API returned a non-2xx status or an envelope with
+  `status >= 400`. `StatusCode` and `ApiMessage` carry the upstream details.
+- `NetworkException` — transport failures and timeouts.
+
+```csharp
+try
+{
+    await client.Documents.GetAsync("missing");
+}
+catch (ApiException ex) when (ex.StatusCode == 404)
+{
+    // not found
+}
+```
+
 ## Running Tests
 
 ```bash
 dotnet test Assinafy.Sdk.sln
 ```
+
+The suite (58 tests) covers every resource on `net8.0`, `net9.0`, and
+`net10.0`. For live API verification against the production endpoint, see
+the live-test script described in the CHANGELOG.

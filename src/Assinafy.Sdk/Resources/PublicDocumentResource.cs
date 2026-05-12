@@ -7,6 +7,7 @@ public sealed class PublicDocumentResource : BaseResource
 {
     internal PublicDocumentResource(HttpClient http) : base(http) { }
 
+    /// <summary><c>GET /public/documents/{document_id}</c> — fetch a document's public metadata (no authentication required).</summary>
     public Task<PublicDocumentInfo> GetAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -18,6 +19,7 @@ public sealed class PublicDocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /public/documents/{document_id}/send-token</c> — deliver a signing access token to a recipient over email or WhatsApp.</summary>
     public Task<SendDocumentTokenResult> SendTokenAsync(
         string documentId,
         SendDocumentTokenRequest request,
