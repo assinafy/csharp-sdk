@@ -62,6 +62,44 @@ public sealed class SignerResourceTests
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
         body.RootElement.GetProperty("full_name").GetString().Should().Be("Test");
         body.RootElement.GetProperty("whatsapp_phone_number").GetString().Should().Be("+5548999990000");
+        body.RootElement.TryGetProperty("whats_app_phone_number", out _).Should().BeFalse(
+            "WhatsAppPhoneNumber must serialize as 'whatsapp_phone_number' per the Assinafy API");
+    }
+
+    [Fact]
+    public async Task Update_PostsWhatsappPhoneNumberSnakeCase()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/accounts/test-account/signers/s1",
+            FakeHttpMessageHandler.ApiOk(new { id = "s1", full_name = "Updated" }));
+
+        var resource = CreateResource(handler);
+        await resource.UpdateAsync("s1", new UpdateSignerRequest
+        {
+            FullName = "Updated",
+            WhatsAppPhoneNumber = "+5548999990000",
+        });
+
+        var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
+        body.RootElement.GetProperty("whatsapp_phone_number").GetString().Should().Be("+5548999990000");
+    }
+
+    [Fact]
+    public async Task ConfirmData_PostsWhatsappPhoneNumberSnakeCase()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data", FakeHttpMessageHandler.ApiOk(new { }));
+
+        var resource = CreateResource(handler);
+        await resource.ConfirmDataAsync("doc-1", "access", new ConfirmSignerDataRequest
+        {
+            WhatsAppPhoneNumber = "+5548999990000",
+            HasAcceptedTerms = true,
+        });
+
+        var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
+        body.RootElement.GetProperty("whatsapp_phone_number").GetString().Should().Be("+5548999990000");
+        body.RootElement.GetProperty("has_accepted_terms").GetBoolean().Should().BeTrue();
     }
 
     [Fact]

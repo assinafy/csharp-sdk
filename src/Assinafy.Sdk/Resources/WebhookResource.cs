@@ -9,6 +9,7 @@ public sealed class WebhookResource : BaseResource
     internal WebhookResource(HttpClient http, string? defaultAccountId = null)
         : base(http, defaultAccountId) { }
 
+    /// <summary><c>PUT /accounts/{account_id}/webhooks/subscriptions</c> — create or replace the workspace's webhook subscription.</summary>
     public Task<WebhookSubscription> UpdateSubscriptionAsync(
         UpdateWebhookSubscriptionRequest request,
         string? accountId = null,
@@ -28,6 +29,7 @@ public sealed class WebhookResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{account_id}/webhooks/subscriptions</c> — fetch the workspace's current webhook subscription. Returns <see langword="null"/> if there is no subscription.</summary>
     public async Task<WebhookSubscription?> GetAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -46,6 +48,7 @@ public sealed class WebhookResource : BaseResource
         }
     }
 
+    /// <summary><c>DELETE /accounts/{account_id}/webhooks/subscriptions</c> — remove the workspace's webhook subscription entirely.</summary>
     public Task DeleteAsync(string? accountId = null, CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
@@ -55,6 +58,7 @@ public sealed class WebhookResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /accounts/{account_id}/webhooks/inactivate</c> — pause delivery without losing the subscription configuration.</summary>
     public Task<WebhookSubscription> InactivateAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -66,6 +70,7 @@ public sealed class WebhookResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /webhooks/event-types</c> — list all event types supported by the platform.</summary>
     public async Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -77,6 +82,7 @@ public sealed class WebhookResource : BaseResource
         return result ?? [];
     }
 
+    /// <summary><c>GET /accounts/{account_id}/webhooks</c> — list webhook delivery history with optional filters (<c>event</c>, <c>delivered</c>, <c>from</c>, <c>to</c>, <c>page</c>, <c>per-page</c>).</summary>
     public Task<PaginatedResult<WebhookDispatch>> ListDispatchesAsync(
         ListDispatchesParams? parameters = null,
         string? accountId = null,
@@ -89,6 +95,7 @@ public sealed class WebhookResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>POST /accounts/{account_id}/webhooks/{dispatch_id}/retry</c> — re-attempt delivery of a previous webhook dispatch.</summary>
     public Task<WebhookDispatch> RetryDispatchAsync(
         string dispatchId,
         string? accountId = null,

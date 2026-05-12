@@ -7,6 +7,7 @@ public sealed class SigningResource : BaseResource
 {
     internal SigningResource(HttpClient http) : base(http) { }
 
+    /// <summary><c>GET /sign</c> — signer-facing endpoint: load the document and assignment data for the current signer access code.</summary>
     public Task<DocumentDetails> GetAsync(
         string signerAccessCode,
         bool? hasAcceptedTerms = null,
@@ -27,6 +28,13 @@ public sealed class SigningResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// <c>POST /documents/{documentId}/assignments/{assignmentId}?signer-access-code={code}</c>
+    /// — submit a signer's field values. For virtual assignments the signer must call
+    /// <see cref="SignerResource.ConfirmDataAsync"/> first; otherwise the API returns 400.
+    /// The body uses camelCase keys (<c>itemId</c>, <c>fieldId</c>, <c>pageId</c>, <c>value</c>)
+    /// per the Assinafy docs, which <see cref="SignAssignmentValue"/> applies automatically.
+    /// </summary>
     public Task SignAsync(
         string documentId,
         string assignmentId,
@@ -46,6 +54,7 @@ public sealed class SigningResource : BaseResource
         return CallVoidAsync(path, HttpMethod.Post, values, cancellationToken);
     }
 
+    /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reject?signer-access-code={code}</c> — signer-facing endpoint: decline an assignment with a reason.</summary>
     public Task DeclineAsync(
         string documentId,
         string assignmentId,
@@ -69,6 +78,7 @@ public sealed class SigningResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>GET /signers/{signer_id}/document?signer-access-code={code}</c> — fetch the signer's current document.</summary>
     public Task<DocumentDetails> GetCurrentDocumentAsync(
         string signerId,
         string signerAccessCode,
@@ -84,6 +94,7 @@ public sealed class SigningResource : BaseResource
         return CallAsync<DocumentDetails>(path, HttpMethod.Get, cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /signers/{signer_id}/documents?signer-access-code={code}</c> — list all documents associated with the signer.</summary>
     public Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(
         string signerId,
         string signerAccessCode,
@@ -102,6 +113,7 @@ public sealed class SigningResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>PUT /signers/documents/sign-multiple?signer-access-code={code}</c> — sign multiple virtual-method documents in one request.</summary>
     public Task SignMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -121,6 +133,7 @@ public sealed class SigningResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>PUT /signers/documents/decline-multiple?signer-access-code={code}</c> — decline multiple documents at once with a single reason.</summary>
     public Task DeclineMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -146,6 +159,7 @@ public sealed class SigningResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}?signer-access-code={code}</c> — signer-facing download of a document artifact.</summary>
     public Task<byte[]> DownloadAsync(
         string signerId,
         string documentId,

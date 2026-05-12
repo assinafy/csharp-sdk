@@ -22,6 +22,7 @@ public sealed class DocumentResource : BaseResource
     internal DocumentResource(HttpClient http, string? defaultAccountId = null)
         : base(http, defaultAccountId) { }
 
+    /// <summary><c>GET /documents/statuses</c> — list all possible document status codes and whether each is deletable.</summary>
     public async Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -33,6 +34,10 @@ public sealed class DocumentResource : BaseResource
         return result ?? [];
     }
 
+    /// <summary>
+    /// <c>POST /accounts/{account_id}/documents</c> — upload a PDF to a workspace.
+    /// Only PDF files are accepted; the API also enforces a 25MB / 2000-page limit.
+    /// </summary>
     public async Task<DocumentDetails> UploadAsync(
         Stream fileStream,
         string fileName,
@@ -71,6 +76,7 @@ public sealed class DocumentResource : BaseResource
         return result;
     }
 
+    /// <summary><c>GET /accounts/{account_id}/documents</c> — list documents in the workspace with optional filters (<c>status</c>, <c>method</c>, <c>search</c>, <c>sort</c>, <c>page</c>, <c>per-page</c>).</summary>
     public Task<PaginatedResult<DocumentListItem>> ListAsync(
         IDictionary<string, string?>? queryParams = null,
         string? accountId = null,
@@ -80,6 +86,7 @@ public sealed class DocumentResource : BaseResource
         return CallListAsync<DocumentListItem>($"accounts/{id}/documents", queryParams, cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{document_id}</c> — fetch full document details including assignment and artifacts.</summary>
     public Task<DocumentDetails> GetAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
@@ -87,17 +94,7 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
-    public Task<DocumentDetails> UpdateAsync(
-        string documentId,
-        UpdateDocumentRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        var id = RequireId(documentId, "Document ID");
-        ArgumentNullException.ThrowIfNull(request);
-        return CallAsync<DocumentDetails>($"documents/{id}", HttpMethod.Put,
-            request, cancellationToken: cancellationToken);
-    }
-
+    /// <summary><c>DELETE /documents/{documentId}</c> — delete a document. Only certain status codes are deletable (see <see cref="ListStatusesAsync"/>).</summary>
     public Task DeleteAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
@@ -105,6 +102,7 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{document_id}/download/{artifact_name}</c> — download a document artifact (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, or <c>bundle</c>).</summary>
     public Task<byte[]> DownloadAsync(
         string documentId,
         string artifactName = DocumentArtifactNames.Certificated,
@@ -115,12 +113,14 @@ public sealed class DocumentResource : BaseResource
         return CallBinaryAsync($"documents/{id}/download/{artifact}", HttpMethod.Get, cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{document_id}/thumbnail</c> — download the first-page thumbnail image.</summary>
     public Task<byte[]> ThumbnailAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
         return CallBinaryAsync($"documents/{id}/thumbnail", HttpMethod.Get, cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{document_id}/pages/{page_id}/download</c> — download a single page rendering.</summary>
     public Task<byte[]> DownloadPageAsync(
         string documentId,
         string pageId,
@@ -131,6 +131,7 @@ public sealed class DocumentResource : BaseResource
         return CallBinaryAsync($"documents/{docId}/pages/{pid}/download", HttpMethod.Get, cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{documentId}/activities</c> — fetch the timeline of events recorded against this document.</summary>
     public async Task<IReadOnlyList<DocumentActivity>> ActivitiesAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -144,19 +145,12 @@ public sealed class DocumentResource : BaseResource
         return result ?? [];
     }
 
-    public async Task<IReadOnlyList<Assignment>> GetAssignmentsAsync(
-        string documentId,
-        CancellationToken cancellationToken = default)
-    {
-        var id = RequireId(documentId, "Document ID");
-        var result = await CallAsync<List<Assignment>>(
-            $"documents/{id}/assignments",
-            HttpMethod.Get,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
-    }
-
+    /// <summary>
+    /// Convenience helper: poll <see cref="GetAsync"/> until the document reaches
+    /// a "ready" status (<c>metadata_ready</c>, <c>pending_signature</c>, or
+    /// <c>certificated</c>), throws if it lands in a failed/expired state, or
+    /// throws on timeout.
+    /// </summary>
     public async Task<DocumentDetails> WaitUntilReadyAsync(
         string documentId,
         TimeSpan? maxWait = null,
@@ -191,6 +185,7 @@ public sealed class DocumentResource : BaseResource
             new Dictionary<string, object?> { ["documentId"] = id, ["attempts"] = attempts });
     }
 
+    /// <summary>Convenience helper: returns true if the document is fully signed by every signer.</summary>
     public async Task<bool> IsFullySignedAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -204,6 +199,7 @@ public sealed class DocumentResource : BaseResource
             && summary.SignerCount == summary.CompletedCount;
     }
 
+    /// <summary>Convenience helper: returns a (signed / total / pending / percentage) snapshot.</summary>
     public async Task<SigningProgress> GetSigningProgressAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -224,6 +220,7 @@ public sealed class DocumentResource : BaseResource
         };
     }
 
+    /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents</c> — create a document by binding signers to template roles.</summary>
     public Task<DocumentDetails> CreateFromTemplateAsync(
         string templateId,
         IReadOnlyList<TemplateSigner> signers,
@@ -252,6 +249,7 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents/estimate-cost</c> — preview the credit cost of <see cref="CreateFromTemplateAsync"/>.</summary>
     public Task<AssignmentCostEstimate> EstimateCostFromTemplateAsync(
         string templateId,
         IReadOnlyList<TemplateSigner> signers,
@@ -269,6 +267,7 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{signature_hash}/verify</c> — verify a document's signature hash and return validity metadata.</summary>
     public Task<DocumentVerificationResult> VerifyAsync(
         string signatureHash,
         CancellationToken cancellationToken = default)

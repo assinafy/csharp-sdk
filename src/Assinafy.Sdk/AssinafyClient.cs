@@ -17,20 +17,46 @@ public sealed class AssinafyClient : IDisposable
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
 
+    /// <summary>Authentication and user API-key endpoints.</summary>
     public AuthenticationResource Authentication { get; }
+
+    /// <summary>Document upload, lookup, download, activities, and verification.</summary>
     public DocumentResource Documents { get; }
+
+    /// <summary>Account-scoped signer management and signer self-service endpoints.</summary>
     public SignerResource Signers { get; }
+
+    /// <summary>Signature assignment creation, cost estimation, resend, and expiration.</summary>
     public AssignmentResource Assignments { get; }
+
+    /// <summary>Template listing and detail lookup.</summary>
     public TemplateResource Templates { get; }
+
+    /// <summary>Field definition CRUD and value validation.</summary>
     public FieldResource Fields { get; }
+
+    /// <summary>Public document lookup and signer token delivery.</summary>
     public PublicDocumentResource PublicDocuments { get; }
+
+    /// <summary>Signer-facing signing flow: get assignment, sign, decline.</summary>
     public SigningResource Signing { get; }
+
+    /// <summary>Signer signature/initial image upload and download.</summary>
     public SignatureResource Signatures { get; }
+
+    /// <summary>Webhook subscription configuration, event catalog, and dispatch history.</summary>
     public WebhookResource Webhooks { get; }
 
+    /// <summary>Create a client with an internally owned <see cref="HttpClient"/>.</summary>
     public AssinafyClient(AssinafyClientOptions options)
         : this(options, new HttpClient(), ownsHttpClient: true) { }
 
+    /// <summary>
+    /// Create a client backed by a caller-supplied <see cref="HttpClient"/>.
+    /// The caller is responsible for the lifetime of <paramref name="http"/>;
+    /// this constructor will not dispose it. Preferred for ASP.NET Core via
+    /// <see cref="AssinafyServiceCollectionExtensions.AddAssinafy"/>.
+    /// </summary>
     public AssinafyClient(AssinafyClientOptions options, HttpClient http)
         : this(options, http ?? throw new ArgumentNullException(nameof(http)), ownsHttpClient: false) { }
 
@@ -85,6 +111,7 @@ public sealed class AssinafyClient : IDisposable
             headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Token);
     }
 
+    /// <summary>Convenience factory that creates an API-key client and optionally tweaks options.</summary>
     public static AssinafyClient Create(
         string apiKey,
         string accountId,
@@ -95,6 +122,12 @@ public sealed class AssinafyClient : IDisposable
         return new AssinafyClient(options);
     }
 
+    /// <summary>
+    /// Build a client from a dictionary of configuration keys. Accepts both
+    /// snake_case (<c>api_key</c>, <c>account_id</c>) and camelCase (<c>apiKey</c>,
+    /// <c>accountId</c>) variants, plus <c>token</c>/<c>access_token</c>/<c>accessToken</c>
+    /// when no API key is provided, and an optional <c>base_url</c>/<c>baseUrl</c>.
+    /// </summary>
     public static AssinafyClient FromConfig(IDictionary<string, string?> config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -126,6 +159,7 @@ public sealed class AssinafyClient : IDisposable
         }
     }
 
+    /// <summary>Disposes the underlying <see cref="HttpClient"/> only if it was created internally.</summary>
     public void Dispose()
     {
         if (_ownsHttpClient)

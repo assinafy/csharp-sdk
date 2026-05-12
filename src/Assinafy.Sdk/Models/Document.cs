@@ -261,9 +261,3 @@ public sealed class SendDocumentTokenRequest
     public required string Recipient { get; set; }
     public required string Channel { get; set; }
 }
-
-public sealed class UpdateDocumentRequest
-{
-    public string? Name { get; set; }
-    public bool? IsClosed { get; set; }
-}

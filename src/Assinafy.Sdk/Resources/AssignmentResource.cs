@@ -9,6 +9,7 @@ public sealed class AssignmentResource : BaseResource
     internal AssignmentResource(HttpClient http)
         : base(http) { }
 
+    /// <summary><c>POST /documents/{document_id}/assignments</c> — create a signature assignment binding signers to a document.</summary>
     public Task<Assignment> CreateAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -24,6 +25,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /documents/{documentId}/assignments/estimate-cost</c> — preview the credit cost of <see cref="CreateAsync"/> before committing.</summary>
     public Task<AssignmentCostEstimate> EstimateCostAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -39,6 +41,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration</c> — set or clear the assignment's expiration date.</summary>
     public Task<Assignment> ResetExpirationAsync(
         string documentId,
         string assignmentId,
@@ -55,6 +58,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend</c> — resend the signature notification (email or WhatsApp) for a specific signer.</summary>
     public Task<ResendNotificationResult> ResendNotificationAsync(
         string documentId,
         string assignmentId,
@@ -71,6 +75,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost</c> — preview the credit cost of <see cref="ResendNotificationAsync"/>.</summary>
     public Task<ResendCostEstimate> EstimateResendCostAsync(
         string documentId,
         string assignmentId,
@@ -87,6 +92,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications</c> — list the rendered WhatsApp template messages dispatched for an assignment.</summary>
     public async Task<IReadOnlyList<WhatsAppNotification>> ListWhatsAppNotificationsAsync(
         string documentId,
         string assignmentId,
