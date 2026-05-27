@@ -15,11 +15,11 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
-    <Description>Official .NET SDK for the Assinafy digital signature API. Covers authentication, documents, signers, signing flows, assignments, fields, templates, public documents, signature images, and webhooks.</Description>
+    <Description>Official .NET SDK for the Assinafy digital signature API. Covers authentication, documents, signers, signing flows, assignments, fields, templates, tags, public documents, signature images, and webhooks.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>assinafy;esignature;digital-signature;signature;contracts;brazil;sdk</PackageTags>

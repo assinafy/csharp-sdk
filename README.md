@@ -3,10 +3,10 @@
 .NET SDK for the [Assinafy API](https://api.assinafy.com.br/v1/docs).
 
 The SDK follows the documented API surface 1:1: authentication, documents,
-signers, signer-facing signing flows, assignments, fields, templates,
+signers, signer-facing signing flows, assignments, fields, templates, tags,
 public document token delivery, signature images, and webhooks. Every
 endpoint was verified against `https://api.assinafy.com.br/v1` during
-the 1.0.1 audit (see CHANGELOG).
+the 1.1.0 audit (see CHANGELOG).
 
 ## Requirements
 
@@ -120,6 +120,22 @@ await client.Documents.CreateFromTemplateAsync(
     [new TemplateSigner { RoleId = template.Roles[0].Id, Id = signerId }]);
 ```
 
+Tags:
+
+```csharp
+// Workspace tags
+var tag = await client.Tags.CreateAsync(new CreateTagRequest { Name = "Contracts", Color = "3366FF" });
+await client.Tags.ListAsync(search: "contr");
+await client.Tags.UpdateAsync(tag.Id, new UpdateTagRequest { Name = "Signed contracts" });
+await client.Tags.DeleteAsync(tag.Id, force: true); // force detaches from documents/templates first
+
+// Document tags (referenced by name; created on the fly if new)
+await client.Tags.AddToDocumentAsync(documentId, ["Contracts"]);   // append
+await client.Tags.SetForDocumentAsync(documentId, ["Contracts"]);  // replace all (pass [] to clear)
+await client.Tags.ListForDocumentAsync(documentId);
+await client.Tags.RemoveFromDocumentAsync(documentId, tag.Id);     // detach one
+```
+
 Assignments:
 
 ```csharp
@@ -222,6 +238,6 @@ catch (ApiException ex) when (ex.StatusCode == 404)
 dotnet test Assinafy.Sdk.sln
 ```
 
-The suite (58 tests) covers every resource on `net8.0`, `net9.0`, and
+The suite (73 tests) covers every resource on `net8.0`, `net9.0`, and
 `net10.0`. For live API verification against the production endpoint, see
 the live-test script described in the CHANGELOG.

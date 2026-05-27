@@ -94,6 +94,9 @@ public sealed record DocumentListItem
 
     [JsonPropertyName("declined_by")]
     public Signer? DeclinedBy { get; init; }
+
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<Tag> Tags { get; init; } = [];
 }
 
 public sealed record DocumentDetails
@@ -142,6 +145,9 @@ public sealed record DocumentDetails
 
     [JsonPropertyName("declined_by")]
     public Signer? DeclinedBy { get; init; }
+
+    [JsonPropertyName("tags")]
+    public IReadOnlyList<Tag> Tags { get; init; } = [];
 
     [JsonPropertyName("activities")]
     public IReadOnlyList<DocumentActivity>? Activities { get; init; }
