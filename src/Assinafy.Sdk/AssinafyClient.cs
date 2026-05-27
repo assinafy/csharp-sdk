@@ -32,6 +32,9 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Template listing and detail lookup.</summary>
     public TemplateResource Templates { get; }
 
+    /// <summary>Workspace tag management and document tag attachment.</summary>
+    public TagResource Tags { get; }
+
     /// <summary>Field definition CRUD and value validation.</summary>
     public FieldResource Fields { get; }
 
@@ -74,6 +77,7 @@ public sealed class AssinafyClient : IDisposable
         Signers = new SignerResource(_http, options.AccountId);
         Assignments = new AssignmentResource(_http);
         Templates = new TemplateResource(_http, options.AccountId);
+        Tags = new TagResource(_http, options.AccountId);
         Fields = new FieldResource(_http, options.AccountId);
         PublicDocuments = new PublicDocumentResource(_http);
         Signing = new SigningResource(_http);

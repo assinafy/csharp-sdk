@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.1.0
+
+- **New: Tags.** Added `client.Tags` (`TagResource`) covering the full
+  documented tag surface, all verified live against
+  `https://api.assinafy.com.br/v1`:
+  - Workspace tags: `ListAsync` (with `search`), `CreateAsync`,
+    `UpdateAsync`, `DeleteAsync` (with `force`).
+  - Document tags: `AddToDocumentAsync` (append), `SetForDocumentAsync`
+    (replace / clear), `ListForDocumentAsync`, `RemoveFromDocumentAsync`.
+  - Added the `Tag`, `CreateTagRequest`, and `UpdateTagRequest` models.
+- **Model fidelity** (additive, backward-compatible):
+  - `DocumentListItem` and `DocumentDetails` now expose the `tags` array
+    returned by the API.
+  - `AssignmentCostEstimate` now includes the documented `blocking_reason`
+    and `message` fields.
+  - `AssignmentSigner` now includes `step` (signing order), `notified`, and
+    `notification_history`.
+- Added regression tests for the tag resource (now 73 tests total) and
+  re-verified the full surface end-to-end against the production API,
+  including CPF field validation.
+
 ## 1.0.1
 
 - **Bug fix** (data loss): `CreateSignerRequest`, `UpdateSignerRequest`,

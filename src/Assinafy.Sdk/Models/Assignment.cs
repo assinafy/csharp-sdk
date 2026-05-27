@@ -13,6 +13,16 @@ public sealed record AssignmentSigner : Signer
 
     [JsonPropertyName("completed")]
     public bool? Completed { get; init; }
+
+    /// <summary>Signing order step. Signers in the same step sign in parallel; the next step activates once the previous completes.</summary>
+    [JsonPropertyName("step")]
+    public int? Step { get; init; }
+
+    [JsonPropertyName("notified")]
+    public bool? Notified { get; init; }
+
+    [JsonPropertyName("notification_history")]
+    public JsonElement? NotificationHistory { get; init; }
 }
 
 public sealed record AssignmentSummary
@@ -160,6 +170,13 @@ public sealed record AssignmentCostEstimate
 
     [JsonPropertyName("has_sufficient_resources")]
     public bool HasSufficientResources { get; init; }
+
+    /// <summary>Reason resources are insufficient (e.g. <c>PendingPayment</c>, <c>InsufficientDocuments</c>, <c>InsufficientCredits</c>), or <see langword="null"/> when the request can proceed.</summary>
+    [JsonPropertyName("blocking_reason")]
+    public string? BlockingReason { get; init; }
+
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
 }
 
 public sealed record ResendNotificationResult
