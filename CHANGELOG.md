@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.1.1
+
 ## 1.1.0
 
 - **New: Tags.** Added `client.Tags` (`TagResource`) covering the full

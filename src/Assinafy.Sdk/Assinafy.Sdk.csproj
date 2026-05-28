@@ -15,7 +15,7 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.1.1</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
