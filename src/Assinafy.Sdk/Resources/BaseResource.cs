@@ -23,11 +23,16 @@ public abstract class BaseResource
 
     private readonly HttpClient _http;
     private readonly string? _defaultAccountId;
+    private readonly Action<HttpRequestMessage>? _authenticate;
 
-    private protected BaseResource(HttpClient http, string? defaultAccountId = null)
+    private protected BaseResource(
+        HttpClient http,
+        string? defaultAccountId = null,
+        Action<HttpRequestMessage>? authenticate = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _defaultAccountId = defaultAccountId;
+        _authenticate = authenticate;
     }
 
     private protected string AccountId(string? explicitAccountId = null)
@@ -48,6 +53,13 @@ public abstract class BaseResource
         return value;
     }
 
+    /// <summary>
+    /// Send a request and deserialize the envelope's <c>data</c> into <typeparamref name="T"/>.
+    /// May return <see langword="null"/> when the API responds with a success envelope whose
+    /// <c>data</c> is absent or <c>null</c> (e.g. void/delete endpoints). Callers expecting a
+    /// value should use a non-list <typeparamref name="T"/>; list callers should prefer
+    /// <see cref="CallListBodyAsync{T}"/>, which normalises a missing payload to an empty list.
+    /// </summary>
     private protected Task<T> CallAsync<T>(
         string path,
         HttpMethod method,
@@ -58,6 +70,23 @@ public abstract class BaseResource
         return SendEnvelopeAsync<T>(
             () => BuildRequest(path, method, body, extraHeaders),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// Send a request whose envelope <c>data</c> is a JSON array, returning it as a non-null
+    /// read-only list (an absent or <c>null</c> payload becomes an empty list).
+    /// </summary>
+    private protected async Task<IReadOnlyList<T>> CallListBodyAsync<T>(
+        string path,
+        HttpMethod method,
+        object? body = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await SendEnvelopeAsync<List<T>>(
+            () => BuildRequest(path, method, body),
+            cancellationToken).ConfigureAwait(false);
+
+        return result ?? [];
     }
 
     private protected Task<T> CallContentAsync<T>(
@@ -147,6 +176,7 @@ public abstract class BaseResource
         try
         {
             using var request = requestFactory();
+            _authenticate?.Invoke(request);
             return await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (AssinafyException) { throw; }
@@ -218,9 +248,9 @@ public abstract class BaseResource
         var root = doc.RootElement;
 
         if (root.TryGetProperty("status", out var statusEl) &&
-            statusEl.ValueKind == JsonValueKind.Number)
+            statusEl.ValueKind == JsonValueKind.Number &&
+            statusEl.TryGetInt32(out var status))
         {
-            var status = statusEl.GetInt32();
             var message = ReadMessage(root);
 
             if (status >= 400 || !response.IsSuccessStatusCode)
@@ -257,7 +287,7 @@ public abstract class BaseResource
         if (queryParams is null || queryParams.Count == 0) return path;
 
         var pairs = queryParams
-            .Where(kvp => kvp.Value is not null)
+            .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Value))
             .Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value!)}")
             .ToArray();
 

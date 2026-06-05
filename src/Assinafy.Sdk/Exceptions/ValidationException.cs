@@ -1,6 +1,6 @@
 namespace Assinafy.Sdk.Exceptions;
 
-public class ValidationException : AssinafyException
+public sealed class ValidationException : AssinafyException
 {
     public IReadOnlyDictionary<string, object?>? Details { get; }
 

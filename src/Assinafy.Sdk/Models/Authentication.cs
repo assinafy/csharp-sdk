@@ -110,6 +110,8 @@ public sealed class RequestPasswordResetRequest
 public sealed class ResetPasswordRequest
 {
     public required string Email { get; set; }
+
+    /// <summary>The reset token delivered by <c>RequestPasswordResetAsync</c>. Required by the API and validated at call time.</summary>
     public string? Token { get; set; }
     public required string NewPassword { get; set; }
 }

@@ -8,14 +8,16 @@
     <RootNamespace>Assinafy.Sdk</RootNamespace>
     <AssemblyName>Assinafy.Sdk</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <AnalysisLevel>latest</AnalysisLevel>
+    <!-- Pinned (not 'latest') so the analyzer set is deterministic regardless of which
+         installed .NET SDK runs the multi-target (net8/9/10) build in CI. -->
+    <AnalysisLevel>8.0</AnalysisLevel>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>$(NoWarn);1591</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>1.1.1</Version>
+    <Version>1.2.1</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
@@ -29,6 +31,8 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <DebugType>portable</DebugType>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <ItemGroup>

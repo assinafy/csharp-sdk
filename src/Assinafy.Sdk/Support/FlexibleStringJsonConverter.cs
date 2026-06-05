@@ -1,6 +1,7 @@
+using System.Buffers;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Globalization;
 
 namespace Assinafy.Sdk.Support;
 
@@ -27,14 +28,11 @@ internal sealed class FlexibleStringJsonConverter : JsonConverter<string>
         writer.WriteStringValue(value);
     }
 
+    // Preserve the exact numeric token text instead of round-tripping through Int64/decimal,
+    // which could reformat (trailing zeros, exponent form) or throw on very large values.
     private static string ReadNumber(ref Utf8JsonReader reader)
     {
-        if (reader.TryGetInt64(out var integer))
-            return integer.ToString(CultureInfo.InvariantCulture);
-
-        if (reader.TryGetDecimal(out var number))
-            return number.ToString(CultureInfo.InvariantCulture);
-
-        throw new JsonException("Cannot convert JSON number to string.");
+        var bytes = reader.HasValueSequence ? reader.ValueSequence.ToArray() : reader.ValueSpan;
+        return Encoding.UTF8.GetString(bytes);
     }
 }

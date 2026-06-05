@@ -5,8 +5,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Templates resource: list and inspect templates available to an account.</summary>
 public sealed class TemplateResource : BaseResource
 {
-    internal TemplateResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal TemplateResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /accounts/{account_id}/templates</c> — list templates in a workspace with optional <c>status</c>, <c>search</c>, <c>sort</c> filters.</summary>
     public Task<PaginatedResult<TemplateListItem>> ListAsync(

@@ -5,7 +5,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Public document lookup and signer token delivery endpoints.</summary>
 public sealed class PublicDocumentResource : BaseResource
 {
-    internal PublicDocumentResource(HttpClient http) : base(http) { }
+    internal PublicDocumentResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, authenticate: authenticate) { }
 
     /// <summary><c>GET /public/documents/{document_id}</c> — fetch a document's public metadata (no authentication required).</summary>
     public Task<PublicDocumentInfo> GetAsync(

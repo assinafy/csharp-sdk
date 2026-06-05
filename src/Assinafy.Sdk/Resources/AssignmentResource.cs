@@ -6,8 +6,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Assignments resource: create requests, estimate costs, resend, and expiration handling.</summary>
 public sealed class AssignmentResource : BaseResource
 {
-    internal AssignmentResource(HttpClient http)
-        : base(http) { }
+    internal AssignmentResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /documents/{document_id}/assignments</c> — create a signature assignment binding signers to a document.</summary>
     public Task<Assignment> CreateAsync(
@@ -101,12 +101,10 @@ public sealed class AssignmentResource : BaseResource
         var document = RequireId(documentId, "Document ID");
         var assignment = RequireId(assignmentId, "Assignment ID");
 
-        var result = await CallAsync<List<WhatsAppNotification>>(
+        return await CallListBodyAsync<WhatsAppNotification>(
             $"documents/{document}/assignments/{assignment}/whatsapp-notifications",
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     internal static Dictionary<string, object?> BuildPayload(
@@ -131,7 +129,6 @@ public sealed class AssignmentResource : BaseResource
         if (request.ExpiresAt is not null) body["expires_at"] = request.ExpiresAt;
         if (request.CopyReceivers?.Length > 0) body["copy_receivers"] = request.CopyReceivers;
         if (request.Entries?.Count > 0) body["entries"] = request.Entries;
-        if (request.SignerIds?.Length > 0) body["signer_ids"] = request.SignerIds;
 
         return body;
     }
@@ -159,6 +156,9 @@ public sealed class AssignmentResource : BaseResource
 
         if (reference.NotificationMethods?.Length > 0)
             result["notification_methods"] = reference.NotificationMethods;
+
+        if (reference.Step.HasValue)
+            result["step"] = reference.Step.Value;
 
         if (string.IsNullOrWhiteSpace(reference.Id) && !allowWithoutId)
             throw new ValidationException("Invalid signer reference: ID is required for this operation.");

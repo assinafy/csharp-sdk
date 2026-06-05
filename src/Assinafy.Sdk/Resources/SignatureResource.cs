@@ -6,7 +6,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Signer signature and initial image upload/download endpoints.</summary>
 public sealed class SignatureResource : BaseResource
 {
-    internal SignatureResource(HttpClient http) : base(http) { }
+    internal SignatureResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /signature?signer-access-code={code}&amp;type={type}</c> — upload the signer's signature or initial image (image/png or image/jpeg).</summary>
     public Task UploadAsync(

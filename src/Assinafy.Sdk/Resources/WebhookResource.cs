@@ -6,8 +6,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Webhook subscriptions, event types, and delivery history.</summary>
 public sealed class WebhookResource : BaseResource
 {
-    internal WebhookResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal WebhookResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>PUT /accounts/{account_id}/webhooks/subscriptions</c> — create or replace the workspace's webhook subscription.</summary>
     public Task<WebhookSubscription> UpdateSubscriptionAsync(
@@ -16,7 +16,7 @@ public sealed class WebhookResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (request.Events.Count == 0)
+        if (request.Events is null || request.Events.Count == 0)
             throw new ValidationException("At least one webhook event is required.");
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Url);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Email);
@@ -48,17 +48,7 @@ public sealed class WebhookResource : BaseResource
         }
     }
 
-    /// <summary><c>DELETE /accounts/{account_id}/webhooks/subscriptions</c> — remove the workspace's webhook subscription entirely.</summary>
-    public Task DeleteAsync(string? accountId = null, CancellationToken cancellationToken = default)
-    {
-        var id = AccountId(accountId);
-        return CallVoidAsync(
-            $"accounts/{id}/webhooks/subscriptions",
-            HttpMethod.Delete,
-            cancellationToken: cancellationToken);
-    }
-
-    /// <summary><c>PUT /accounts/{account_id}/webhooks/inactivate</c> — pause delivery without losing the subscription configuration.</summary>
+    /// <summary><c>PUT /accounts/{account_id}/webhooks/inactivate</c> — pause delivery without losing the subscription configuration. The API has no delete endpoint; use this (or <see cref="UpdateSubscriptionAsync"/> with <c>IsActive = false</c>) to stop deliveries.</summary>
     public Task<WebhookSubscription> InactivateAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -74,12 +64,10 @@ public sealed class WebhookResource : BaseResource
     public async Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await CallAsync<List<WebhookEventTypeInfo>>(
+        return await CallListBodyAsync<WebhookEventTypeInfo>(
             "webhooks/event-types",
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     /// <summary><c>GET /accounts/{account_id}/webhooks</c> — list webhook delivery history with optional filters (<c>event</c>, <c>delivered</c>, <c>from</c>, <c>to</c>, <c>page</c>, <c>per-page</c>).</summary>

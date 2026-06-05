@@ -1,6 +1,6 @@
 namespace Assinafy.Sdk.Exceptions;
 
-public class NetworkException : AssinafyException
+public sealed class NetworkException : AssinafyException
 {
     public NetworkException(string message) : base(message) { }
 

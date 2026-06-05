@@ -1,3 +1,5 @@
+using Assinafy.Sdk.Exceptions;
+using Assinafy.Sdk.Tests.Helpers;
 using FluentAssertions;
 using Xunit;
 
@@ -63,24 +65,47 @@ public sealed class AssinafyClientTests
     }
 
     [Fact]
-    public void ApiKey_SetsXApiKeyHeaderOnExternalHttpClient()
+    public async Task ApiKey_AttachesXApiKeyPerRequestWithoutMutatingClient()
     {
-        using var http = new HttpClient();
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/statuses",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
         using var client = new AssinafyClient(
             new AssinafyClientOptions { ApiKey = "my-key", AccountId = "acc" }, http);
 
-        http.DefaultRequestHeaders.GetValues("X-Api-Key").Should().Contain("my-key");
+        await client.Documents.ListStatusesAsync();
+
+        handler.Requests.Last().Headers.GetValues("X-Api-Key").Should().Contain("my-key");
+        // The caller-supplied client's shared headers must not be mutated with credentials.
+        http.DefaultRequestHeaders.Contains("X-Api-Key").Should().BeFalse();
     }
 
     [Fact]
-    public void Token_SetsBearerAuthorizationHeaderOnExternalHttpClient()
+    public async Task Token_AttachesBearerAuthorizationPerRequest()
     {
-        using var http = new HttpClient();
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/statuses",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
         using var client = new AssinafyClient(
             new AssinafyClientOptions { Token = "legacy", AccountId = "acc" }, http);
 
-        http.DefaultRequestHeaders.Authorization!.Scheme.Should().Be("Bearer");
-        http.DefaultRequestHeaders.Authorization!.Parameter.Should().Be("legacy");
+        await client.Documents.ListStatusesAsync();
+
+        var auth = handler.Requests.Last().Headers.Authorization!;
+        auth.Scheme.Should().Be("Bearer");
+        auth.Parameter.Should().Be("legacy");
+        http.DefaultRequestHeaders.Authorization.Should().BeNull();
+    }
+
+    [Fact]
+    public void MutuallyExclusiveCredentials_Throw()
+    {
+        var act = () => new AssinafyClient(
+            new AssinafyClientOptions { ApiKey = "k", Token = "t", AccountId = "acc" });
+
+        act.Should().Throw<ValidationException>();
     }
 
     [Fact]
@@ -93,15 +118,19 @@ public sealed class AssinafyClientTests
     }
 
     [Fact]
-    public void ExternalHttpClient_IsNotDisposedByClient()
+    public async Task ExternalHttpClient_IsNotDisposedByClient()
     {
-        var http = new HttpClient();
-        var client = new AssinafyClient(new AssinafyClientOptions { ApiKey = "k" }, http);
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/statuses",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        var http = FakeHttpMessageHandler.CreateClient(handler);
+        var client = new AssinafyClient(new AssinafyClientOptions { ApiKey = "k", AccountId = "acc" }, http);
 
         client.Dispose();
-        var act = () => http.DefaultRequestHeaders.GetValues("X-Api-Key");
 
-        act.Should().NotThrow();
+        // Disposing the SDK client must not dispose a caller-supplied HttpClient: it stays usable.
+        var act = async () => await client.Documents.ListStatusesAsync();
+        await act.Should().NotThrowAsync();
         http.Dispose();
     }
 }

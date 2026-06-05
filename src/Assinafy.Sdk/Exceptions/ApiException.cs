@@ -1,6 +1,6 @@
 namespace Assinafy.Sdk.Exceptions;
 
-public class ApiException : AssinafyException
+public sealed class ApiException : AssinafyException
 {
     public int StatusCode { get; }
     public string? ApiMessage { get; }

@@ -52,7 +52,7 @@ jobs:
         run: dotnet build src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
       - name: Test
-        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release
+        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release -p:Version=${{ steps.version.outputs.version }}
 
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-build --output ./artifacts -p:Version=${{ steps.version.outputs.version }}

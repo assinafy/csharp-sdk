@@ -30,7 +30,8 @@ public sealed record DocumentArtifacts
     public string? Thumbnail { get; init; }
 }
 
-public sealed record DocumentPage
+/// <summary>Shared page geometry returned for both document and template pages.</summary>
+public abstract record PageBase
 {
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
@@ -48,7 +49,9 @@ public sealed record DocumentPage
     public string? DownloadUrl { get; init; }
 }
 
-public sealed record DocumentListItem
+public sealed record DocumentPage : PageBase;
+
+public record DocumentListItem
 {
     [JsonPropertyName("resource")]
     public string? Resource { get; init; }
@@ -99,56 +102,13 @@ public sealed record DocumentListItem
     public IReadOnlyList<Tag> Tags { get; init; } = [];
 }
 
-public sealed record DocumentDetails
+/// <summary>
+/// Full document payload returned by single-document endpoints. Extends
+/// <see cref="DocumentListItem"/> with the detail-only <c>activities</c> and
+/// <c>current_signer</c> fields.
+/// </summary>
+public sealed record DocumentDetails : DocumentListItem
 {
-    [JsonPropertyName("resource")]
-    public string? Resource { get; init; }
-
-    [JsonPropertyName("id")]
-    public string Id { get; init; } = string.Empty;
-
-    [JsonPropertyName("account_id")]
-    public string? AccountId { get; init; }
-
-    [JsonPropertyName("template_id")]
-    public string? TemplateId { get; init; }
-
-    [JsonPropertyName("name")]
-    public string Name { get; init; } = string.Empty;
-
-    [JsonPropertyName("status")]
-    public string Status { get; init; } = string.Empty;
-
-    [JsonPropertyName("assignment")]
-    public Assignment? Assignment { get; init; }
-
-    [JsonPropertyName("artifacts")]
-    public DocumentArtifacts? Artifacts { get; init; }
-
-    [JsonPropertyName("pages")]
-    public IReadOnlyList<DocumentPage> Pages { get; init; } = [];
-
-    [JsonPropertyName("created_at")]
-    public string CreatedAt { get; init; } = string.Empty;
-
-    [JsonPropertyName("updated_at")]
-    public string? UpdatedAt { get; init; }
-
-    [JsonPropertyName("is_closed")]
-    public bool IsClosed { get; init; }
-
-    [JsonPropertyName("signing_url")]
-    public string? SigningUrl { get; init; }
-
-    [JsonPropertyName("decline_reason")]
-    public string? DeclineReason { get; init; }
-
-    [JsonPropertyName("declined_by")]
-    public Signer? DeclinedBy { get; init; }
-
-    [JsonPropertyName("tags")]
-    public IReadOnlyList<Tag> Tags { get; init; } = [];
-
     [JsonPropertyName("activities")]
     public IReadOnlyList<DocumentActivity>? Activities { get; init; }
 
@@ -225,6 +185,7 @@ public sealed record DocumentVerificationResult
     public string? SignerCount { get; init; }
 
     [JsonPropertyName("completed_count")]
+    [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
     public int? CompletedCount { get; init; }
 
     [JsonPropertyName("completed_at")]
