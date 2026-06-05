@@ -19,24 +19,24 @@ public sealed class DocumentResource : BaseResource
         "failed", "rejected_by_signer", "rejected_by_user", "expired",
     };
 
-    internal DocumentResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal DocumentResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /documents/statuses</c> — list all possible document status codes and whether each is deletable.</summary>
-    public async Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync(
+    public Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await CallAsync<List<DocumentStatusInfo>>(
+        return CallListBodyAsync<DocumentStatusInfo>(
             "documents/statuses",
             HttpMethod.Get,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
+            cancellationToken: cancellationToken);
     }
 
     /// <summary>
     /// <c>POST /accounts/{account_id}/documents</c> — upload a PDF to a workspace.
-    /// Only PDF files are accepted; the API also enforces a 25MB / 2000-page limit.
+    /// This method validates the file extension and a 25MB size cap client-side; the API
+    /// additionally enforces a 2000-page limit server-side (a smaller-but-longer PDF is
+    /// rejected by the API rather than locally).
     /// </summary>
     public async Task<DocumentDetails> UploadAsync(
         Stream fileStream,
@@ -137,12 +137,10 @@ public sealed class DocumentResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
-        var result = await CallAsync<List<DocumentActivity>>(
+        return await CallListBodyAsync<DocumentActivity>(
             $"documents/{id}/activities",
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     /// <summary>
@@ -176,6 +174,10 @@ public sealed class DocumentResource : BaseResource
             }
             catch (NetworkException) { /* transient — retry until deadline */ }
             catch (ApiException ex) when (ex.StatusCode >= 500) { /* transient — retry until deadline */ }
+            catch (ApiException ex) when (ex.StatusCode == 404 && attempts <= 3)
+            {
+                /* freshly created document may not be queryable yet — retry briefly */
+            }
 
             await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
         }
@@ -194,9 +196,11 @@ public sealed class DocumentResource : BaseResource
         if (details.Status == "certificated") return true;
 
         var summary = details.Assignment?.Summary;
-        return summary is not null
-            && summary.SignerCount > 0
-            && summary.SignerCount == summary.CompletedCount;
+        if (summary is not null)
+            return summary.SignerCount > 0 && summary.SignerCount == summary.CompletedCount;
+
+        var signers = details.Assignment?.Signers;
+        return signers is { Count: > 0 } && signers.All(s => s.Completed == true);
     }
 
     /// <summary>Convenience helper: returns a (signed / total / pending / percentage) snapshot.</summary>
@@ -206,8 +210,9 @@ public sealed class DocumentResource : BaseResource
     {
         var details = await GetAsync(documentId, cancellationToken).ConfigureAwait(false);
         var summary = details.Assignment?.Summary;
-        var total = summary?.SignerCount ?? details.Assignment?.Signers.Count ?? 0;
-        var signed = summary?.CompletedCount ?? 0;
+        var signers = details.Assignment?.Signers;
+        var total = summary?.SignerCount ?? signers?.Count ?? 0;
+        var signed = summary?.CompletedCount ?? signers?.Count(s => s.Completed == true) ?? 0;
         var pending = Math.Max(total - signed, 0);
         var percentage = total > 0 ? Math.Round((double)signed / total * 10000) / 100 : 0;
 

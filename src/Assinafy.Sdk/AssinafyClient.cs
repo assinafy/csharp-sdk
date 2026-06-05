@@ -59,6 +59,9 @@ public sealed class AssinafyClient : IDisposable
     /// The caller is responsible for the lifetime of <paramref name="http"/>;
     /// this constructor will not dispose it. Preferred for ASP.NET Core via
     /// <see cref="AssinafyServiceCollectionExtensions.AddAssinafy"/>.
+    /// Authentication is attached per request, so the supplied client's default
+    /// headers are not mutated with credentials and the client stays safe to reuse;
+    /// only <c>Accept</c>, <c>User-Agent</c>, and an unset <c>BaseAddress</c> are configured.
     /// </summary>
     public AssinafyClient(AssinafyClientOptions options, HttpClient http)
         : this(options, http ?? throw new ArgumentNullException(nameof(http)), ownsHttpClient: false) { }
@@ -67,22 +70,50 @@ public sealed class AssinafyClient : IDisposable
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        if (!string.IsNullOrWhiteSpace(options.ApiKey) && !string.IsNullOrWhiteSpace(options.Token))
+            throw new ValidationException(
+                "ApiKey and Token are mutually exclusive; provide exactly one (or neither for public-only access).");
+
         _http = http;
         _ownsHttpClient = ownsHttpClient;
 
         ConfigureHttpClient(_http, options, applyTimeout: ownsHttpClient);
 
-        Authentication = new AuthenticationResource(_http);
-        Documents = new DocumentResource(_http, options.AccountId);
-        Signers = new SignerResource(_http, options.AccountId);
-        Assignments = new AssignmentResource(_http);
-        Templates = new TemplateResource(_http, options.AccountId);
-        Tags = new TagResource(_http, options.AccountId);
-        Fields = new FieldResource(_http, options.AccountId);
-        PublicDocuments = new PublicDocumentResource(_http);
-        Signing = new SigningResource(_http);
-        Signatures = new SignatureResource(_http);
-        Webhooks = new WebhookResource(_http, options.AccountId);
+        var authenticate = BuildAuthenticator(options);
+
+        Authentication = new AuthenticationResource(_http, authenticate);
+        Documents = new DocumentResource(_http, options.AccountId, authenticate);
+        Signers = new SignerResource(_http, options.AccountId, authenticate);
+        Assignments = new AssignmentResource(_http, authenticate);
+        Templates = new TemplateResource(_http, options.AccountId, authenticate);
+        Tags = new TagResource(_http, options.AccountId, authenticate);
+        Fields = new FieldResource(_http, options.AccountId, authenticate);
+        PublicDocuments = new PublicDocumentResource(_http, authenticate);
+        Signing = new SigningResource(_http, authenticate);
+        Signatures = new SignatureResource(_http, authenticate);
+        Webhooks = new WebhookResource(_http, options.AccountId, authenticate);
+    }
+
+    /// <summary>
+    /// Build the per-request authentication step. Auth is applied to each outgoing
+    /// <see cref="HttpRequestMessage"/> rather than to the <see cref="HttpClient"/>'s shared
+    /// default headers, so a caller-supplied client is never mutated and is safe to reuse.
+    /// </summary>
+    private static Action<HttpRequestMessage>? BuildAuthenticator(AssinafyClientOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.ApiKey))
+        {
+            var apiKey = options.ApiKey;
+            return request => request.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
+        }
+
+        if (!string.IsNullOrWhiteSpace(options.Token))
+        {
+            var token = options.Token;
+            return request => request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        }
+
+        return null;
     }
 
     private static void ConfigureHttpClient(HttpClient http, AssinafyClientOptions options, bool applyTimeout)
@@ -105,14 +136,6 @@ public sealed class AssinafyClient : IDisposable
 
         if (!headers.UserAgent.Any(h => h.Product?.Name == "assinafy-csharp-sdk"))
             headers.UserAgent.Add(new ProductInfoHeaderValue("assinafy-csharp-sdk", SdkVersion));
-
-        headers.Remove("X-Api-Key");
-        headers.Authorization = null;
-
-        if (!string.IsNullOrWhiteSpace(options.ApiKey))
-            headers.Add("X-Api-Key", options.ApiKey);
-        else if (!string.IsNullOrWhiteSpace(options.Token))
-            headers.Authorization = new AuthenticationHeaderValue("Bearer", options.Token);
     }
 
     /// <summary>Convenience factory that creates an API-key client and optionally tweaks options.</summary>
@@ -193,6 +216,7 @@ public sealed class AssinafyClient : IDisposable
                 .ConfigureAwait(false);
 
         var signerIds = new List<string>(options.Signers.Count);
+        var signerRefs = new List<SignerRef>(options.Signers.Count);
         foreach (var signer in options.Signers)
         {
             var created = await Signers.CreateAsync(
@@ -206,14 +230,21 @@ public sealed class AssinafyClient : IDisposable
                 cancellationToken).ConfigureAwait(false);
 
             signerIds.Add(created.Id);
+            signerRefs.Add(new SignerRef
+            {
+                Id = created.Id,
+                VerificationMethod = signer.VerificationMethod,
+                NotificationMethods = signer.NotificationMethods,
+                Step = signer.Step,
+            });
         }
 
         var assignment = await Assignments.CreateAsync(
             document.Id,
             new CreateAssignmentRequest
             {
-                Method = "virtual",
-                Signers = signerIds.Select(id => (SignerRef)id).ToList(),
+                Method = options.Method ?? "virtual",
+                Signers = signerRefs,
                 Message = options.Message,
                 ExpiresAt = options.ExpiresAt,
                 CopyReceivers = options.CopyReceivers,

@@ -5,7 +5,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Authentication and user API-key endpoints.</summary>
 public sealed class AuthenticationResource : BaseResource
 {
-    internal AuthenticationResource(HttpClient http) : base(http) { }
+    internal AuthenticationResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /login</c> — exchange email and password for an access token and account list.</summary>
     public Task<AuthenticationResult> LoginAsync(
@@ -111,6 +112,7 @@ public sealed class AuthenticationResource : BaseResource
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Email);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Token);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.NewPassword);
 
         return CallAsync<EmailResult>(

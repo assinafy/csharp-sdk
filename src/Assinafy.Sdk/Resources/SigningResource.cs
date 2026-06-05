@@ -1,3 +1,4 @@
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
@@ -5,7 +6,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Signer-facing document access, signing, declining, and downloads.</summary>
 public sealed class SigningResource : BaseResource
 {
-    internal SigningResource(HttpClient http) : base(http) { }
+    internal SigningResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, authenticate: authenticate) { }
 
     /// <summary><c>GET /sign</c> — signer-facing endpoint: load the document and assignment data for the current signer access code.</summary>
     public Task<DocumentDetails> GetAsync(
@@ -121,6 +123,8 @@ public sealed class SigningResource : BaseResource
     {
         var code = RequireId(signerAccessCode, "Signer access code");
         ArgumentNullException.ThrowIfNull(documentIds);
+        if (documentIds.Count == 0)
+            throw new ValidationException("At least one document ID is required.");
 
         var path = AppendQueryString(
             "signers/documents/sign-multiple",
@@ -142,6 +146,8 @@ public sealed class SigningResource : BaseResource
     {
         var code = RequireId(signerAccessCode, "Signer access code");
         ArgumentNullException.ThrowIfNull(documentIds);
+        if (documentIds.Count == 0)
+            throw new ValidationException("At least one document ID is required.");
         ArgumentException.ThrowIfNullOrWhiteSpace(declineReason);
 
         var path = AppendQueryString(

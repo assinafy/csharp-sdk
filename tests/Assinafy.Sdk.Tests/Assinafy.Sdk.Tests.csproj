@@ -7,6 +7,9 @@
     <LangVersion>latest</LangVersion>
     <IsPackable>false</IsPackable>
     <RootNamespace>Assinafy.Sdk.Tests</RootNamespace>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Pinned to match the SDK project so test-code analysis is deterministic across SDK versions. -->
+    <AnalysisLevel>8.0</AnalysisLevel>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,6 +1,58 @@
 # Changelog
 
+## 1.2.1
+
+All changes were verified end-to-end against the live API
+(`https://sandbox.assinafy.com.br/v1`) during a full file-by-file audit.
+
+### Removed / changed (read before upgrading)
+
+- **Removed `Webhooks.DeleteAsync`.** `DELETE /webhooks/subscriptions` is not part of
+  the API and returns `404 "Página não encontrada."` on the live service, so the method
+  could never succeed. Use `Webhooks.InactivateAsync()` (or `UpdateSubscriptionAsync`
+  with `IsActive = false`) to stop deliveries.
+- **Removed `Assignment.Expiration`.** The API only ever returns/accepts `expires_at`
+  (proven live: a create body using `expiration` is silently ignored). Read
+  `Assignment.ExpiresAt` instead.
+- **`AssignmentEntryField.DisplaySettings` is now `object?`** (was `JsonElement?`) so
+  callers can pass an anonymous object such as `new { x = 100, y = 200 }`. Assigning a
+  `JsonElement` still compiles; only reading the property directly into a `JsonElement`
+  now needs an explicit cast.
+
+### Fixed
+
+- `Documents.GetSigningProgressAsync` and `IsFullySignedAsync` now
+  fall back to the per-signer `completed` flags when an assignment carries no
+  `summary`, instead of always reporting `0` signed / `0%`.
+- **New — signing order:** `SignerRef` and `TemplateSigner` now expose `Step`,
+  the documented signing-order step, so assignment-create and create-from-template
+  can request sequential signing.
+- **New:** `UploadAndRequestSignaturesAsync` accepts an assignment `Method` and
+  per-signer `VerificationMethod` / `NotificationMethods` / `Step`, instead of
+  hardcoding `virtual` with id-only signers.
+- **Security / robustness:** authentication is attached per request rather than to
+  the shared `HttpClient.DefaultRequestHeaders`, so a caller-supplied client is
+  never mutated and stays safe to reuse/share. Supplying both `ApiKey` and `Token`
+  now throws a `ValidationException` instead of silently preferring the key. The DI
+  registration recycles connections via `SocketsHttpHandler.PooledConnectionLifetime`
+  (the captured singleton client cannot rely on factory handler rotation).
+- **Robustness:** `FindByEmailAsync` pages through all result pages (it previously
+  scanned only the first 100 and could miss an exact match); `SignMultipleAsync` /
+  `DeclineMultipleAsync` reject an empty document list; `WaitUntilReadyAsync`
+  tolerates a brief `404` immediately after creation; `ResetPasswordAsync` now
+  requires its reset token; `UpdateSubscriptionAsync` guards a null `events`;
+  numeric values coerced to string preserve their exact token text.
+- **Cleanup (DRY / KISS):** removed the dead `Assignment.Expiration` property
+  (the API only uses `expires_at`) and the redundant `signer_ids` request field;
+  `DocumentDetails`/`TemplateDetails` extend their list counterparts and document
+  and template pages share a `PageBase`; exception leaf types are `sealed`.
+- **Packaging:** deterministic / CI builds for reproducible symbol packages.
+- Coverage expanded to 91 unit tests plus an opt-in `LiveIntegrationTests` suite.
+
 ## 1.1.1
+
+- **Packaging / CI:** added a GitHub Packages publish workflow and symbol
+  (`snupkg`) packages. No library or API-surface changes.
 
 ## 1.1.0
 

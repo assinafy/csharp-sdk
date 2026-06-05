@@ -5,8 +5,8 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Field definition management and signer/user field validation endpoints.</summary>
 public sealed class FieldResource : BaseResource
 {
-    internal FieldResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal FieldResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>POST /accounts/{accountId}/fields</c> — create a workspace-scoped field definition.</summary>
     public Task<FieldDefinition> CreateAsync(
@@ -123,25 +123,21 @@ public sealed class FieldResource : BaseResource
             $"accounts/{id}/fields/validate-multiple",
             AccessCodeQuery(signerAccessCode));
 
-        var result = await CallAsync<List<FieldValidationResult>>(
+        return await CallListBodyAsync<FieldValidationResult>(
             path,
             HttpMethod.Post,
             values,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
     public async Task<IReadOnlyList<FieldTypeInfo>> ListTypesAsync(
         CancellationToken cancellationToken = default)
     {
-        var result = await CallAsync<List<FieldTypeInfo>>(
+        return await CallListBodyAsync<FieldTypeInfo>(
             "field-types",
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     private static IDictionary<string, string?>? BuildListQuery(FieldListParams? parameters)

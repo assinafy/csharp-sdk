@@ -8,8 +8,8 @@ namespace Assinafy.Sdk.Resources;
 /// </summary>
 public sealed class TagResource : BaseResource
 {
-    internal TagResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal TagResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /accounts/{account_id}/tags</c> — list workspace tags ordered alphabetically, optionally filtered by a case-insensitive <paramref name="search"/> substring.</summary>
     public async Task<IReadOnlyList<Tag>> ListAsync(
@@ -24,12 +24,10 @@ public sealed class TagResource : BaseResource
                 ? null
                 : new Dictionary<string, string?> { ["search"] = search });
 
-        var result = await CallAsync<List<Tag>>(
+        return await CallListBodyAsync<Tag>(
             path,
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     /// <summary><c>POST /accounts/{account_id}/tags</c> — create a tag. The API returns <c>409 Conflict</c> if the name already exists (case-insensitive).</summary>
@@ -97,12 +95,10 @@ public sealed class TagResource : BaseResource
         var id = AccountId(accountId);
         var document = RequireId(documentId, "Document ID");
 
-        var result = await CallAsync<List<Tag>>(
+        return await CallListBodyAsync<Tag>(
             $"accounts/{id}/documents/{document}/tags",
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
     }
 
     /// <summary><c>POST /accounts/{account_id}/documents/{document_id}/tags</c> — attach tags to a document, keeping any already attached. Tags are referenced by name and created on the fly if they do not exist.</summary>
@@ -125,7 +121,12 @@ public sealed class TagResource : BaseResource
         return SendDocumentTagsAsync(documentId, tags, HttpMethod.Put, accountId, cancellationToken);
     }
 
-    /// <summary><c>DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id}</c> — detach a single tag from a document without deleting the tag itself.</summary>
+    /// <summary>
+    /// <c>DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id}</c> — detach a single
+    /// tag from a document without deleting the tag itself. Note: unlike
+    /// <see cref="AddToDocumentAsync"/> / <see cref="SetForDocumentAsync"/> (which key tags by name),
+    /// detach is keyed by tag <b>id</b>; resolve a name to its id via <see cref="ListForDocumentAsync"/> first.
+    /// </summary>
     public Task RemoveFromDocumentAsync(
         string documentId,
         string tagId,
@@ -153,12 +154,10 @@ public sealed class TagResource : BaseResource
         var document = RequireId(documentId, "Document ID");
         ArgumentNullException.ThrowIfNull(tags);
 
-        var result = await CallAsync<List<Tag>>(
+        return await CallListBodyAsync<Tag>(
             $"accounts/{id}/documents/{document}/tags",
             method,
             new Dictionary<string, object?> { ["tags"] = tags },
-            cancellationToken: cancellationToken).ConfigureAwait(false);
-
-        return result ?? [];
+            cancellationToken).ConfigureAwait(false);
     }
 }

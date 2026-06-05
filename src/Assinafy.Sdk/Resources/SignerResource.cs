@@ -10,8 +10,8 @@ public sealed partial class SignerResource : BaseResource
     [GeneratedRegex(@"^[^\s@]+@[^\s@]+\.[^\s@]+$")]
     private static partial Regex EmailRegex();
 
-    internal SignerResource(HttpClient http, string? defaultAccountId = null)
-        : base(http, defaultAccountId) { }
+    internal SignerResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>POST /accounts/{account_id}/signers</c> — create a signer within the workspace.</summary>
     public Task<Signer> CreateAsync(
@@ -84,7 +84,11 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
-    /// <summary>Convenience helper: page through <see cref="ListAsync"/> filtered by email and return an exact match if any.</summary>
+    /// <summary>
+    /// Convenience helper: page through <see cref="ListAsync"/> filtered by the email
+    /// (a server-side fuzzy <c>search</c>) and return the first exact, case-insensitive
+    /// email match across all result pages, or <see langword="null"/> if none exists.
+    /// </summary>
     public async Task<Signer?> FindByEmailAsync(
         string email,
         string? accountId = null,
@@ -93,13 +97,28 @@ public sealed partial class SignerResource : BaseResource
         AssertEmail(email);
         var id = AccountId(accountId);
 
-        var result = await CallListAsync<Signer>(
-            $"accounts/{id}/signers",
-            new Dictionary<string, string?> { ["search"] = email, ["per-page"] = "100" },
-            cancellationToken).ConfigureAwait(false);
+        var page = 1;
+        while (true)
+        {
+            var result = await CallListAsync<Signer>(
+                $"accounts/{id}/signers",
+                new Dictionary<string, string?>
+                {
+                    ["search"] = email,
+                    ["per-page"] = "100",
+                    ["page"] = page.ToString(),
+                },
+                cancellationToken).ConfigureAwait(false);
 
-        return result.Data.FirstOrDefault(s =>
-            string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
+            var match = result.Data.FirstOrDefault(s =>
+                string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
+            if (match is not null) return match;
+
+            var lastPage = result.Meta?.LastPage ?? 1;
+            if (result.Data.Count == 0 || page >= lastPage) return null;
+
+            page++;
+        }
     }
 
     /// <summary><c>GET /signers/self</c> — signer-facing endpoint: load the signer's own profile using only an access code.</summary>

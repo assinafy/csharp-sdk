@@ -5,8 +5,8 @@
 The SDK follows the documented API surface 1:1: authentication, documents,
 signers, signer-facing signing flows, assignments, fields, templates, tags,
 public document token delivery, signature images, and webhooks. Every
-endpoint was verified against `https://api.assinafy.com.br/v1` during
-the 1.1.0 audit (see CHANGELOG).
+endpoint was re-verified end-to-end against the live API
+(`https://sandbox.assinafy.com.br/v1`) during the 1.2.1 audit (see CHANGELOG).
 
 ## Requirements
 
@@ -130,10 +130,10 @@ await client.Tags.UpdateAsync(tag.Id, new UpdateTagRequest { Name = "Signed cont
 await client.Tags.DeleteAsync(tag.Id, force: true); // force detaches from documents/templates first
 
 // Document tags (referenced by name; created on the fly if new)
-await client.Tags.AddToDocumentAsync(documentId, ["Contracts"]);   // append
+await client.Tags.AddToDocumentAsync(documentId, ["Contracts"]);   // append (by name)
 await client.Tags.SetForDocumentAsync(documentId, ["Contracts"]);  // replace all (pass [] to clear)
 await client.Tags.ListForDocumentAsync(documentId);
-await client.Tags.RemoveFromDocumentAsync(documentId, tag.Id);     // detach one
+await client.Tags.RemoveFromDocumentAsync(documentId, tag.Id);     // detach one (by tag id, not name)
 ```
 
 Assignments:
@@ -144,6 +144,18 @@ await client.Assignments.EstimateCostAsync(documentId, new CreateAssignmentReque
     Signers = [new SignerRef { VerificationMethod = "Whatsapp" }],
 });
 
+// Set an expiry (expires_at) and an explicit signing order (step) when creating:
+await client.Assignments.CreateAsync(documentId, new CreateAssignmentRequest
+{
+    Signers =
+    [
+        new SignerRef { Id = firstSignerId, Step = 1 },   // notified first
+        new SignerRef { Id = secondSignerId, Step = 2 },  // notified after step 1 completes
+    ],
+    ExpiresAt = "2026-12-31T00:00:00Z",
+});
+
+// Pass an ISO-8601 timestamp to set a new expiry, or null to clear it:
 await client.Assignments.ResetExpirationAsync(documentId, assignmentId, null);
 await client.Assignments.ResendNotificationAsync(documentId, assignmentId, signerId);
 await client.Assignments.EstimateResendCostAsync(documentId, assignmentId, signerId);
@@ -203,8 +215,7 @@ await client.Webhooks.UpdateSubscriptionAsync(new UpdateWebhookSubscriptionReque
 });
 
 await client.Webhooks.GetAsync();
-await client.Webhooks.InactivateAsync();
-await client.Webhooks.DeleteAsync();
+await client.Webhooks.InactivateAsync(); // pause delivery (the API has no delete endpoint)
 await client.Webhooks.ListEventTypesAsync();
 await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { Delivered = false });
 await client.Webhooks.RetryDispatchAsync(dispatchId);
@@ -238,6 +249,14 @@ catch (ApiException ex) when (ex.StatusCode == 404)
 dotnet test Assinafy.Sdk.sln
 ```
 
-The suite (73 tests) covers every resource on `net8.0`, `net9.0`, and
-`net10.0`. For live API verification against the production endpoint, see
-the live-test script described in the CHANGELOG.
+The unit suite (91 tests) covers every resource on `net8.0`, `net9.0`, and
+`net10.0` using a stubbed `HttpClient`. An opt-in live integration suite
+(`LiveIntegrationTests`) exercises the real API and is inert unless
+`ASSINAFY_API_KEY` and `ASSINAFY_ACCOUNT_ID` are set (optionally
+`ASSINAFY_BASE_URL`, default sandbox):
+
+```bash
+ASSINAFY_API_KEY=... ASSINAFY_ACCOUNT_ID=... \
+ASSINAFY_BASE_URL=https://sandbox.assinafy.com.br/v1 \
+  dotnet test --filter FullyQualifiedName~LiveIntegrationTests
+```

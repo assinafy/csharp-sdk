@@ -87,9 +87,6 @@ public sealed record Assignment
     [JsonPropertyName("expires_at")]
     public string? ExpiresAt { get; init; }
 
-    [JsonPropertyName("expiration")]
-    public string? Expiration { get; init; }
-
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
@@ -115,6 +112,9 @@ public sealed class SignerRef
     public string? VerificationMethod { get; set; }
     public string[]? NotificationMethods { get; set; }
 
+    /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
+    public int? Step { get; set; }
+
     public static implicit operator SignerRef(string id) => new() { Id = id };
 }
 
@@ -139,7 +139,9 @@ public sealed class AssignmentEntryField
 {
     public required string SignerId { get; set; }
     public required string FieldId { get; set; }
-    public JsonElement? DisplaySettings { get; set; }
+
+    /// <summary>Optional placement/display settings (e.g. <c>new { x = 100, y = 200, width = 150, height = 40 }</c>).</summary>
+    public object? DisplaySettings { get; set; }
 }
 
 public sealed record AssignmentCostEstimate
@@ -260,4 +262,7 @@ public sealed class TemplateSigner
     public required string Id { get; set; }
     public string? VerificationMethod { get; set; }
     public string[]? NotificationMethods { get; set; }
+
+    /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
+    public int? Step { get; set; }
 }
