@@ -74,12 +74,45 @@ public sealed class LiveIntegrationTests
                 var fetched = await client.Documents.GetAsync(uploaded.Id);
                 fetched.Id.Should().Be(uploaded.Id);
 
+                // PATCH /documents/{id} — rename is allowed before any assignment exists.
+                var renamed = await client.Documents.RenameAsync(uploaded.Id, "sdk-live-renamed");
+                renamed.Id.Should().Be(uploaded.Id);
+                renamed.Name.Should().NotBeNullOrEmpty();
+
                 (await client.Documents.ActivitiesAsync(uploaded.Id)).Should().NotBeEmpty();
             }
             finally
             {
                 await client.Documents.DeleteAsync(uploaded.Id);
             }
+        }
+    }
+
+    [Fact]
+    public async Task NewEndpoints_AccountsAssignmentsAndSearch_Work()
+    {
+        var client = TryCreateClient();
+        if (client is null) return; // not configured — skipped
+
+        using (client)
+        {
+            // Accounts resource (added in 1.3.0).
+            var accounts = await client.Accounts.ListAsync();
+            accounts.Should().NotBeEmpty();
+
+            var account = await client.Accounts.GetAsync();
+            account.Id.Should().NotBeNullOrEmpty();
+
+            var theme = await client.Accounts.GetThemeAsync();
+            theme.AccountName.Should().NotBeNull();
+
+            // GET /assignments (account context sent via the accountId query parameter).
+            var assignments = await client.Assignments.ListAsync(new AssignmentListParams { PerPage = 5 });
+            assignments.Should().NotBeNull();
+
+            // Compact document-search route.
+            var search = await client.Documents.SearchAsync(perPage: 5);
+            search.Should().NotBeNull();
         }
     }
 

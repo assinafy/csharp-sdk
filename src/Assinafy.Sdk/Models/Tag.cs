@@ -8,12 +8,15 @@ namespace Assinafy.Sdk.Models;
 /// </summary>
 public sealed record Tag
 {
+    /// <summary>Resource type discriminator (<c>tag</c>). Present in single-resource responses.</summary>
     [JsonPropertyName("resource")]
     public string? Resource { get; init; }
 
+    /// <summary>Unique tag identifier.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>Tag name (unique per workspace, case-insensitive).</summary>
     [JsonPropertyName("name")]
     public string Name { get; init; } = string.Empty;
 
@@ -21,9 +24,11 @@ public sealed record Tag
     [JsonPropertyName("color")]
     public string? Color { get; init; }
 
+    /// <summary>When the tag was created (ISO-8601 date-time string).</summary>
     [JsonPropertyName("created_at")]
     public string? CreatedAt { get; init; }
 
+    /// <summary>When the tag was last updated (ISO-8601 date-time string).</summary>
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; init; }
 }
@@ -44,6 +49,7 @@ public sealed class CreateTagRequest
 /// </summary>
 public sealed class UpdateTagRequest
 {
+    /// <summary>New tag name (max 64 characters). Unique per workspace, case-insensitive.</summary>
     public string? Name { get; set; }
 
     /// <summary>Optional six-character hex color, with or without a leading <c>#</c>.</summary>

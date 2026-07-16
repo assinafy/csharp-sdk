@@ -27,6 +27,12 @@ public static class AssinafyServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configure);
 
+        // Build the options once at registration so the configured Timeout can be applied to the
+        // named HttpClient (a caller-supplied/factory client is not mutated by AssinafyClient, so the
+        // Timeout would otherwise be silently ignored on this path).
+        var options = new AssinafyClientOptions();
+        configure(options);
+
         var builder = services
             .AddHttpClient(HttpClientName)
             .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
@@ -35,10 +41,11 @@ public static class AssinafyServiceCollectionExtensions
             })
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
+        if (options.Timeout > TimeSpan.Zero)
+            builder.ConfigureHttpClient(http => http.Timeout = options.Timeout);
+
         services.AddSingleton(sp =>
         {
-            var options = new AssinafyClientOptions();
-            configure(options);
             var factory = sp.GetRequiredService<IHttpClientFactory>();
             var http = factory.CreateClient(HttpClientName);
             return new AssinafyClient(options, http);

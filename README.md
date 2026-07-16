@@ -2,11 +2,14 @@
 
 .NET SDK for the [Assinafy API](https://api.assinafy.com.br/v1/docs).
 
-The SDK follows the documented API surface 1:1: authentication, documents,
-signers, signer-facing signing flows, assignments, fields, templates, tags,
-public document token delivery, signature images, and webhooks. Every
+The SDK follows the documented API surface 1:1: authentication, accounts,
+documents, signers, signer-facing signing flows, assignments, fields,
+templates, tags, public document token delivery, signature images, and
+webhooks. The only documented endpoints intentionally omitted are the two
+browser-facing OAuth redirect endpoints (`GET /auth/authenticate` and
+`GET /login-callback`), which are not server-to-server JSON APIs. Every
 endpoint was re-verified end-to-end against the live API
-(`https://sandbox.assinafy.com.br/v1`) during the 1.2.1 audit (see CHANGELOG).
+(`https://sandbox.assinafy.com.br/v1`) during the 1.3.0 audit (see CHANGELOG).
 
 ## Requirements
 
@@ -42,10 +45,36 @@ var signer = await client.Signers.CreateAsync(new CreateSignerRequest
 
 var assignment = await client.Assignments.CreateAsync(document.Id, new CreateAssignmentRequest
 {
-    Method = "virtual",
+    Method = AssignmentMethods.Virtual,
     Signers = [signer.Id],
     Message = "Please review and sign",
 });
+```
+
+### One-call convenience helper
+
+`UploadAndRequestSignaturesAsync` runs the whole flow above — upload, wait for
+the document to be ready, create the signers, and create the assignment — in a
+single call:
+
+```csharp
+var result = await client.UploadAndRequestSignaturesAsync(new UploadAndRequestSignaturesOptions
+{
+    FileStream = File.OpenRead("contract.pdf"),
+    FileName = "contract.pdf",
+    Message = "Please review and sign",
+    Signers =
+    [
+        new UploadAndRequestSignaturesSigner
+        {
+            FullName = "John Doe",
+            Email = "john@example.com",
+            VerificationMethod = SignerChannels.Email,
+        },
+    ],
+});
+
+// result.Document, result.Assignment, result.SignerIds
 ```
 
 ## Dependency Injection
@@ -87,12 +116,24 @@ new AssinafyClientOptions { Token = "access-token", AccountId = "account-id" };
 
 ## Resources
 
+Accounts:
+
+```csharp
+var accounts = await client.Accounts.ListAsync();          // discover your account IDs
+var account = await client.Accounts.GetAsync();            // defaults to the client's AccountId
+var theme = await client.Accounts.GetThemeAsync();         // branding name, colors, logo URL
+await client.Accounts.UpdateAsync(new UpdateAccountRequest { Name = "New workspace name" });
+await client.Accounts.UploadLogoAsync(logoPngStream, "logo.png");
+```
+
 Documents:
 
 ```csharp
 await client.Documents.ListStatusesAsync();
 await client.Documents.ListAsync(new Dictionary<string, string?> { ["sort"] = "-updated_at" });
+await client.Documents.SearchAsync("contract");            // compact search by name
 await client.Documents.GetAsync(documentId);
+await client.Documents.RenameAsync(documentId, "Renamed contract"); // before signing starts
 await client.Documents.ActivitiesAsync(documentId);
 await client.Documents.DownloadAsync(documentId, DocumentArtifactNames.Certificated);
 await client.Documents.ThumbnailAsync(documentId);
@@ -154,6 +195,9 @@ await client.Assignments.CreateAsync(documentId, new CreateAssignmentRequest
     ],
     ExpiresAt = "2026-12-31T00:00:00Z",
 });
+
+// List all assignments in the workspace (account context is sent automatically):
+await client.Assignments.ListAsync(new AssignmentListParams { PerPage = 50 });
 
 // Pass an ISO-8601 timestamp to set a new expiry, or null to clear it:
 await client.Assignments.ResetExpirationAsync(documentId, assignmentId, null);
@@ -223,14 +267,18 @@ await client.Webhooks.RetryDispatchAsync(dispatchId);
 
 ## Error Handling
 
-The SDK normalises every response and surfaces three exception types under
-the common `AssinafyException` base:
+The SDK normalises every response and surfaces four exception types under
+the common `AssinafyException` base, so a single `catch (AssinafyException)`
+covers every SDK-originated failure:
 
 - `ValidationException` — invalid input caught before the request leaves
   the SDK (missing IDs, non-PDF uploads, oversized files, etc.).
 - `ApiException` — the API returned a non-2xx status or an envelope with
   `status >= 400`. `StatusCode` and `ApiMessage` carry the upstream details.
 - `NetworkException` — transport failures and timeouts.
+- `SerializationException` — a successful (2xx) response carried a body that
+  could not be parsed as the expected JSON envelope (e.g. a non-JSON error
+  page injected by an upstream proxy or CDN).
 
 ```csharp
 try
@@ -249,7 +297,7 @@ catch (ApiException ex) when (ex.StatusCode == 404)
 dotnet test Assinafy.Sdk.sln
 ```
 
-The unit suite (91 tests) covers every resource on `net8.0`, `net9.0`, and
+The unit suite (125 tests) covers every resource on `net8.0`, `net9.0`, and
 `net10.0` using a stubbed `HttpClient`. An opt-in live integration suite
 (`LiveIntegrationTests`) exercises the real API and is inert unless
 `ASSINAFY_API_KEY` and `ASSINAFY_ACCOUNT_ID` are set (optionally

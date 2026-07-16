@@ -10,16 +10,16 @@ public sealed class SigningResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>GET /sign</c> — signer-facing endpoint: load the document and assignment data for the current signer access code.</summary>
+    /// <param name="signerAccessCode">The signer's access code identifying which assignment to load.</param>
+    /// <param name="hasAcceptedTerms">When set, records whether the signer has accepted the terms of use; sent as the <c>has_accepted_terms</c> query flag.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<DocumentDetails> GetAsync(
         string signerAccessCode,
         bool? hasAcceptedTerms = null,
         CancellationToken cancellationToken = default)
     {
         var code = RequireId(signerAccessCode, "Signer access code");
-        var query = new Dictionary<string, string?>
-        {
-            ["signer-access-code"] = code,
-        };
+        var query = AccessCodeQuery(code);
 
         if (hasAcceptedTerms.HasValue)
             query["has_accepted_terms"] = hasAcceptedTerms.Value ? "true" : "false";
@@ -37,6 +37,11 @@ public sealed class SigningResource : BaseResource
     /// The body uses camelCase keys (<c>itemId</c>, <c>fieldId</c>, <c>pageId</c>, <c>value</c>)
     /// per the Assinafy docs, which <see cref="SignAssignmentValue"/> applies automatically.
     /// </summary>
+    /// <param name="documentId">Document containing the assignment.</param>
+    /// <param name="assignmentId">Assignment whose field values are being submitted.</param>
+    /// <param name="signerAccessCode">The signer's access code authorizing the submission.</param>
+    /// <param name="values">Field values to submit, one entry per field; serialized with camelCase keys.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task SignAsync(
         string documentId,
         string assignmentId,
@@ -51,12 +56,17 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             $"documents/{document}/assignments/{assignment}",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallVoidAsync(path, HttpMethod.Post, values, cancellationToken);
     }
 
     /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reject?signer-access-code={code}</c> — signer-facing endpoint: decline an assignment with a reason.</summary>
+    /// <param name="documentId">Document containing the assignment.</param>
+    /// <param name="assignmentId">Assignment being declined.</param>
+    /// <param name="signerAccessCode">The signer's access code authorizing the decline.</param>
+    /// <param name="declineReason">Reason the signer is declining the assignment.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeclineAsync(
         string documentId,
         string assignmentId,
@@ -71,7 +81,7 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             $"documents/{document}/assignments/{assignment}/reject",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallVoidAsync(
             path,
@@ -81,6 +91,9 @@ public sealed class SigningResource : BaseResource
     }
 
     /// <summary><c>GET /signers/{signer_id}/document?signer-access-code={code}</c> — fetch the signer's current document.</summary>
+    /// <param name="signerId">Signer whose current document to fetch.</param>
+    /// <param name="signerAccessCode">The signer's access code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<DocumentDetails> GetCurrentDocumentAsync(
         string signerId,
         string signerAccessCode,
@@ -91,12 +104,16 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             $"signers/{signer}/document",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallAsync<DocumentDetails>(path, HttpMethod.Get, cancellationToken: cancellationToken);
     }
 
     /// <summary><c>GET /signers/{signer_id}/documents?signer-access-code={code}</c> — list all documents associated with the signer.</summary>
+    /// <param name="signerId">Signer whose documents to list.</param>
+    /// <param name="signerAccessCode">The signer's access code.</param>
+    /// <param name="parameters">Optional status/method filters, search term, sort, and pagination.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(
         string signerId,
         string signerAccessCode,
@@ -107,7 +124,7 @@ public sealed class SigningResource : BaseResource
         var code = RequireId(signerAccessCode, "Signer access code");
 
         var query = BuildListQuery(parameters);
-        query["signer-access-code"] = code;
+        query[SignerAccessCodeParam] = code;
 
         return CallListAsync<DocumentListItem>(
             $"signers/{signer}/documents",
@@ -115,7 +132,37 @@ public sealed class SigningResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary>
+    /// <c>GET /signers/{signer_id}/documents/search?signer-access-code={code}</c> — search the signer's
+    /// documents by name, returning a compact representation. Use <see cref="ListDocumentsAsync"/> when you
+    /// need the full document shape or richer filters.
+    /// </summary>
+    /// <param name="signerId">Signer whose documents to search.</param>
+    /// <param name="signerAccessCode">The signer's access code.</param>
+    /// <param name="parameters">Optional search term and pagination.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsync(
+        string signerId,
+        string signerAccessCode,
+        SignerDocumentListParams? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        var signer = RequireId(signerId, "Signer ID");
+        var code = RequireId(signerAccessCode, "Signer access code");
+
+        var query = BuildListQuery(parameters);
+        query[SignerAccessCodeParam] = code;
+
+        return CallListAsync<DocumentListItem>(
+            $"signers/{signer}/documents/search",
+            query,
+            cancellationToken);
+    }
+
     /// <summary><c>PUT /signers/documents/sign-multiple?signer-access-code={code}</c> — sign multiple virtual-method documents in one request.</summary>
+    /// <param name="signerAccessCode">The signer's access code authorizing the signatures.</param>
+    /// <param name="documentIds">Documents to sign; must contain at least one id.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task SignMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -128,7 +175,7 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             "signers/documents/sign-multiple",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallVoidAsync(
             path,
@@ -138,6 +185,10 @@ public sealed class SigningResource : BaseResource
     }
 
     /// <summary><c>PUT /signers/documents/decline-multiple?signer-access-code={code}</c> — decline multiple documents at once with a single reason.</summary>
+    /// <param name="signerAccessCode">The signer's access code authorizing the declines.</param>
+    /// <param name="documentIds">Documents to decline; must contain at least one id.</param>
+    /// <param name="declineReason">Reason applied to every declined document.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeclineMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -152,7 +203,7 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             "signers/documents/decline-multiple",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallVoidAsync(
             path,
@@ -166,6 +217,11 @@ public sealed class SigningResource : BaseResource
     }
 
     /// <summary><c>GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}?signer-access-code={code}</c> — signer-facing download of a document artifact.</summary>
+    /// <param name="signerId">Signer requesting the download.</param>
+    /// <param name="documentId">Document to download.</param>
+    /// <param name="signerAccessCode">The signer's access code authorizing the download.</param>
+    /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<byte[]> DownloadAsync(
         string signerId,
         string documentId,
@@ -180,7 +236,7 @@ public sealed class SigningResource : BaseResource
 
         var path = AppendQueryString(
             $"signers/{signer}/documents/{document}/download/{artifact}",
-            new Dictionary<string, string?> { ["signer-access-code"] = code });
+            AccessCodeQuery(code));
 
         return CallBinaryAsync(path, HttpMethod.Get, cancellationToken);
     }

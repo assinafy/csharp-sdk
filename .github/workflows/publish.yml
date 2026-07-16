@@ -13,11 +13,19 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write        # provenance attestation
+  attestations: write    # provenance attestation
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false   # never interrupt an in-flight release
 
 jobs:
   publish:
-    name: Pack & push to GitHub Packages
+    name: Pack & publish
     runs-on: ubuntu-latest
+    env:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
 
     steps:
       - name: Checkout
@@ -57,10 +65,23 @@ jobs:
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-build --output ./artifacts -p:Version=${{ steps.version.outputs.version }}
 
-      - name: Add GitHub Packages source
-        run: dotnet nuget add source --username ${{ github.repository_owner }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ./artifacts/*.nupkg
 
-      - name: Push package
+      - name: Push to NuGet.org
+        # Runs only when a NUGET_API_KEY secret is configured; nuget.org is the primary public feed
+        # so `dotnet add package Assinafy.Sdk` works without authenticating to a private source.
+        if: ${{ env.NUGET_API_KEY != '' }}
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
+
+      - name: Add GitHub Packages source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: dotnet nuget add source --username ${{ github.repository_owner }} --password "$GH_TOKEN" --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
+
+      - name: Push to GitHub Packages
         run: dotnet nuget push "./artifacts/*.nupkg" --source github --skip-duplicate
 
       - name: Upload package artifact

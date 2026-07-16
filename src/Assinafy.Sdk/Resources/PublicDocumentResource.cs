@@ -9,6 +9,8 @@ public sealed class PublicDocumentResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>GET /public/documents/{document_id}</c> — fetch a document's public metadata (no authentication required).</summary>
+    /// <param name="documentId">Document whose public metadata to fetch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PublicDocumentInfo> GetAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -21,6 +23,9 @@ public sealed class PublicDocumentResource : BaseResource
     }
 
     /// <summary><c>PUT /public/documents/{document_id}/send-token</c> — deliver a signing access token to a recipient over email or WhatsApp.</summary>
+    /// <param name="documentId">Document whose signing token to send.</param>
+    /// <param name="request">Recipient address and delivery channel (<see cref="SignerChannels"/>: <c>Email</c> or <c>Whatsapp</c>; WhatsApp is paid-only).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<SendDocumentTokenResult> SendTokenAsync(
         string documentId,
         SendDocumentTokenRequest request,

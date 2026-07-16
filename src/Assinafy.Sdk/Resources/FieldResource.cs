@@ -9,6 +9,9 @@ public sealed class FieldResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>POST /accounts/{accountId}/fields</c> — create a workspace-scoped field definition.</summary>
+    /// <param name="request">Field definition to create (type and name are required).</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<FieldDefinition> CreateAsync(
         CreateFieldDefinitionRequest request,
         string? accountId = null,
@@ -27,6 +30,9 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>GET /accounts/{accountId}/fields</c> — list field definitions. Use <see cref="FieldListParams"/> to include inactive or standard built-ins.</summary>
+    /// <param name="parameters">Optional filters to include inactive or standard built-in fields.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<FieldDefinition>> ListAsync(
         FieldListParams? parameters = null,
         string? accountId = null,
@@ -40,6 +46,9 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>GET /accounts/{accountId}/fields/{field_id}</c> — fetch a single field definition.</summary>
+    /// <param name="fieldId">Field definition to fetch.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<FieldDefinition> GetAsync(
         string fieldId,
         string? accountId = null,
@@ -54,6 +63,10 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>PUT /accounts/{account_id}/fields/{field_id}</c> — update a field definition.</summary>
+    /// <param name="fieldId">Field definition to update.</param>
+    /// <param name="request">New field-definition values.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<FieldDefinition> UpdateAsync(
         string fieldId,
         UpdateFieldDefinitionRequest request,
@@ -72,6 +85,9 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>DELETE /accounts/{account_id}/fields/{field_id}</c> — delete a field definition. Will fail if the field has already been used on a document.</summary>
+    /// <param name="fieldId">Field definition to delete.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeleteAsync(
         string fieldId,
         string? accountId = null,
@@ -87,6 +103,11 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{accountId}/fields/{field_id}/validate</c> — validate a single value against a field definition. Pass a signer access code when calling on a signer's behalf.</summary>
+    /// <param name="fieldId">Field definition to validate against.</param>
+    /// <param name="request">The value to validate.</param>
+    /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<FieldValidationResult> ValidateAsync(
         string fieldId,
         ValidateFieldValueRequest request,
@@ -100,7 +121,7 @@ public sealed class FieldResource : BaseResource
 
         var path = AppendQueryString(
             $"accounts/{id}/fields/{field}/validate",
-            AccessCodeQuery(signerAccessCode));
+            OptionalAccessCodeQuery(signerAccessCode));
 
         return CallAsync<FieldValidationResult>(
             path,
@@ -110,6 +131,10 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{accountId}/fields/validate-multiple</c> — validate multiple values at once.</summary>
+    /// <param name="values">Field-value pairs to validate; each references its field definition.</param>
+    /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(
         IReadOnlyList<ValidateFieldValueItem> values,
         string? signerAccessCode = null,
@@ -121,7 +146,7 @@ public sealed class FieldResource : BaseResource
 
         var path = AppendQueryString(
             $"accounts/{id}/fields/validate-multiple",
-            AccessCodeQuery(signerAccessCode));
+            OptionalAccessCodeQuery(signerAccessCode));
 
         return await CallListBodyAsync<FieldValidationResult>(
             path,
@@ -131,6 +156,7 @@ public sealed class FieldResource : BaseResource
     }
 
     /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<FieldTypeInfo>> ListTypesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -153,10 +179,10 @@ public sealed class FieldResource : BaseResource
         return query.Count > 0 ? query : null;
     }
 
-    private static IDictionary<string, string?>? AccessCodeQuery(string? signerAccessCode)
+    private static IDictionary<string, string?>? OptionalAccessCodeQuery(string? signerAccessCode)
     {
         return string.IsNullOrWhiteSpace(signerAccessCode)
             ? null
-            : new Dictionary<string, string?> { ["signer-access-code"] = signerAccessCode };
+            : new Dictionary<string, string?> { [SignerAccessCodeParam] = signerAccessCode };
     }
 }

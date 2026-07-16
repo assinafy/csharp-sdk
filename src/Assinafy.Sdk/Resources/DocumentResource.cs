@@ -23,6 +23,7 @@ public sealed class DocumentResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /documents/statuses</c> — list all possible document status codes and whether each is deletable.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -38,6 +39,10 @@ public sealed class DocumentResource : BaseResource
     /// additionally enforces a 2000-page limit server-side (a smaller-but-longer PDF is
     /// rejected by the API rather than locally).
     /// </summary>
+    /// <param name="fileStream">The PDF file content to upload.</param>
+    /// <param name="fileName">File name for the upload; must end in <c>.pdf</c> (case-insensitive).</param>
+    /// <param name="accountId">Workspace account to upload into; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<DocumentDetails> UploadAsync(
         Stream fileStream,
         string fileName,
@@ -77,6 +82,15 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /accounts/{account_id}/documents</c> — list documents in the workspace with optional filters (<c>status</c>, <c>method</c>, <c>search</c>, <c>sort</c>, <c>page</c>, <c>per-page</c>).</summary>
+    /// <param name="queryParams">
+    /// Optional filters. Accepted keys: <c>status</c> (a document status code, e.g. <c>pending_signature</c>);
+    /// <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>);
+    /// <c>search</c> (partial match on document name or a signer's name/email); <c>tags</c> (comma-separated tag IDs,
+    /// returning documents that carry all of them); <c>sort</c> (<c>name</c> or <c>updated_at</c>);
+    /// <c>page</c> (1-based page number); and <c>per-page</c> (page size).
+    /// </param>
+    /// <param name="accountId">Workspace account whose documents to list; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<DocumentListItem>> ListAsync(
         IDictionary<string, string?>? queryParams = null,
         string? accountId = null,
@@ -87,6 +101,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{document_id}</c> — fetch full document details including assignment and artifacts.</summary>
+    /// <param name="documentId">Document to fetch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<DocumentDetails> GetAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
@@ -95,6 +111,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>DELETE /documents/{documentId}</c> — delete a document. Only certain status codes are deletable (see <see cref="ListStatusesAsync"/>).</summary>
+    /// <param name="documentId">Document to delete.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeleteAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
@@ -102,7 +120,64 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// <c>PATCH /documents/{document_id}</c> — rename a document. Only permitted before any assignment
+    /// exists (status <c>uploaded</c> or <c>metadata_ready</c> with no signers); once signing has started
+    /// or the document is certificated the name is locked. The server normalizes the name (diacritics are
+    /// removed and unsupported characters are replaced with dashes), so the returned name may differ.
+    /// </summary>
+    /// <param name="documentId">Document to rename.</param>
+    /// <param name="name">The new document name.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<DocumentDetails> RenameAsync(
+        string documentId,
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var id = RequireId(documentId, "Document ID");
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        return CallAsync<DocumentDetails>(
+            $"documents/{id}",
+            HttpMethod.Patch,
+            new Dictionary<string, object?> { ["name"] = name },
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// <c>GET /accounts/{account_id}/documents/search</c> — search documents by name, returning a compact
+    /// representation (without the expanded <c>assignment</c> and <c>pages</c> that <see cref="ListAsync"/>
+    /// includes). Use <see cref="ListAsync"/> when you need the full document shape.
+    /// </summary>
+    /// <param name="search">Case-insensitive search term matched against document names.</param>
+    /// <param name="status">Optional document status filter.</param>
+    /// <param name="page">Optional 1-based page number.</param>
+    /// <param name="perPage">Optional page size.</param>
+    /// <param name="accountId">Workspace account; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<PaginatedResult<DocumentListItem>> SearchAsync(
+        string? search = null,
+        string? status = null,
+        int? page = null,
+        int? perPage = null,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var id = AccountId(accountId);
+        var query = new Dictionary<string, string?>();
+        if (!string.IsNullOrWhiteSpace(search)) query["search"] = search;
+        if (!string.IsNullOrWhiteSpace(status)) query["status"] = status;
+        if (page is int p) query["page"] = p.ToString();
+        if (perPage is int pp) query["per-page"] = pp.ToString();
+
+        return CallListAsync<DocumentListItem>($"accounts/{id}/documents/search", query, cancellationToken);
+    }
+
     /// <summary><c>GET /documents/{document_id}/download/{artifact_name}</c> — download a document artifact (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, or <c>bundle</c>).</summary>
+    /// <param name="documentId">Document whose artifact to download.</param>
+    /// <param name="artifactName">Which artifact to download — <c>original</c>, <c>certificated</c>, <c>certificate-page</c>, or <c>bundle</c> (see <see cref="DocumentArtifactNames"/>); defaults to <c>certificated</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw artifact bytes.</returns>
     public Task<byte[]> DownloadAsync(
         string documentId,
         string artifactName = DocumentArtifactNames.Certificated,
@@ -114,6 +189,9 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{document_id}/thumbnail</c> — download the first-page thumbnail image.</summary>
+    /// <param name="documentId">Document whose thumbnail to download.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw thumbnail image bytes.</returns>
     public Task<byte[]> ThumbnailAsync(string documentId, CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
@@ -121,6 +199,10 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{document_id}/pages/{page_id}/download</c> — download a single page rendering.</summary>
+    /// <param name="documentId">Document that owns the page.</param>
+    /// <param name="pageId">Page whose rendering to download.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw page image bytes.</returns>
     public Task<byte[]> DownloadPageAsync(
         string documentId,
         string pageId,
@@ -132,6 +214,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{documentId}/activities</c> — fetch the timeline of events recorded against this document.</summary>
+    /// <param name="documentId">Document whose activity timeline to fetch.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<DocumentActivity>> ActivitiesAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -149,6 +233,10 @@ public sealed class DocumentResource : BaseResource
     /// <c>certificated</c>), throws if it lands in a failed/expired state, or
     /// throws on timeout.
     /// </summary>
+    /// <param name="documentId">Document to poll.</param>
+    /// <param name="maxWait">Maximum time to wait before throwing on timeout (default 30 seconds).</param>
+    /// <param name="pollInterval">Delay between status polls (default 2 seconds).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<DocumentDetails> WaitUntilReadyAsync(
         string documentId,
         TimeSpan? maxWait = null,
@@ -188,6 +276,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary>Convenience helper: returns true if the document is fully signed by every signer.</summary>
+    /// <param name="documentId">Document to inspect.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<bool> IsFullySignedAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -204,6 +294,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary>Convenience helper: returns a (signed / total / pending / percentage) snapshot.</summary>
+    /// <param name="documentId">Document to inspect.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<SigningProgress> GetSigningProgressAsync(
         string documentId,
         CancellationToken cancellationToken = default)
@@ -226,6 +318,11 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents</c> — create a document by binding signers to template roles.</summary>
+    /// <param name="templateId">Template to instantiate.</param>
+    /// <param name="signers">Signers bound to the template's roles.</param>
+    /// <param name="options">Optional document name, message, <c>expires_at</c>, and editor-field values.</param>
+    /// <param name="accountId">Workspace account to create the document in; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<DocumentDetails> CreateFromTemplateAsync(
         string templateId,
         IReadOnlyList<TemplateSigner> signers,
@@ -255,6 +352,10 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents/estimate-cost</c> — preview the credit cost of <see cref="CreateFromTemplateAsync"/>.</summary>
+    /// <param name="templateId">Template that would be instantiated.</param>
+    /// <param name="signers">Signers that would be bound to the template's roles.</param>
+    /// <param name="accountId">Workspace account context; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<AssignmentCostEstimate> EstimateCostFromTemplateAsync(
         string templateId,
         IReadOnlyList<TemplateSigner> signers,
@@ -273,6 +374,8 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{signature_hash}/verify</c> — verify a document's signature hash and return validity metadata.</summary>
+    /// <param name="signatureHash">The document's public signature hash to verify.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<DocumentVerificationResult> VerifyAsync(
         string signatureHash,
         CancellationToken cancellationToken = default)

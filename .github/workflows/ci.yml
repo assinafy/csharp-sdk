@@ -7,6 +7,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Least privilege: CI only needs to read the repo; artifact upload works under read-only contents.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref (a new push/force-push supersedes the prior matrix run).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Test (${{ matrix.tfm }})

@@ -6,10 +6,34 @@ namespace Assinafy.Sdk.Resources;
 /// <summary>Assignments resource: create requests, estimate costs, resend, and expiration handling.</summary>
 public sealed class AssignmentResource : BaseResource
 {
-    internal AssignmentResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
-        : base(http, authenticate: authenticate) { }
+    internal AssignmentResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
+        : base(http, defaultAccountId, authenticate) { }
+
+    /// <summary>
+    /// <c>GET /assignments?accountId={account_id}</c> — list the assignments belonging to a workspace
+    /// account. The account context is supplied via the <c>accountId</c> query parameter (the SDK sends
+    /// the client's default account when none is passed); the API returns <c>400</c> if it is absent.
+    /// </summary>
+    /// <param name="parameters">Optional pagination (<c>page</c>, <c>per-page</c>).</param>
+    /// <param name="accountId">Account whose assignments to list; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task<PaginatedResult<Assignment>> ListAsync(
+        AssignmentListParams? parameters = null,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var id = AccountId(accountId);
+        var query = new Dictionary<string, string?> { ["accountId"] = id };
+        if (parameters?.Page is int page) query["page"] = page.ToString();
+        if (parameters?.PerPage is int perPage) query["per-page"] = perPage.ToString();
+
+        return CallListAsync<Assignment>("assignments", query, cancellationToken);
+    }
 
     /// <summary><c>POST /documents/{document_id}/assignments</c> — create a signature assignment binding signers to a document.</summary>
+    /// <param name="documentId">Document to attach the assignment to.</param>
+    /// <param name="request">Assignment configuration: <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>; defaults to <c>virtual</c>), the signers, and optional message, <c>expires_at</c>, copy receivers, and entries.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<Assignment> CreateAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -26,6 +50,9 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>POST /documents/{documentId}/assignments/estimate-cost</c> — preview the credit cost of <see cref="CreateAsync"/> before committing.</summary>
+    /// <param name="documentId">Document the assignment would target.</param>
+    /// <param name="request">Same shape as <see cref="CreateAsync"/>; for estimation, signers may be specified without an <c>id</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<AssignmentCostEstimate> EstimateCostAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -42,6 +69,10 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration</c> — set or clear the assignment's expiration date.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment whose expiration to change.</param>
+    /// <param name="expiresAt">New expiration as an ISO-8601 date-time string, or <see langword="null"/> to clear the expiration.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<Assignment> ResetExpirationAsync(
         string documentId,
         string assignmentId,
@@ -59,6 +90,10 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend</c> — resend the signature notification (email or WhatsApp) for a specific signer.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment the signer belongs to.</param>
+    /// <param name="signerId">Signer to re-notify.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<ResendNotificationResult> ResendNotificationAsync(
         string documentId,
         string assignmentId,
@@ -76,6 +111,10 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost</c> — preview the credit cost of <see cref="ResendNotificationAsync"/>.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment the signer belongs to.</param>
+    /// <param name="signerId">Signer whose resend cost to estimate.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<ResendCostEstimate> EstimateResendCostAsync(
         string documentId,
         string assignmentId,
@@ -93,6 +132,9 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications</c> — list the rendered WhatsApp template messages dispatched for an assignment.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment whose WhatsApp notifications to list.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<WhatsAppNotification>> ListWhatsAppNotificationsAsync(
         string documentId,
         string assignmentId,

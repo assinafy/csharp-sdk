@@ -12,6 +12,9 @@ public sealed class TagResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /accounts/{account_id}/tags</c> — list workspace tags ordered alphabetically, optionally filtered by a case-insensitive <paramref name="search"/> substring.</summary>
+    /// <param name="search">Optional case-insensitive substring to filter tag names.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<Tag>> ListAsync(
         string? search = null,
         string? accountId = null,
@@ -31,6 +34,9 @@ public sealed class TagResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{account_id}/tags</c> — create a tag. The API returns <c>409 Conflict</c> if the name already exists (case-insensitive).</summary>
+    /// <param name="request">Tag name and optional hex color to create.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<Tag> CreateAsync(
         CreateTagRequest request,
         string? accountId = null,
@@ -48,6 +54,10 @@ public sealed class TagResource : BaseResource
     }
 
     /// <summary><c>PUT /accounts/{account_id}/tags/{tag_id}</c> — update a tag's name and/or color. The API returns <c>409 Conflict</c> if the new name collides with another tag.</summary>
+    /// <param name="tagId">Tag to update.</param>
+    /// <param name="request">New name and/or color; unset properties leave the existing value unchanged.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<Tag> UpdateAsync(
         string tagId,
         UpdateTagRequest request,
@@ -70,6 +80,10 @@ public sealed class TagResource : BaseResource
     /// is <see langword="false"/> the API returns <c>409 Conflict</c> if the tag is still attached to
     /// documents or templates; pass <see langword="true"/> to detach it everywhere and delete it.
     /// </summary>
+    /// <param name="tagId">Tag to delete.</param>
+    /// <param name="force">When <see langword="true"/>, detach the tag from every document and template before deleting; when <see langword="false"/> the API returns <c>409 Conflict</c> if the tag is still attached.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeleteAsync(
         string tagId,
         bool force = false,
@@ -87,6 +101,9 @@ public sealed class TagResource : BaseResource
     }
 
     /// <summary><c>GET /accounts/{account_id}/documents/{document_id}/tags</c> — list the tags currently attached to a document.</summary>
+    /// <param name="documentId">Document whose attached tags to list.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public async Task<IReadOnlyList<Tag>> ListForDocumentAsync(
         string documentId,
         string? accountId = null,
@@ -102,6 +119,10 @@ public sealed class TagResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{account_id}/documents/{document_id}/tags</c> — attach tags to a document, keeping any already attached. Tags are referenced by name and created on the fly if they do not exist.</summary>
+    /// <param name="documentId">Document to attach tags to.</param>
+    /// <param name="tags">Tag names to attach; any that do not yet exist are created.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<Tag>> AddToDocumentAsync(
         string documentId,
         IReadOnlyList<string> tags,
@@ -112,6 +133,10 @@ public sealed class TagResource : BaseResource
     }
 
     /// <summary><c>PUT /accounts/{account_id}/documents/{document_id}/tags</c> — replace a document's tags with exactly the supplied set (pass an empty list to clear all).</summary>
+    /// <param name="documentId">Document whose tags to replace.</param>
+    /// <param name="tags">Exact set of tag names the document should have; pass an empty list to clear all.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<Tag>> SetForDocumentAsync(
         string documentId,
         IReadOnlyList<string> tags,
@@ -127,6 +152,10 @@ public sealed class TagResource : BaseResource
     /// <see cref="AddToDocumentAsync"/> / <see cref="SetForDocumentAsync"/> (which key tags by name),
     /// detach is keyed by tag <b>id</b>; resolve a name to its id via <see cref="ListForDocumentAsync"/> first.
     /// </summary>
+    /// <param name="documentId">Document to detach the tag from.</param>
+    /// <param name="tagId">Tag to detach, keyed by tag id (not name).</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task RemoveFromDocumentAsync(
         string documentId,
         string tagId,
