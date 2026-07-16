@@ -1,5 +1,57 @@
 # Changelog
 
+## 1.3.0
+
+A full file-by-file audit against the live OpenAPI spec (`https://api.assinafy.com.br/v1/docs/openapi.json`,
+86 documented operations) and the sandbox API. Coverage went from ~75% to the entire documented
+JSON surface; the only omitted endpoints are the two browser-facing OAuth redirects.
+
+### Added — endpoint coverage
+
+- **New `Accounts` resource** covering all documented account endpoints:
+  `ListAsync`, `GetAsync`, `CreateAsync`, `UpdateAsync`, `DeleteAsync` (with `force`),
+  `GetThemeAsync`, and logo `DownloadLogoAsync` / `UploadLogoAsync` / `DeleteLogoAsync`.
+  Use `Accounts.ListAsync()` to discover the account ID that most other calls require.
+- **`Assignments.ListAsync`** — `GET /assignments` (the account context is sent automatically
+  via the `accountId` query parameter).
+- **`Documents.RenameAsync`** — `PATCH /documents/{id}` (allowed before signing starts).
+- **`Documents.SearchAsync`** — the compact `GET /accounts/{id}/documents/search` route.
+- **`Signing.SearchDocumentsAsync`** — the compact `GET /signers/{id}/documents/search` route.
+- **`Authentication.LinkSocialLoginAsync`** — `POST /auth/link-social-login` (bearer-token auth).
+
+### Fixed — model fidelity (silent data loss)
+
+- **`Signer.IsSignatureReusable`** added — `GET /signers/self` returns `is_signature_reusable`;
+  when `false` a signer declined to reuse a saved signature, so clients must not pre-render it.
+- **`Template.Tags` and `TemplateDetails.DefaultDocumentTags`** added — templates carry tag
+  arrays that were previously discarded by the deserializer.
+- **`AssignmentSigner.NotificationHistory`** is now a typed `IReadOnlyList<NotificationHistoryEntry>`
+  (was an opaque `JsonElement`), so per-channel delivery history is directly usable.
+- `DocumentPage`/`TemplatePage` `Height`/`Width` are now `int` (matching the spec and API) rather than `double`.
+
+### Fixed — robustness & DX
+
+- Non-JSON or malformed response bodies no longer escape as a raw `System.Text.Json.JsonException`.
+  A new **`SerializationException`** (deriving from `AssinafyException`) wraps unparseable 2xx bodies;
+  unsuccessful responses surface as `ApiException`, so `catch (AssinafyException)` covers every failure.
+- **DI:** `AssinafyClientOptions.Timeout` is now honored on the `AddAssinafy` path (it was previously
+  ignored because the factory-created `HttpClient` kept the 100s default).
+- Added enum-value constant classes (`AssignmentMethods`, `SignerChannels`, `AccountNotificationSenderTypes`)
+  and centralized the signer-access-code query construction (DRY).
+
+### Documentation
+
+- Every public type, member, method parameter, and exception now carries XML documentation.
+  `CS1591` is enforced as an error (with `TreatWarningsAsErrors`), so the API reference stays complete.
+
+### Build / CI
+
+- Publish workflow now pushes to **NuGet.org** (gated on a `NUGET_API_KEY` secret) in addition to
+  GitHub Packages, and attaches build-provenance attestation.
+- CI gains a least-privilege `permissions` block and `concurrency` cancellation; a secret-gated
+  nightly **live-integration** workflow was added; Dependabot keeps Actions and NuGet deps current.
+- `LangVersion` pinned to `12.0` and symbols embedded (with SourceLink) for reproducible, debuggable builds.
+
 ## 1.2.1
 
 All changes were verified end-to-end against the live API

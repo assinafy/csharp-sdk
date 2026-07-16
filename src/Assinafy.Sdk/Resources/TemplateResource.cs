@@ -9,6 +9,9 @@ public sealed class TemplateResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary><c>GET /accounts/{account_id}/templates</c> — list templates in a workspace with optional <c>status</c>, <c>search</c>, <c>sort</c> filters.</summary>
+    /// <param name="queryParams">Optional query filters such as <c>status</c>, <c>search</c>, and <c>sort</c>.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<TemplateListItem>> ListAsync(
         IDictionary<string, string?>? queryParams = null,
         string? accountId = null,
@@ -22,6 +25,9 @@ public sealed class TemplateResource : BaseResource
     }
 
     /// <summary><c>GET /accounts/{account_id}/templates/{template_id}</c> — fetch template details including roles, pages, and field placements.</summary>
+    /// <param name="templateId">Template to fetch.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<TemplateDetails> GetAsync(
         string templateId,
         string? accountId = null,

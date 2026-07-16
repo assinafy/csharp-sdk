@@ -20,6 +20,9 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Authentication and user API-key endpoints.</summary>
     public AuthenticationResource Authentication { get; }
 
+    /// <summary>Workspace account management: list/create/read/update/delete accounts, theme, and logo.</summary>
+    public AccountResource Accounts { get; }
+
     /// <summary>Document upload, lookup, download, activities, and verification.</summary>
     public DocumentResource Documents { get; }
 
@@ -82,9 +85,10 @@ public sealed class AssinafyClient : IDisposable
         var authenticate = BuildAuthenticator(options);
 
         Authentication = new AuthenticationResource(_http, authenticate);
+        Accounts = new AccountResource(_http, options.AccountId, authenticate);
         Documents = new DocumentResource(_http, options.AccountId, authenticate);
         Signers = new SignerResource(_http, options.AccountId, authenticate);
-        Assignments = new AssignmentResource(_http, authenticate);
+        Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
         Templates = new TemplateResource(_http, options.AccountId, authenticate);
         Tags = new TagResource(_http, options.AccountId, authenticate);
         Fields = new FieldResource(_http, options.AccountId, authenticate);

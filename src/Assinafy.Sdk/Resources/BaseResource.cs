@@ -53,6 +53,13 @@ public abstract class BaseResource
         return value;
     }
 
+    /// <summary>Query-parameter name carrying a signer's access code on signer-facing endpoints.</summary>
+    private protected const string SignerAccessCodeParam = "signer-access-code";
+
+    /// <summary>Builds a single-entry query dictionary carrying the signer access code.</summary>
+    private protected static Dictionary<string, string?> AccessCodeQuery(string code) =>
+        new() { [SignerAccessCodeParam] = code };
+
     /// <summary>
     /// Send a request and deserialize the envelope's <c>data</c> into <typeparamref name="T"/>.
     /// May return <see langword="null"/> when the API responds with a success envelope whose
@@ -244,6 +251,25 @@ public abstract class BaseResource
             throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
         }
 
+        try
+        {
+            return ParseEnvelope<T>(json, response);
+        }
+        catch (JsonException ex)
+        {
+            // A non-JSON body (e.g. an HTML 5xx from an intermediary proxy/CDN) or a payload whose
+            // shape does not match T. Keep every failure inside the AssinafyException hierarchy rather
+            // than leaking a raw System.Text.Json.JsonException.
+            if (!response.IsSuccessStatusCode)
+                throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
+
+            throw new SerializationException(
+                $"Failed to parse the API response body as JSON: {Snippet(json)}", ex);
+        }
+    }
+
+    private static T ParseEnvelope<T>(string json, HttpResponseMessage response)
+    {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
@@ -270,6 +296,9 @@ public abstract class BaseResource
 
         return root.Deserialize<T>(JsonOptions)!;
     }
+
+    private static string Snippet(string json) =>
+        json.Length <= 200 ? json : json[..200] + "…";
 
     private static string? ReadMessage(JsonElement root)
     {

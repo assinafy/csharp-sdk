@@ -1,0 +1,43 @@
+name: Live integration
+
+# Exercises the SDK against the real Assinafy sandbox. Runs on demand and nightly.
+# The LiveIntegrationTests self-skip when ASSINAFY_API_KEY / ASSINAFY_ACCOUNT_ID are unset,
+# so this workflow is a no-op (green) until the repository secrets are configured.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *" # 06:00 UTC daily
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live:
+    name: Live sandbox tests
+    runs-on: ubuntu-latest
+    env:
+      ASSINAFY_API_KEY: ${{ secrets.ASSINAFY_API_KEY }}
+      ASSINAFY_ACCOUNT_ID: ${{ secrets.ASSINAFY_ACCOUNT_ID }}
+      ASSINAFY_BASE_URL: ${{ vars.ASSINAFY_BASE_URL || 'https://sandbox.assinafy.com.br/v1' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDKs
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+            10.0.x
+
+      - name: Run live integration tests
+        run: >-
+          dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj
+          --configuration Release
+          --filter "FullyQualifiedName~LiveIntegrationTests"

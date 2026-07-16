@@ -10,6 +10,11 @@ public sealed class SignatureResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /signature?signer-access-code={code}&amp;type={type}</c> — upload the signer's signature or initial image (image/png or image/jpeg).</summary>
+    /// <param name="imageStream">Image data to upload (PNG or JPEG).</param>
+    /// <param name="signerAccessCode">The signer's access code authorizing the upload.</param>
+    /// <param name="type">Which image to upload; one of the <see cref="SignatureImageTypes"/> values (<c>signature</c> or <c>initial</c>). Defaults to <c>signature</c>.</param>
+    /// <param name="contentType">MIME type of the image data (<c>image/png</c> or <c>image/jpeg</c>). Defaults to <c>image/png</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task UploadAsync(
         Stream imageStream,
         string signerAccessCode,
@@ -22,11 +27,9 @@ public sealed class SignatureResource : BaseResource
         var imageType = RequireId(type, "Signature image type");
         ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
 
-        var path = AppendQueryString("signature", new Dictionary<string, string?>
-        {
-            ["signer-access-code"] = code,
-            ["type"] = imageType,
-        });
+        var query = AccessCodeQuery(code);
+        query["type"] = imageType;
+        var path = AppendQueryString("signature", query);
 
         var content = new StreamContent(imageStream);
         content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
@@ -35,6 +38,9 @@ public sealed class SignatureResource : BaseResource
     }
 
     /// <summary><c>GET /signature/{type}?signer-access-code={code}</c> — download the signer's signature or initial image.</summary>
+    /// <param name="signerAccessCode">The signer's access code authorizing the download.</param>
+    /// <param name="type">Which image to download; one of the <see cref="SignatureImageTypes"/> values (<c>signature</c> or <c>initial</c>). Defaults to <c>signature</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<byte[]> DownloadAsync(
         string signerAccessCode,
         string type = SignatureImageTypes.Signature,
@@ -43,10 +49,7 @@ public sealed class SignatureResource : BaseResource
         var code = RequireId(signerAccessCode, "Signer access code");
         var imageType = RequireId(type, "Signature image type");
 
-        var path = AppendQueryString($"signature/{imageType}", new Dictionary<string, string?>
-        {
-            ["signer-access-code"] = code,
-        });
+        var path = AppendQueryString($"signature/{imageType}", AccessCodeQuery(code));
 
         return CallBinaryAsync(path, HttpMethod.Get, cancellationToken);
     }

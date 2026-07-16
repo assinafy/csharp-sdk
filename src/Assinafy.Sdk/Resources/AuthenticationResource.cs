@@ -9,6 +9,8 @@ public sealed class AuthenticationResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /login</c> — exchange email and password for an access token and account list.</summary>
+    /// <param name="request">The user's email and password credentials.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<AuthenticationResult> LoginAsync(
         LoginRequest request,
         CancellationToken cancellationToken = default)
@@ -25,6 +27,8 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>POST /authentication/social-login</c> — exchange a third-party provider token (e.g. Google) for an Assinafy access token.</summary>
+    /// <param name="request">The provider name and the provider-issued token.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<AuthenticationResult> SocialLoginAsync(
         SocialLoginRequest request,
         CancellationToken cancellationToken = default)
@@ -40,7 +44,31 @@ public sealed class AuthenticationResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// <c>POST /auth/link-social-login</c> — link a social-login provider (e.g. Google) to the currently
+    /// authenticated user. Requires a user bearer token (create the client with <c>Token</c> set), not an
+    /// API key.
+    /// </summary>
+    /// <param name="request">The provider name and the provider-issued token to link.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public Task LinkSocialLoginAsync(
+        LinkSocialLoginRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Provider);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Token);
+
+        return CallVoidAsync(
+            "auth/link-social-login",
+            HttpMethod.Post,
+            request,
+            cancellationToken: cancellationToken);
+    }
+
     /// <summary><c>POST /users/api-keys</c> — generate a personal API key. Replaces any previous key for the user.</summary>
+    /// <param name="request">The user's password, required to authorize key generation.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<ApiKeyResult> CreateApiKeyAsync(
         CreateApiKeyRequest request,
         CancellationToken cancellationToken = default)
@@ -56,6 +84,7 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>GET /users/api-keys</c> — fetch a masked representation of the user's current API key.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<ApiKeyResult> GetApiKeyAsync(CancellationToken cancellationToken = default)
     {
         return CallAsync<ApiKeyResult>(
@@ -65,6 +94,7 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>DELETE /users/api-keys</c> — revoke the user's current API key.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task DeleteApiKeyAsync(CancellationToken cancellationToken = default)
     {
         return CallVoidAsync(
@@ -74,6 +104,8 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>PUT /authentication/change-password</c> — change the user's password while authenticated.</summary>
+    /// <param name="request">The user's email, current password, and new password.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<EmailResult> ChangePasswordAsync(
         ChangePasswordRequest request,
         CancellationToken cancellationToken = default)
@@ -91,6 +123,8 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>PUT /authentication/request-password-reset</c> — email the user a password reset token.</summary>
+    /// <param name="request">The email address to send the reset token to.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<EmailResult> RequestPasswordResetAsync(
         RequestPasswordResetRequest request,
         CancellationToken cancellationToken = default)
@@ -106,6 +140,8 @@ public sealed class AuthenticationResource : BaseResource
     }
 
     /// <summary><c>PUT /authentication/reset-password</c> — set a new password using the reset token from <see cref="RequestPasswordResetAsync"/>.</summary>
+    /// <param name="request">The email, reset token, and new password.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     public Task<EmailResult> ResetPasswordAsync(
         ResetPasswordRequest request,
         CancellationToken cancellationToken = default)
