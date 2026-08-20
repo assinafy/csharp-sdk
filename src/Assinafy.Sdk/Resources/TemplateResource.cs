@@ -8,8 +8,8 @@ public sealed class TemplateResource : BaseResource
     internal TemplateResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
         : base(http, defaultAccountId, authenticate) { }
 
-    /// <summary><c>GET /accounts/{account_id}/templates</c> — list templates in a workspace with optional <c>status</c>, <c>search</c>, <c>sort</c> filters.</summary>
-    /// <param name="queryParams">Optional query filters such as <c>status</c>, <c>search</c>, and <c>sort</c>.</param>
+    /// <summary><c>GET /accounts/{account_id}/templates</c> — list templates in a workspace with optional <c>search</c>, <c>page</c>, and <c>per-page</c> filters.</summary>
+    /// <param name="queryParams">Optional <c>search</c>, <c>page</c>, and <c>per-page</c> query filters.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<TemplateListItem>> ListAsync(

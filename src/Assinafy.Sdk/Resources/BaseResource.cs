@@ -61,22 +61,26 @@ public abstract class BaseResource
         new() { [SignerAccessCodeParam] = code };
 
     /// <summary>
-    /// Send a request and deserialize the envelope's <c>data</c> into <typeparamref name="T"/>.
-    /// May return <see langword="null"/> when the API responds with a success envelope whose
-    /// <c>data</c> is absent or <c>null</c> (e.g. void/delete endpoints). Callers expecting a
-    /// value should use a non-list <typeparamref name="T"/>; list callers should prefer
-    /// <see cref="CallListBodyAsync{T}"/>, which normalises a missing payload to an empty list.
+    /// Send a request and deserialize the envelope's required <c>data</c> into
+    /// <typeparamref name="T"/>. List callers should prefer <see cref="CallListBodyAsync{T}"/>,
+    /// which normalises a missing payload to an empty list.
     /// </summary>
-    private protected Task<T> CallAsync<T>(
+    private protected async Task<T> CallAsync<T>(
         string path,
         HttpMethod method,
         object? body = null,
         IDictionary<string, string>? extraHeaders = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
-        return SendEnvelopeAsync<T>(
+        var result = await SendEnvelopeAsync<T>(
             () => BuildRequest(path, method, body, extraHeaders),
-            cancellationToken);
+            cancellationToken,
+            authenticate).ConfigureAwait(false);
+
+        return result is null
+            ? throw new SerializationException("The API response did not contain the expected data payload.")
+            : result;
     }
 
     /// <summary>
@@ -87,26 +91,34 @@ public abstract class BaseResource
         string path,
         HttpMethod method,
         object? body = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         var result = await SendEnvelopeAsync<List<T>>(
             () => BuildRequest(path, method, body),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            authenticate).ConfigureAwait(false);
 
         return result ?? [];
     }
 
-    private protected Task<T> CallContentAsync<T>(
+    private protected async Task<T> CallContentAsync<T>(
         string path,
         HttpMethod method,
         HttpContent content,
         IDictionary<string, string>? extraHeaders = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         ArgumentNullException.ThrowIfNull(content);
-        return SendEnvelopeAsync<T>(
+        var result = await SendEnvelopeAsync<T>(
             () => BuildContentRequest(path, method, content, extraHeaders),
-            cancellationToken);
+            cancellationToken,
+            authenticate).ConfigureAwait(false);
+
+        return result is null
+            ? throw new SerializationException("The API response did not contain the expected data payload.")
+            : result;
     }
 
     private protected Task CallContentVoidAsync(
@@ -114,36 +126,50 @@ public abstract class BaseResource
         HttpMethod method,
         HttpContent content,
         IDictionary<string, string>? extraHeaders = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         ArgumentNullException.ThrowIfNull(content);
         return SendEnvelopeAsync<object>(
             () => BuildContentRequest(path, method, content, extraHeaders),
-            cancellationToken);
+            cancellationToken,
+            authenticate);
     }
 
     private protected Task CallVoidAsync(
         string path,
         HttpMethod method,
         object? body = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         return SendEnvelopeAsync<object>(
             () => BuildRequest(path, method, body),
-            cancellationToken);
+            cancellationToken,
+            authenticate);
     }
 
     private protected async Task<byte[]> CallBinaryAsync(
         string path,
         HttpMethod method,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         using var response = await SendAsync(
             () => new HttpRequestMessage(method, NormalizePath(path)),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            authenticate).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
             await ParseEnvelopeAsync<object>(response, cancellationToken).ConfigureAwait(false);
+
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        if (string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase) ||
+            mediaType?.EndsWith("+json", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            await ParseEnvelopeAsync<object>(response, cancellationToken).ConfigureAwait(false);
+            throw new SerializationException("The API returned JSON where a binary response was expected.");
+        }
 
         return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -151,13 +177,15 @@ public abstract class BaseResource
     private protected async Task<PaginatedResult<T>> CallListAsync<T>(
         string path,
         IDictionary<string, string?>? queryParams = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool authenticate = true)
     {
         var url = AppendQueryString(path, queryParams);
 
         using var response = await SendAsync(
             () => new HttpRequestMessage(HttpMethod.Get, NormalizePath(url)),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            authenticate).ConfigureAwait(false);
 
         var data = await ParseEnvelopeAsync<List<T>>(response, cancellationToken).ConfigureAwait(false);
 
@@ -170,20 +198,23 @@ public abstract class BaseResource
 
     private async Task<T> SendEnvelopeAsync<T>(
         Func<HttpRequestMessage> requestFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool authenticate)
     {
-        using var response = await SendAsync(requestFactory, cancellationToken).ConfigureAwait(false);
+        using var response = await SendAsync(requestFactory, cancellationToken, authenticate).ConfigureAwait(false);
         return await ParseEnvelopeAsync<T>(response, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<HttpResponseMessage> SendAsync(
         Func<HttpRequestMessage> requestFactory,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool authenticate)
     {
         try
         {
             using var request = requestFactory();
-            _authenticate?.Invoke(request);
+            if (authenticate)
+                _authenticate?.Invoke(request);
             return await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (AssinafyException) { throw; }
@@ -263,8 +294,7 @@ public abstract class BaseResource
             if (!response.IsSuccessStatusCode)
                 throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
 
-            throw new SerializationException(
-                $"Failed to parse the API response body as JSON: {Snippet(json)}", ex);
+            throw new SerializationException("Failed to parse the API response body as JSON.", ex);
         }
     }
 
@@ -273,6 +303,14 @@ public abstract class BaseResource
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
+        if (root.ValueKind != JsonValueKind.Object)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
+
+            throw new JsonException("Expected a JSON response object.");
+        }
+
         if (root.TryGetProperty("status", out var statusEl) &&
             statusEl.ValueKind == JsonValueKind.Number &&
             statusEl.TryGetInt32(out var status))
@@ -280,7 +318,10 @@ public abstract class BaseResource
             var message = ReadMessage(root);
 
             if (status >= 400 || !response.IsSuccessStatusCode)
-                throw new ApiException(status, message);
+            {
+                var errorStatus = status >= 400 ? status : (int)response.StatusCode;
+                throw new ApiException(errorStatus, message, ReadErrorDetails(root));
+            }
 
             if (root.TryGetProperty("data", out var dataEl))
             {
@@ -292,13 +333,13 @@ public abstract class BaseResource
         }
 
         if (!response.IsSuccessStatusCode)
-            throw new ApiException((int)response.StatusCode, ReadMessage(root) ?? response.ReasonPhrase);
+            throw new ApiException(
+                (int)response.StatusCode,
+                ReadMessage(root) ?? response.ReasonPhrase,
+                ReadErrorDetails(root));
 
         return root.Deserialize<T>(JsonOptions)!;
     }
-
-    private static string Snippet(string json) =>
-        json.Length <= 200 ? json : json[..200] + "…";
 
     private static string? ReadMessage(JsonElement root)
     {
@@ -309,6 +350,13 @@ public abstract class BaseResource
             return nameEl.GetString();
 
         return null;
+    }
+
+    private static JsonElement? ReadErrorDetails(JsonElement root)
+    {
+        return root.TryGetProperty("data", out var data) && data.ValueKind != JsonValueKind.Null
+            ? data.Clone()
+            : null;
     }
 
     private protected static string AppendQueryString(string path, IDictionary<string, string?>? queryParams)

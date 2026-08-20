@@ -154,6 +154,38 @@ public sealed class AccountResourceTests
     }
 
     [Fact]
+    public async Task GetStats_UsesDefaultAccountAndSendsGranularityAndMonth()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/accounts/acc/stats?granularity=daily&month=2026-06",
+            FakeHttpMessageHandler.ApiOk(new[]
+            {
+                new
+                {
+                    period = "2026-06-01",
+                    documents_uploaded = 2,
+                    documents_sent = 1,
+                    signature_requests = 3,
+                    signature_requests_email = 2,
+                    signature_requests_whatsapp = 1,
+                    signature_requests_viewed = 1,
+                    signature_requests_completed = 1,
+                    documents_certified = 1,
+                },
+            }));
+
+        var result = await CreateResource(handler).GetStatsAsync(new DocumentStatsParams
+        {
+            Granularity = DocumentStatsGranularities.Daily,
+            Month = "2026-06",
+        });
+
+        result.Should().ContainSingle().Which.DocumentsUploaded.Should().Be(2);
+        handler.Requests.Single().RequestUri!.PathAndQuery.Should()
+            .EndWith("/accounts/acc/stats?granularity=daily&month=2026-06");
+    }
+
+    [Fact]
     public async Task DownloadLogo_ReturnsBinary()
     {
         var handler = new FakeHttpMessageHandler();
@@ -178,6 +210,7 @@ public sealed class AccountResourceTests
         var request = handler.Requests.Single(r => r.Method == HttpMethod.Post);
         request.RequestUri!.AbsolutePath.Should().EndWith("/accounts/acc/logo");
         request.Content.Should().BeOfType<MultipartFormDataContent>();
+        stream.CanRead.Should().BeTrue("the caller owns the uploaded stream");
     }
 
     [Fact]

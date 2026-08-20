@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace Assinafy.Sdk.Exceptions;
 
 /// <summary>
@@ -14,11 +16,19 @@ public sealed class ApiException : AssinafyException
     /// <summary>Human-readable error message reported by the API, or <see langword="null"/> when the response carried none.</summary>
     public string? ApiMessage { get; }
 
+    /// <summary>Structured error details from the envelope's <c>data</c> field, or <see langword="null"/> when absent.</summary>
+    public JsonElement? Details { get; }
+
     /// <summary>Creates a new <see cref="ApiException"/> for the given status code and optional API-supplied message.</summary>
     public ApiException(int statusCode, string? apiMessage = null)
+        : this(statusCode, apiMessage, null) { }
+
+    /// <summary>Creates a new <see cref="ApiException"/> for the given status code, API-supplied message, and structured details.</summary>
+    public ApiException(int statusCode, string? apiMessage, JsonElement? details)
         : base($"API error {statusCode}{(apiMessage != null ? $": {apiMessage}" : string.Empty)}")
     {
         StatusCode = statusCode;
         ApiMessage = apiMessage;
+        Details = details;
     }
 }

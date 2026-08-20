@@ -1,4 +1,3 @@
-using System.Net.Http;
 using System.Text.Json;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
@@ -68,11 +67,19 @@ public sealed class AuditRegressionTests
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Post, "/estimate-resend-cost",
-            FakeHttpMessageHandler.ApiOk(new { total = 0m, has_sufficient_credits = true }));
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                documents = 1,
+                credits = 0.45m,
+                total_credits = 0.45m,
+                has_sufficient_resources = true,
+            }));
 
         var resource = new AssignmentResource(Client(handler));
-        await resource.EstimateResendCostAsync("doc-1", "asg-1", "sgn-1");
+        var result = await resource.EstimateResendCostAsync("doc-1", "asg-1", "sgn-1");
 
+        result.TotalCredits.Should().Be(0.45m);
+        result.HasSufficientResources.Should().BeTrue();
         var request = handler.Requests.Last();
         request.Method.Should().Be(HttpMethod.Post);
         request.RequestUri!.PathAndQuery.Should().EndWith("/signers/sgn-1/estimate-resend-cost");
@@ -104,6 +111,7 @@ public sealed class AuditRegressionTests
                 Name = "Contract",
                 Message = "please sign",
                 EditorFields = [new TemplateEditorField { FieldId = "f1", Value = "v" }],
+                Tags = ["Legal"],
             });
 
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0)).RootElement;
@@ -114,6 +122,7 @@ public sealed class AuditRegressionTests
         body.GetProperty("name").GetString().Should().Be("Contract");
         body.GetProperty("message").GetString().Should().Be("please sign");
         body.GetProperty("editor_fields")[0].GetProperty("field_id").GetString().Should().Be("f1");
+        body.GetProperty("tags")[0].GetString().Should().Be("Legal");
     }
 
     // ---- Signing-progress / fully-signed fallback to per-signer flags ----
@@ -183,7 +192,7 @@ public sealed class AuditRegressionTests
         await act.Should().ThrowAsync<ValidationException>();
     }
 
-    // ---- Authentication: api-keys CRUD + reset-password token guard ----
+    // ---- Authentication: api-keys CRUD + reset-password contract ----
 
     [Fact]
     public async Task ApiKeys_CrudHitDocumentedEndpoints()
@@ -203,17 +212,22 @@ public sealed class AuditRegressionTests
     }
 
     [Fact]
-    public async Task ResetPassword_RequiresToken()
+    public async Task ResetPassword_AllowsOmittedToken()
     {
-        var resource = new AuthenticationResource(Client(new FakeHttpMessageHandler()));
-        var act = () => resource.ResetPasswordAsync(new ResetPasswordRequest
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/authentication/reset-password",
+            FakeHttpMessageHandler.ApiOk(new { email = "user@example.com" }));
+        var resource = new AuthenticationResource(Client(handler));
+
+        var result = await resource.ResetPasswordAsync(new ResetPasswordRequest
         {
             Email = "user@example.com",
             NewPassword = "secret",
-            // Token omitted — the runtime guard must still reject the call.
         });
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        result.Email.Should().Be("user@example.com");
+        JsonDocument.Parse(handler.RequestBodies.Last()).RootElement.TryGetProperty("token", out _)
+            .Should().BeFalse();
     }
 
     // ---- Webhooks: null events guard ----

@@ -20,7 +20,7 @@ public sealed class AuditAdditionsTests
     // ---- New coverage-gap endpoints -------------------------------------------------
 
     [Fact]
-    public async Task Assignments_List_SendsAccountIdQuery()
+    public async Task Assignments_List_UsesDocumentedPaginationOnly()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Get, "/assignments",
@@ -31,7 +31,7 @@ public sealed class AuditAdditionsTests
 
         result.Data.Should().ContainSingle().Which.Id.Should().Be("as1");
         var query = handler.Requests.Single(r => r.RequestUri!.AbsolutePath.EndsWith("/assignments")).RequestUri!.Query;
-        query.Should().Contain("accountId=acc");
+        query.Should().NotContain("accountId");
         query.Should().Contain("page=2");
         query.Should().Contain("per-page=5");
     }
@@ -216,34 +216,48 @@ public sealed class AuditAdditionsTests
     }
 
     [Fact]
-    public async Task Signers_AcceptTerms_PutsAccessCode()
+    public async Task Signers_AcceptTerms_PutsWithQueryCodeAndNoBody()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Put, "/signers/accept-terms",
-            FakeHttpMessageHandler.ApiOk(new { id = "sig-1", full_name = "A", has_accepted_terms = true }));
-        var resource = new SignerResource(Client(handler), "acc");
+            new { status = 200, message = "Terms accepted" });
+        var resource = new SignerResource(
+            Client(handler),
+            "acc",
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
 
         var result = await resource.AcceptTermsAsync("code-1");
 
         result.HasAcceptedTerms.Should().BeTrue();
-        var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
-        body.RootElement.GetProperty("signer-access-code").GetString().Should().Be("code-1");
+        handler.Requests.Should().ContainSingle();
+        handler.Requests.First().RequestUri!.PathAndQuery.Should().Be(
+            "/v1/signers/accept-terms?signer-access-code=code-1");
+        handler.Requests.Should().OnlyContain(request => !request.Headers.Contains("X-Api-Key"));
+        handler.RequestBodies.First().Should().BeEmpty();
     }
 
     [Fact]
-    public async Task Signers_VerifyEmail_PostsCodes()
+    public async Task Signers_VerifyEmail_UsesQueryAccessCodeAndBodyVerificationCode()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Post, "/verify",
-            FakeHttpMessageHandler.ApiOk(new { is_email_verified = true, email = "a@b.com" }));
-        var resource = new SignerResource(Client(handler), "acc");
+            new { status = 200, message = "Email verified" });
+        var resource = new SignerResource(
+            Client(handler),
+            "acc",
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
 
         var result = await resource.VerifyEmailAsync("code-1", "123456");
 
         result.IsEmailVerified.Should().BeTrue();
-        var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
-        body.RootElement.GetProperty("signer-access-code").GetString().Should().Be("code-1");
+        result.Email.Should().BeNull();
+        handler.Requests.Should().ContainSingle();
+        handler.Requests.First().RequestUri!.PathAndQuery.Should().Be(
+            "/v1/verify?signer-access-code=code-1");
+        handler.Requests.Should().OnlyContain(request => !request.Headers.Contains("X-Api-Key"));
+        var body = JsonDocument.Parse(handler.RequestBodies.First(value => value.Length > 0));
         body.RootElement.GetProperty("verification-code").GetString().Should().Be("123456");
+        body.RootElement.TryGetProperty("signer-access-code", out _).Should().BeFalse();
     }
 
     // ---- Model fidelity (silent data-loss fixes) -----------------------------------

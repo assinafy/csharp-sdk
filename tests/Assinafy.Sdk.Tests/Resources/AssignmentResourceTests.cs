@@ -10,8 +10,10 @@ namespace Assinafy.Sdk.Tests.Resources;
 
 public sealed class AssignmentResourceTests
 {
-    private static AssignmentResource CreateResource(FakeHttpMessageHandler handler)
-        => new(FakeHttpMessageHandler.CreateClient(handler));
+    private static AssignmentResource CreateResource(
+        FakeHttpMessageHandler handler,
+        string? defaultAccountId = null)
+        => new(FakeHttpMessageHandler.CreateClient(handler), defaultAccountId);
 
     [Fact]
     public void BuildPayload_NormalisesStringSignerIds()
@@ -41,17 +43,22 @@ public sealed class AssignmentResourceTests
     }
 
     [Fact]
-    public void BuildPayload_AllowsEstimationWithoutSignerIds()
+    public void BuildEstimatePayload_UsesOnlyDocumentedFields()
     {
-        var body = AssignmentResource.BuildPayload(
-            new CreateAssignmentRequest
-            {
-                Signers = [new SignerRef { VerificationMethod = "Whatsapp" }, new SignerRef()],
-            },
-            allowSignersWithoutId: true);
+        var body = AssignmentResource.BuildEstimatePayload(new CreateAssignmentRequest
+        {
+            Signers =
+            [
+                new SignerRef { Id = "ignored", VerificationMethod = "Whatsapp", Step = 1 },
+                new SignerRef(),
+            ],
+            Message = "ignored",
+        });
 
         var signers = (List<Dictionary<string, object?>>)body["signers"]!;
         signers[0]["verification_method"].Should().Be("Whatsapp");
+        signers[0].Should().NotContainKeys("id", "step");
+        body.Should().NotContainKey("message");
         signers.Should().HaveCount(2);
     }
 
@@ -95,6 +102,103 @@ public sealed class AssignmentResourceTests
         var postBody = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
         postBody.RootElement.GetProperty("method").GetString().Should().Be("virtual");
         postBody.RootElement.GetProperty("signers").EnumerateArray().Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task Create_SerializesDocumentedCollectDisplaySettings()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/documents/doc-1/assignments",
+            FakeHttpMessageHandler.ApiOk(new { id = "assignment-1", method = "collect" }));
+
+        await CreateResource(handler).CreateAsync("doc-1", new CreateAssignmentRequest
+        {
+            Method = "collect",
+            Signers = ["s1"],
+            Entries =
+            [
+                new AssignmentEntry
+                {
+                    PageId = "page-1",
+                    Fields =
+                    [
+                        new AssignmentEntryField
+                        {
+                            SignerId = "s1",
+                            FieldId = "field-1",
+                            DisplaySettings = new DisplaySettings
+                            {
+                                Left = 69,
+                                Top = 282,
+                                Width = 421,
+                                Height = 45.86,
+                                FontSize = 22,
+                                FontFamily = "Arial",
+                                BackgroundColor = "#D5EBFF",
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        var settings = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0))
+            .RootElement.GetProperty("entries")[0].GetProperty("fields")[0]
+            .GetProperty("display_settings");
+        settings.GetProperty("left").GetDouble().Should().Be(69);
+        settings.GetProperty("top").GetDouble().Should().Be(282);
+        settings.GetProperty("fontSize").GetDouble().Should().Be(22);
+        settings.GetProperty("fontFamily").GetString().Should().Be("Arial");
+        settings.GetProperty("backgroundColor").GetString().Should().Be("#D5EBFF");
+        settings.TryGetProperty("x", out _).Should().BeFalse();
+        settings.TryGetProperty("y", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildPayload_RejectsInvalidCollectGeometry()
+    {
+        var act = () => AssignmentResource.BuildPayload(new CreateAssignmentRequest
+        {
+            Method = "collect",
+            Signers = ["s1"],
+            Entries =
+            [
+                new AssignmentEntry
+                {
+                    PageId = "page-1",
+                    Fields =
+                    [
+                        new AssignmentEntryField
+                        {
+                            SignerId = "s1",
+                            FieldId = "field-1",
+                            DisplaySettings = new DisplaySettings
+                            {
+                                Left = 0,
+                                Top = 0,
+                                Width = 0,
+                                Height = 10,
+                                FontSize = 12,
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+
+        act.Should().Throw<ValidationException>().WithMessage("*positive width*");
+    }
+
+    [Fact]
+    public async Task List_SendsAccountOnlyWhenExplicitlyRequestedForCompatibility()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/assignments",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+
+        await CreateResource(handler, "configured-account").ListAsync(accountId: "legacy-account");
+
+        handler.Requests.Single().RequestUri!.Query.Should().Contain("accountId=legacy-account");
     }
 
     [Fact]

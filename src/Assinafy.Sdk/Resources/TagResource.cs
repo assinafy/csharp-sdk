@@ -1,3 +1,4 @@
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
@@ -65,13 +66,21 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.ClearColor && request.Color is not null)
+            throw new ValidationException("Color and ClearColor cannot both be set.");
+
         var id = AccountId(accountId);
         var tag = RequireId(tagId, "Tag ID");
+
+        var body = new Dictionary<string, object?>();
+        if (request.Name is not null) body["name"] = request.Name;
+        if (request.ClearColor) body["color"] = null;
+        else if (request.Color is not null) body["color"] = request.Color;
 
         return CallAsync<Tag>(
             $"accounts/{id}/tags/{tag}",
             HttpMethod.Put,
-            request,
+            body,
             cancellationToken: cancellationToken);
     }
 
@@ -100,6 +109,26 @@ public sealed class TagResource : BaseResource
         return CallVoidAsync(path, HttpMethod.Delete, cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>DELETE /accounts/{account_id}/tags/{tag_id}</c> — delete a tag and return the API's <c>{"deleted":boolean}</c> payload.</summary>
+    /// <param name="tagId">Tag to delete.</param>
+    /// <param name="force">Whether to detach the tag everywhere before deleting it.</param>
+    /// <param name="accountId">Workspace account; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The API deletion result.</returns>
+    public Task<DeleteTagResult> DeleteWithResultAsync(
+        string tagId,
+        bool force = false,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var id = AccountId(accountId);
+        var tag = RequireId(tagId, "Tag ID");
+        var path = AppendQueryString(
+            $"accounts/{id}/tags/{tag}",
+            force ? new Dictionary<string, string?> { ["force"] = "true" } : null);
+        return CallAsync<DeleteTagResult>(path, HttpMethod.Delete, cancellationToken: cancellationToken);
+    }
+
     /// <summary><c>GET /accounts/{account_id}/documents/{document_id}/tags</c> — list the tags currently attached to a document.</summary>
     /// <param name="documentId">Document whose attached tags to list.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
@@ -118,9 +147,9 @@ public sealed class TagResource : BaseResource
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary><c>POST /accounts/{account_id}/documents/{document_id}/tags</c> — attach tags to a document, keeping any already attached. Tags are referenced by name and created on the fly if they do not exist.</summary>
+    /// <summary><c>POST /accounts/{account_id}/documents/{document_id}/tags</c> — attach existing tags to a document, keeping any already attached.</summary>
     /// <param name="documentId">Document to attach tags to.</param>
-    /// <param name="tags">Tag names to attach; any that do not yet exist are created.</param>
+    /// <param name="tags">Tag IDs to attach. Create missing tags first with <see cref="CreateAsync"/>.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<Tag>> AddToDocumentAsync(
@@ -134,7 +163,7 @@ public sealed class TagResource : BaseResource
 
     /// <summary><c>PUT /accounts/{account_id}/documents/{document_id}/tags</c> — replace a document's tags with exactly the supplied set (pass an empty list to clear all).</summary>
     /// <param name="documentId">Document whose tags to replace.</param>
-    /// <param name="tags">Exact set of tag names the document should have; pass an empty list to clear all.</param>
+    /// <param name="tags">Exact set of tag IDs the document should have; pass an empty list to clear all.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task<IReadOnlyList<Tag>> SetForDocumentAsync(
@@ -148,12 +177,10 @@ public sealed class TagResource : BaseResource
 
     /// <summary>
     /// <c>DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id}</c> — detach a single
-    /// tag from a document without deleting the tag itself. Note: unlike
-    /// <see cref="AddToDocumentAsync"/> / <see cref="SetForDocumentAsync"/> (which key tags by name),
-    /// detach is keyed by tag <b>id</b>; resolve a name to its id via <see cref="ListForDocumentAsync"/> first.
+    /// tag from a document without deleting the tag itself.
     /// </summary>
     /// <param name="documentId">Document to detach the tag from.</param>
-    /// <param name="tagId">Tag to detach, keyed by tag id (not name).</param>
+    /// <param name="tagId">Tag ID to detach.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task RemoveFromDocumentAsync(
@@ -167,6 +194,27 @@ public sealed class TagResource : BaseResource
         var tag = RequireId(tagId, "Tag ID");
 
         return CallVoidAsync(
+            $"accounts/{id}/documents/{document}/tags/{tag}",
+            HttpMethod.Delete,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary><c>DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id}</c> — detach a tag and return the API's <c>{"detached":boolean}</c> payload.</summary>
+    /// <param name="documentId">Document to detach from.</param>
+    /// <param name="tagId">Tag ID to detach.</param>
+    /// <param name="accountId">Workspace account; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The API detach result.</returns>
+    public Task<DetachTagResult> RemoveFromDocumentWithResultAsync(
+        string documentId,
+        string tagId,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var id = AccountId(accountId);
+        var document = RequireId(documentId, "Document ID");
+        var tag = RequireId(tagId, "Tag ID");
+        return CallAsync<DetachTagResult>(
             $"accounts/{id}/documents/{document}/tags/{tag}",
             HttpMethod.Delete,
             cancellationToken: cancellationToken);

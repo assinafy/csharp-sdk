@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Resources;
@@ -47,9 +48,22 @@ public sealed class DocumentResourceTests
         var result = await resource.UploadAsync(stream, "contract.pdf");
 
         result.Id.Should().Be("doc-1");
+        stream.CanRead.Should().BeTrue("the SDK must not dispose caller-owned streams");
         handler.Requests.Should().Contain(r =>
             r.RequestUri!.PathAndQuery.Contains("/v1/accounts/acc/documents") &&
             r.Method == HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task WaitUntilReady_RejectsNonPositiveTimingValues()
+    {
+        var resource = CreateResource(new FakeHttpMessageHandler());
+
+        await ((Func<Task>)(() => resource.WaitUntilReadyAsync("doc-1", TimeSpan.Zero)))
+            .Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => resource.WaitUntilReadyAsync(
+                "doc-1", TimeSpan.FromSeconds(1), TimeSpan.Zero)))
+            .Should().ThrowAsync<ValidationException>();
     }
 
     [Fact]
@@ -137,6 +151,50 @@ public sealed class DocumentResourceTests
         result.Id.Should().Be("doc-1");
         handler.Requests.Should().Contain(r =>
             r.RequestUri!.PathAndQuery.Contains("/accounts/acc/templates/tmpl-1/documents"));
+    }
+
+    [Fact]
+    public async Task CreateFromTemplate_RejectsMissingEditorValueBeforeTransport()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+
+        var act = () => resource.CreateFromTemplateAsync(
+            "tmpl-1",
+            [new TemplateSigner { RoleId = "role-1", Id = "signer-1" }],
+            new CreateDocumentFromTemplateOptions
+            {
+                EditorFields = [new TemplateEditorField { FieldId = "field-1", Value = null! }],
+            });
+
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage("*editor field value*");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EstimateFromTemplate_SendsOnlyEstimateSignerFields()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/templates/tmpl-1/documents/estimate-cost",
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                documents = 1,
+                total_credits = 0.45m,
+                has_sufficient_resources = true,
+            }));
+
+        var resource = CreateResource(handler);
+        await resource.EstimateCostFromTemplateAsync(
+            "tmpl-1",
+            [new TemplateSigner { RoleId = "role-1", VerificationMethod = SignerChannels.Whatsapp }]);
+
+        var signer = JsonDocument.Parse(handler.RequestBodies.Last()).RootElement
+            .GetProperty("signers")[0];
+        signer.GetProperty("role_id").GetString().Should().Be("role-1");
+        signer.GetProperty("verification_method").GetString().Should().Be("Whatsapp");
+        signer.TryGetProperty("id", out _).Should().BeFalse();
+        signer.TryGetProperty("step", out _).Should().BeFalse();
     }
 
     [Fact]

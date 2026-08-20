@@ -41,6 +41,10 @@ public sealed record DocumentArtifacts
     [JsonPropertyName("certificate-page")]
     public string? CertificatePage { get; init; }
 
+    /// <summary>URL of the signed PDF using the PAdES signature format, or <see langword="null"/> if unavailable.</summary>
+    [JsonPropertyName("pades")]
+    public string? Pades { get; init; }
+
     /// <summary>URL of the signed PDF bundled with the certificate page, or <see langword="null"/> if not yet produced.</summary>
     [JsonPropertyName("bundle")]
     public string? Bundle { get; init; }
@@ -312,6 +316,11 @@ public sealed class CreateDocumentFromTemplateOptions
 
     /// <summary>Editor field values to bake into the generated document.</summary>
     public IReadOnlyList<TemplateEditorField>? EditorFields { get; set; }
+
+    /// <summary>
+    /// Tag names to attach. Missing names are created, then merged with the template's default tags.
+    /// </summary>
+    public IReadOnlyList<string>? Tags { get; set; }
 }
 
 /// <summary>A single editor field value to bake into a document generated from a template.</summary>
@@ -320,8 +329,8 @@ public sealed class TemplateEditorField
     /// <summary>The field identifier, matching the <c>field_id</c> in the template data.</summary>
     public required string FieldId { get; set; }
 
-    /// <summary>The value to assign to the field.</summary>
-    public object? Value { get; set; }
+    /// <summary>The required string value to assign to the field.</summary>
+    public required string Value { get; set; }
 }
 
 /// <summary>

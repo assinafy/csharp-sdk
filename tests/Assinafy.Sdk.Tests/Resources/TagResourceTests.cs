@@ -86,6 +86,27 @@ public sealed class TagResourceTests
     }
 
     [Fact]
+    public async Task Update_CanClearColorExplicitly()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/accounts/acc/tags/t1",
+            FakeHttpMessageHandler.ApiOk(Tag("t1", "Renamed")));
+        var resource = CreateResource(handler);
+
+        await resource.UpdateAsync("t1", new UpdateTagRequest { ClearColor = true });
+
+        var body = JsonDocument.Parse(handler.RequestBodies.Single());
+        body.RootElement.GetProperty("color").ValueKind.Should().Be(JsonValueKind.Null);
+
+        var invalid = () => resource.UpdateAsync("t1", new UpdateTagRequest
+        {
+            Color = "00FF00",
+            ClearColor = true,
+        });
+        await invalid.Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
     public async Task Delete_AddsForceQueryWhenRequested()
     {
         var handler = new FakeHttpMessageHandler();
@@ -150,10 +171,10 @@ public sealed class TagResourceTests
             FakeHttpMessageHandler.ApiOk(new[] { Tag("t1", "Contracts") }));
 
         var resource = CreateResource(handler);
-        await resource.AddToDocumentAsync("doc-1", ["Contracts"]);
+        await resource.AddToDocumentAsync("doc-1", ["t1"]);
 
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
-        body.RootElement.GetProperty("tags").EnumerateArray().Single().GetString().Should().Be("Contracts");
+        body.RootElement.GetProperty("tags").EnumerateArray().Single().GetString().Should().Be("t1");
         handler.Requests.Should().Contain(r => r.Method == HttpMethod.Post);
     }
 
@@ -198,5 +219,20 @@ public sealed class TagResourceTests
             .Should().ThrowAsync<ValidationException>();
         await ((Func<Task>)(() => resource.RemoveFromDocumentAsync("doc-1", "")))
             .Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
+    public async Task ResultMethods_PreserveDeleteAndDetachPayloads()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Delete, "/accounts/acc/tags/t1",
+            FakeHttpMessageHandler.ApiOk(new { deleted = true }));
+        handler.AddJsonResponse(HttpMethod.Delete, "/accounts/acc/documents/doc-1/tags/t1",
+            FakeHttpMessageHandler.ApiOk(new { detached = true }));
+        var resource = CreateResource(handler);
+
+        (await resource.DeleteWithResultAsync("t1")).Deleted.Should().BeTrue();
+        (await resource.RemoveFromDocumentWithResultAsync("doc-1", "t1"))
+            .Detached.Should().BeTrue();
     }
 }

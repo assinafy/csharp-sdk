@@ -13,17 +13,20 @@ public sealed class SigningResourceTests
         => new(FakeHttpMessageHandler.CreateClient(handler));
 
     [Fact]
-    public async Task Get_AddsSignerAccessCode()
+    public async Task Get_AddsSignerAccessCodeWithoutUserCredentials()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Get, "signer-access-code=access",
             FakeHttpMessageHandler.ApiOk(new { id = "doc-1", name = "contract.pdf", status = "pending_signature", created_at = "2026-01-01", updated_at = "2026-01-01" }));
 
-        var resource = CreateResource(handler);
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
         var result = await resource.GetAsync("access");
 
         result.Id.Should().Be("doc-1");
         handler.Requests.Should().Contain(r => r.RequestUri!.PathAndQuery.Contains("/sign?signer-access-code=access"));
+        handler.Requests.Single().Headers.Contains("X-Api-Key").Should().BeFalse();
     }
 
     [Fact]
@@ -62,20 +65,81 @@ public sealed class SigningResourceTests
     }
 
     [Fact]
-    public async Task ListDocuments_AddsSignerAccessCodeAndFilters()
+    public async Task ListDocuments_PreservesExplicitLegacyFilters()
     {
         var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Get, "status=pending_signature",
+        handler.AddJsonResponse(HttpMethod.Get, "/signers/signer-1/documents",
             FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
 
         var resource = CreateResource(handler);
         await resource.ListDocumentsAsync(
             "signer-1",
             "access",
-            new SignerDocumentListParams { Status = "pending_signature" });
+            new SignerDocumentListParams
+            {
+                Status = "pending_signature",
+                Method = "virtual",
+                Search = "ignored",
+                Sort = "name",
+                Page = 2,
+                PerPage = 50,
+            });
 
-        handler.Requests.Should().Contain(r =>
-            r.RequestUri!.PathAndQuery.Contains("/signers/signer-1/documents") &&
-            r.RequestUri.Query.Contains("signer-access-code=access"));
+        var query = handler.Requests.Single().RequestUri!.Query;
+        query.Should().Contain("signer-access-code=access");
+        query.Should().Contain("page=2");
+        query.Should().Contain("per-page=50");
+        query.Should().Contain("status=pending_signature");
+        query.Should().Contain("method=virtual");
+        query.Should().Contain("search=ignored");
+        query.Should().Contain("sort=name");
+    }
+
+    [Fact]
+    public async Task SearchDocuments_PreservesExplicitLegacyFiltersAndPagination()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/signers/signer-1/documents/search",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+
+        await CreateResource(handler).SearchDocumentsAsync(
+            "signer-1",
+            "access",
+            new SignerDocumentListParams
+            {
+                Search = "contract",
+                Status = "pending_signature",
+                Page = 2,
+            });
+
+        var query = handler.Requests.Single().RequestUri!.Query;
+        query.Should().Contain("signer-access-code=access");
+        query.Should().Contain("search=contract");
+        query.Should().Contain("status=pending_signature");
+        query.Should().Contain("page=2");
+    }
+
+    [Fact]
+    public async Task Download_UsesPublicArtifactRouteWithoutAccessCodeOrUserCredentials()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddRawResponse(
+            HttpMethod.Get,
+            "/signers/signer-1/documents/doc-1/download/pades",
+            "pdf");
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
+
+        var result = await resource.DownloadAsync(
+            "signer-1",
+            "doc-1",
+            artifactName: DocumentArtifactNames.Pades);
+
+        result.Should().NotBeEmpty();
+        var sent = handler.Requests.Single();
+        sent.RequestUri!.PathAndQuery.Should().Be(
+            "/v1/signers/signer-1/documents/doc-1/download/pades");
+        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
     }
 }

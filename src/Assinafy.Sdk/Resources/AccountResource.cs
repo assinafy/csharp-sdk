@@ -1,11 +1,12 @@
 using System.Net.Http.Headers;
 using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Resources;
 
 /// <summary>
 /// Workspace account management: list the caller's accounts, create/read/update/delete
-/// an account, read its branding theme, and manage its logo image. The account-scoped
+/// an account, read its branding theme and document KPIs, and manage its logo image. The account-scoped
 /// methods fall back to the client's default account ID when none is passed.
 /// </summary>
 public sealed class AccountResource : BaseResource
@@ -108,6 +109,23 @@ public sealed class AccountResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary><c>GET /accounts/{account_id}/stats</c> — retrieve the account's document KPI series.</summary>
+    /// <param name="parameters">Optional monthly or daily grouping and target month.</param>
+    /// <param name="accountId">Account whose KPIs to retrieve; falls back to the client default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    public async Task<IReadOnlyList<DocumentStatsRow>> GetStatsAsync(
+        DocumentStatsParams? parameters = null,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var id = AccountId(accountId);
+        var path = AppendQueryString($"accounts/{id}/stats", parameters?.ToQueryParameters());
+        return await CallListBodyAsync<DocumentStatsRow>(
+            path,
+            HttpMethod.Get,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary><c>GET /accounts/{account_id}/logo</c> — download the account logo image binary. Throws <c>404</c> when no logo is set.</summary>
     /// <param name="accountId">Account whose logo to download; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -139,7 +157,7 @@ public sealed class AccountResource : BaseResource
         var id = AccountId(accountId);
 
         var content = new MultipartFormDataContent();
-        var streamContent = new StreamContent(imageStream);
+        var streamContent = new NonDisposingStreamContent(imageStream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(streamContent, "file", fileName);
 

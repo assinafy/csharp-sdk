@@ -37,3 +37,7 @@ dotnet_style_qualification_for_event = false:warning
 # Diagnostics
 dotnet_diagnostic.IDE0005.severity = warning
 dotnet_diagnostic.CA1822.severity = none
+
+[tests/**/*.cs]
+# Test names describe behavior; the Fact return type already makes asynchrony explicit.
+dotnet_naming_rule.async_methods.severity = none

@@ -49,8 +49,8 @@ public sealed partial class SignerResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
-    /// <summary><c>GET /accounts/{account_id}/signers</c> — list signers with optional <c>search</c>, <c>sort</c>, <c>page</c>, <c>per-page</c> filters.</summary>
-    /// <param name="queryParams">Optional filters. Accepted keys: <c>search</c> (partial match on the signer's full name or email); <c>sort</c>; <c>page</c> (1-based page number); and <c>per-page</c> (page size).</param>
+    /// <summary><c>GET /accounts/{account_id}/signers</c> — list signers with optional <c>search</c>, <c>page</c>, and <c>per-page</c> filters.</summary>
+    /// <param name="queryParams">Optional filters: <c>search</c> (partial name or email match), <c>page</c> (1-based), and <c>per-page</c> (page size).</param>
     /// <param name="accountId">Workspace account whose signers to list; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<Signer>> ListAsync(
@@ -151,29 +151,39 @@ public sealed partial class SignerResource : BaseResource
         var code = RequireId(signerAccessCode, "Signer access code");
         var path = AppendQueryString("signers/self", AccessCodeQuery(code));
 
-        return CallAsync<Signer>(path, HttpMethod.Get, cancellationToken: cancellationToken);
+        return CallAsync<Signer>(
+            path,
+            HttpMethod.Get,
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 
-    /// <summary><c>PUT /signers/accept-terms</c> — signer-facing endpoint: record acceptance of the terms of use.</summary>
+    /// <summary><c>PUT /signers/accept-terms</c> — record acceptance of the terms. The API returns no data; the returned <see cref="Signer"/> is a synthetic legacy-compatibility result.</summary>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public Task<Signer> AcceptTermsAsync(
+    /// <returns>A compatibility result with <see cref="Signer.HasAcceptedTerms"/> set. The current operation returns no data.</returns>
+    public async Task<Signer> AcceptTermsAsync(
         string signerAccessCode,
         CancellationToken cancellationToken = default)
     {
         var code = RequireId(signerAccessCode, "Signer access code");
-        return CallAsync<Signer>(
-            "signers/accept-terms",
+        var path = AppendQueryString("signers/accept-terms", AccessCodeQuery(code));
+
+        await CallVoidAsync(
+            path,
             HttpMethod.Put,
-            new Dictionary<string, object?> { [SignerAccessCodeParam] = code },
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false).ConfigureAwait(false);
+
+        return new Signer { HasAcceptedTerms = true };
     }
 
-    /// <summary><c>POST /verify</c> — signer-facing endpoint: verify the OTP code emailed to the signer.</summary>
+    /// <summary><c>POST /verify</c> — verify the emailed OTP. The API returns no data; the returned <see cref="VerifyEmailResult"/> is a synthetic legacy-compatibility result.</summary>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
     /// <param name="verificationCode">The one-time code that was emailed to the signer.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public Task<VerifyEmailResult> VerifyEmailAsync(
+    /// <returns>A compatibility result reporting successful verification. The current operation returns no data.</returns>
+    public async Task<VerifyEmailResult> VerifyEmailAsync(
         string signerAccessCode,
         string verificationCode,
         CancellationToken cancellationToken = default)
@@ -181,27 +191,54 @@ public sealed partial class SignerResource : BaseResource
         var accessCode = RequireId(signerAccessCode, "Signer access code");
         var code = RequireId(verificationCode, "Verification code");
 
-        return CallAsync<VerifyEmailResult>(
-            "verify",
+        var path = AppendQueryString("verify", AccessCodeQuery(accessCode));
+
+        await CallVoidAsync(
+            path,
             HttpMethod.Post,
             new Dictionary<string, object?>
             {
-                [SignerAccessCodeParam] = accessCode,
                 ["verification-code"] = code,
             },
-            cancellationToken: cancellationToken);
+            cancellationToken,
+            authenticate: false).ConfigureAwait(false);
+
+        return new VerifyEmailResult
+        {
+            IsEmailVerified = true,
+        };
     }
 
     /// <summary>
     /// <c>PUT /documents/{document_id}/signers/confirm-data</c> — signer-facing endpoint:
-    /// confirm or supply email / WhatsApp number for a virtual assignment, optionally accepting terms.
+    /// confirm or supply the signer's full name, email, and government ID for a virtual assignment.
     /// Virtual assignments require this call to succeed before <see cref="SigningResource.SignAsync"/>.
     /// </summary>
     /// <param name="documentId">Document the signer is party to.</param>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
-    /// <param name="request">The email and/or WhatsApp number to confirm, plus optional terms acceptance; when present, <c>Email</c> must be a valid address.</param>
+    /// <param name="request">The full name, email, and/or government ID to confirm; when present, <c>Email</c> must be a valid address.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public Task ConfirmDataAsync(
+    /// <returns>A task that completes after the signer data is confirmed. Use <see cref="ConfirmDataWithResultAsync"/> to receive the updated signer payload.</returns>
+    public async Task ConfirmDataAsync(
+        string documentId,
+        string signerAccessCode,
+        ConfirmSignerDataRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        _ = await ConfirmDataWithResultAsync(
+            documentId,
+            signerAccessCode,
+            request,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary><c>PUT /documents/{document_id}/signers/confirm-data</c> — confirm signer data and return the complete updated signer payload.</summary>
+    /// <param name="documentId">Document the signer is party to.</param>
+    /// <param name="signerAccessCode">Signer access code.</param>
+    /// <param name="request">Signer values to confirm.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated signer returned by the API.</returns>
+    public Task<Signer> ConfirmDataWithResultAsync(
         string documentId,
         string signerAccessCode,
         ConfirmSignerDataRequest request,
@@ -216,7 +253,21 @@ public sealed partial class SignerResource : BaseResource
             $"documents/{document}/signers/confirm-data",
             AccessCodeQuery(code));
 
-        return CallVoidAsync(path, HttpMethod.Put, request, cancellationToken);
+        var body = new Dictionary<string, object?>();
+        if (request.FullName is not null) body["full_name"] = request.FullName;
+        if (request.Email is not null) body["email"] = request.Email;
+        if (request.GovernmentId is not null) body["government_id"] = request.GovernmentId;
+        if (request.WhatsAppPhoneNumber is not null)
+            body["whatsapp_phone_number"] = request.WhatsAppPhoneNumber;
+        if (request.HasAcceptedTerms.HasValue)
+            body["has_accepted_terms"] = request.HasAcceptedTerms.Value;
+
+        return CallAsync<Signer>(
+            path,
+            HttpMethod.Put,
+            body,
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 
     private static void AssertOptionalEmail(string? email)

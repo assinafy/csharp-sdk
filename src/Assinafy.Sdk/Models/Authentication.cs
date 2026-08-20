@@ -168,7 +168,7 @@ public sealed class ResetPasswordRequest
     /// <summary>The user's email address.</summary>
     public required string Email { get; set; }
 
-    /// <summary>The reset token delivered by <c>RequestPasswordResetAsync</c>. Required by the API and validated at call time.</summary>
+    /// <summary>The reset token delivered by <c>RequestPasswordResetAsync</c>, when the reset flow requires one.</summary>
     public string? Token { get; set; }
 
     /// <summary>The new password to set.</summary>
