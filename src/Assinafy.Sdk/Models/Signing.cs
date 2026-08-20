@@ -60,25 +60,29 @@ public sealed class DeclineAssignmentRequest
     public required string DeclineReason { get; set; }
 }
 
-/// <summary>Optional filters for listing a signer's documents (<c>GET /signers/{signer_id}/documents</c>).</summary>
+/// <summary>
+/// Options shared by signer-document list and search methods. The published list contract accepts
+/// <see cref="Page"/> and <see cref="PerPage"/>; search accepts <see cref="Search"/>. Other explicitly
+/// set values are sent as compatibility extensions for older deployments.
+/// </summary>
 public sealed class SignerDocumentListParams
 {
-    /// <summary>Filter by document status (e.g. <c>pending_signature</c>).</summary>
+    /// <summary>Legacy status filter sent only when explicitly set.</summary>
     public string? Status { get; set; }
 
-    /// <summary>Filter by signature method — <c>virtual</c> or <c>collect</c> (see <see cref="AssignmentMethods"/>).</summary>
+    /// <summary>Legacy assignment-method filter sent only when explicitly set.</summary>
     public string? Method { get; set; }
 
-    /// <summary>Partial match on document name, signer full name, or signer email.</summary>
+    /// <summary>Search term; documented for search and retained as a list compatibility extension.</summary>
     public string? Search { get; set; }
 
-    /// <summary>Sort by <c>name</c> or <c>updated_at</c>.</summary>
+    /// <summary>Legacy sort expression sent only when explicitly set.</summary>
     public string? Sort { get; set; }
 
-    /// <summary>1-based page number.</summary>
+    /// <summary>1-based page number; documented for list and retained as a search compatibility extension.</summary>
     public int? Page { get; set; }
 
-    /// <summary>Items per page (API default is 20).</summary>
+    /// <summary>Items per page; documented for list and retained as a search compatibility extension.</summary>
     public int? PerPage { get; set; }
 }
 

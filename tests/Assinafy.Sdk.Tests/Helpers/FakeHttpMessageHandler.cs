@@ -33,8 +33,10 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
                 if (headers != null)
                     foreach (var (key, value) in headers)
                         response.Headers.TryAddWithoutValidation(key, value);
+
                 return response;
-            }));
+            }
+        ));
     }
 
     public void AddRawResponse(
@@ -48,7 +50,7 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
                    (req.RequestUri?.PathAndQuery.Contains(urlContains, StringComparison.Ordinal) ?? false),
             _ => new HttpResponseMessage(statusCode)
             {
-                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+                Content = new StringContent(body, Encoding.UTF8, "application/octet-stream"),
             }));
     }
 

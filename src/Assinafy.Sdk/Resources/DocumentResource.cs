@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Resources;
 
@@ -65,7 +66,7 @@ public sealed class DocumentResource : BaseResource
         var id = AccountId(accountId);
 
         using var content = new MultipartFormDataContent();
-        var streamContent = new StreamContent(fileStream);
+        var streamContent = new NonDisposingStreamContent(fileStream);
         streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
         content.Add(streamContent, "file", fileName);
 
@@ -75,7 +76,7 @@ public sealed class DocumentResource : BaseResource
             content,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        if (result?.Id is null)
+        if (string.IsNullOrWhiteSpace(result.Id))
             throw new ValidationException("Upload succeeded but no document ID was returned.");
 
         return result;
@@ -173,9 +174,9 @@ public sealed class DocumentResource : BaseResource
         return CallListAsync<DocumentListItem>($"accounts/{id}/documents/search", query, cancellationToken);
     }
 
-    /// <summary><c>GET /documents/{document_id}/download/{artifact_name}</c> — download a document artifact (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, or <c>bundle</c>).</summary>
+    /// <summary><c>GET /documents/{document_id}/download/{artifact_name}</c> — download a document artifact.</summary>
     /// <param name="documentId">Document whose artifact to download.</param>
-    /// <param name="artifactName">Which artifact to download — <c>original</c>, <c>certificated</c>, <c>certificate-page</c>, or <c>bundle</c> (see <see cref="DocumentArtifactNames"/>); defaults to <c>certificated</c>.</param>
+    /// <param name="artifactName">Which artifact to download — <c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, or <c>bundle</c> (see <see cref="DocumentArtifactNames"/>); defaults to <c>certificated</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The raw artifact bytes.</returns>
     public Task<byte[]> DownloadAsync(
@@ -244,35 +245,46 @@ public sealed class DocumentResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = RequireId(documentId, "Document ID");
-        var deadline = DateTime.UtcNow + (maxWait ?? TimeSpan.FromSeconds(30));
+        var wait = maxWait ?? TimeSpan.FromSeconds(30);
         var interval = pollInterval ?? TimeSpan.FromSeconds(2);
+        if (wait <= TimeSpan.Zero)
+            throw new ValidationException("Maximum wait must be greater than zero.");
+        if (interval <= TimeSpan.Zero)
+            throw new ValidationException("Poll interval must be greater than zero.");
+
         var attempts = 0;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(wait);
 
-        while (DateTime.UtcNow < deadline)
+        try
         {
-            attempts++;
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
+            while (true)
             {
-                var details = await GetAsync(id, cancellationToken).ConfigureAwait(false);
-                if (ReadyStatuses.Contains(details.Status)) return details;
-                if (FailedStatuses.Contains(details.Status))
-                    throw new ValidationException($"Document processing failed with status: {details.Status}");
-            }
-            catch (NetworkException) { /* transient — retry until deadline */ }
-            catch (ApiException ex) when (ex.StatusCode >= 500) { /* transient — retry until deadline */ }
-            catch (ApiException ex) when (ex.StatusCode == 404 && attempts <= 3)
-            {
-                /* freshly created document may not be queryable yet — retry briefly */
-            }
+                attempts++;
 
-            await Task.Delay(interval, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var details = await GetAsync(id, deadline.Token).ConfigureAwait(false);
+                    if (ReadyStatuses.Contains(details.Status)) return details;
+                    if (FailedStatuses.Contains(details.Status))
+                        throw new ValidationException($"Document processing failed with status: {details.Status}");
+                }
+                catch (NetworkException) { /* transient — retry until deadline */ }
+                catch (ApiException ex) when (ex.StatusCode >= 500) { /* transient — retry until deadline */ }
+                catch (ApiException ex) when (ex.StatusCode == 404 && attempts <= 3)
+                {
+                    /* freshly created document may not be queryable yet — retry briefly */
+                }
+
+                await Task.Delay(interval, deadline.Token).ConfigureAwait(false);
+            }
         }
-
-        throw new ValidationException(
-            "Timeout waiting for document to be ready.",
-            new Dictionary<string, object?> { ["documentId"] = id, ["attempts"] = attempts });
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new ValidationException(
+                "Timeout waiting for document to be ready.",
+                new Dictionary<string, object?> { ["documentId"] = id, ["attempts"] = attempts });
+        }
     }
 
     /// <summary>Convenience helper: returns true if the document is fully signed by every signer.</summary>
@@ -334,15 +346,24 @@ public sealed class DocumentResource : BaseResource
         var account = AccountId(accountId);
         ArgumentNullException.ThrowIfNull(signers);
 
-        var body = new Dictionary<string, object?>
-        {
-            ["signers"] = signers,
-        };
+        var body = new Dictionary<string, object?> { ["signers"] = BuildTemplateSigners(signers, false) };
 
         if (options?.Name is not null) body["name"] = options.Name;
         if (options?.Message is not null) body["message"] = options.Message;
         if (options?.ExpiresAt is not null) body["expires_at"] = options.ExpiresAt;
-        if (options?.EditorFields is not null) body["editor_fields"] = options.EditorFields;
+        if (options?.EditorFields is not null)
+        {
+            foreach (var field in options.EditorFields)
+            {
+                if (string.IsNullOrWhiteSpace(field.FieldId))
+                    throw new ValidationException("Template editor field ID is required.");
+                if (field.Value is null)
+                    throw new ValidationException("Template editor field value is required.");
+            }
+
+            body["editor_fields"] = options.EditorFields;
+        }
+        if (options?.Tags is not null) body["tags"] = options.Tags;
 
         return CallAsync<DocumentDetails>(
             $"accounts/{account}/templates/{template}/documents",
@@ -369,8 +390,34 @@ public sealed class DocumentResource : BaseResource
         return CallAsync<AssignmentCostEstimate>(
             $"accounts/{account}/templates/{template}/documents/estimate-cost",
             HttpMethod.Post,
-            new { signers },
+            new Dictionary<string, object?> { ["signers"] = BuildTemplateSigners(signers, true) },
             cancellationToken: cancellationToken);
+    }
+
+    internal static IReadOnlyList<Dictionary<string, object?>> BuildTemplateSigners(
+        IReadOnlyList<TemplateSigner> signers,
+        bool estimate)
+    {
+        return signers.Select(signer =>
+        {
+            if (string.IsNullOrWhiteSpace(signer.RoleId))
+                throw new ValidationException("Template role ID is required.");
+
+            var payload = new Dictionary<string, object?> { ["role_id"] = signer.RoleId };
+            if (!estimate)
+            {
+                if (string.IsNullOrWhiteSpace(signer.Id))
+                    throw new ValidationException("Signer ID is required when creating from a template.");
+                payload["id"] = signer.Id;
+                if (signer.Step.HasValue) payload["step"] = signer.Step.Value;
+            }
+
+            if (!string.IsNullOrWhiteSpace(signer.VerificationMethod))
+                payload["verification_method"] = signer.VerificationMethod;
+            if (signer.NotificationMethods?.Length > 0)
+                payload["notification_methods"] = signer.NotificationMethods;
+            return payload;
+        }).ToList();
     }
 
     /// <summary><c>GET /documents/{signature_hash}/verify</c> — verify a document's signature hash and return validity metadata.</summary>
@@ -382,6 +429,7 @@ public sealed class DocumentResource : BaseResource
     {
         var hash = RequireId(signatureHash, "Signature hash");
         return CallAsync<DocumentVerificationResult>($"documents/{hash}/verify", HttpMethod.Get,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 }

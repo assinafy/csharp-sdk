@@ -10,6 +10,9 @@ namespace Assinafy.Sdk.Exceptions;
 /// </summary>
 public sealed class SerializationException : AssinafyException
 {
+    /// <summary>Creates a new <see cref="SerializationException"/> with the given message.</summary>
+    public SerializationException(string message) : base(message) { }
+
     /// <summary>Creates a new <see cref="SerializationException"/> with the given message and inner exception.</summary>
     public SerializationException(string message, Exception inner) : base(message, inner) { }
 }

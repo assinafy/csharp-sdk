@@ -20,8 +20,11 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Authentication and user API-key endpoints.</summary>
     public AuthenticationResource Authentication { get; }
 
-    /// <summary>Workspace account management: list/create/read/update/delete accounts, theme, and logo.</summary>
+    /// <summary>Workspace account management: account CRUD, theme, logo, and document KPIs.</summary>
     public AccountResource Accounts { get; }
+
+    /// <summary>Authenticated-user profile, notification preferences, and cross-account document KPIs.</summary>
+    public UserResource Users { get; }
 
     /// <summary>Document upload, lookup, download, activities, and verification.</summary>
     public DocumentResource Documents { get; }
@@ -86,6 +89,7 @@ public sealed class AssinafyClient : IDisposable
 
         Authentication = new AuthenticationResource(_http, authenticate);
         Accounts = new AccountResource(_http, options.AccountId, authenticate);
+        Users = new UserResource(_http, authenticate);
         Documents = new DocumentResource(_http, options.AccountId, authenticate);
         Signers = new SignerResource(_http, options.AccountId, authenticate);
         Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
@@ -199,15 +203,26 @@ public sealed class AssinafyClient : IDisposable
 
     /// <summary>
     /// Convenience helper: upload a PDF, optionally wait for it to be ready,
-    /// create signers, and create a virtual assignment in a single call.
+    /// create signers, and create an assignment in a single call.
     /// </summary>
+    /// <remarks>
+    /// The API has no transaction spanning these calls. If a later request fails, earlier documents
+    /// and signers remain available to inspect or delete; the SDK does not destroy them automatically.
+    /// </remarks>
     public async Task<UploadAndRequestSignaturesResult> UploadAndRequestSignaturesAsync(
         UploadAndRequestSignaturesOptions options,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.FileStream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(options.FileName);
         if (options.Signers is null || options.Signers.Count == 0)
             throw new ValidationException("At least one signer is required.");
+        if (options.Signers.Any(signer => signer is null || string.IsNullOrWhiteSpace(signer.FullName)))
+            throw new ValidationException("Every signer must have a full name.");
+        if (string.Equals(options.Method, AssignmentMethods.Collect, StringComparison.OrdinalIgnoreCase) &&
+            options.Entries is not { Count: > 0 })
+            throw new ValidationException("Collect assignments require field entries.");
 
         var document = await Documents.UploadAsync(
             options.FileStream,
@@ -233,6 +248,9 @@ public sealed class AssinafyClient : IDisposable
                 options.AccountId,
                 cancellationToken).ConfigureAwait(false);
 
+            if (string.IsNullOrWhiteSpace(created.Id))
+                throw new SerializationException("The API created a signer without returning its ID.");
+
             signerIds.Add(created.Id);
             signerRefs.Add(new SignerRef
             {
@@ -252,6 +270,7 @@ public sealed class AssinafyClient : IDisposable
                 Message = options.Message,
                 ExpiresAt = options.ExpiresAt,
                 CopyReceivers = options.CopyReceivers,
+                Entries = options.Entries,
             },
             cancellationToken).ConfigureAwait(false);
 

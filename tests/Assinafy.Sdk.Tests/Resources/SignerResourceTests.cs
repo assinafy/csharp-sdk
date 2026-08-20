@@ -77,28 +77,44 @@ public sealed class SignerResourceTests
         await resource.UpdateAsync("s1", new UpdateSignerRequest
         {
             FullName = "Updated",
+            GovernmentId = "12345678900",
             WhatsAppPhoneNumber = "+5548999990000",
         });
 
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
+        body.RootElement.GetProperty("government_id").GetString().Should().Be("12345678900");
         body.RootElement.GetProperty("whatsapp_phone_number").GetString().Should().Be("+5548999990000");
     }
 
     [Fact]
-    public async Task ConfirmData_PostsWhatsappPhoneNumberSnakeCase()
+    public async Task ConfirmData_PutsDocumentedFieldsAndReturnsUpdatedSigner()
     {
         var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data", FakeHttpMessageHandler.ApiOk(new { }));
+        handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data", FakeHttpMessageHandler.ApiOk(new
+        {
+            id = "signer-1",
+            full_name = "John Doe",
+            email = "john@example.com",
+            government_id = "12345678900",
+        }));
 
         var resource = CreateResource(handler);
-        await resource.ConfirmDataAsync("doc-1", "access", new ConfirmSignerDataRequest
+        var result = await resource.ConfirmDataWithResultAsync("doc-1", "access", new ConfirmSignerDataRequest
         {
+            FullName = "John Doe",
+            Email = "john@example.com",
+            GovernmentId = "12345678900",
             WhatsAppPhoneNumber = "+5548999990000",
             HasAcceptedTerms = true,
         });
 
+        result.GovernmentId.Should().Be("12345678900");
         var body = JsonDocument.Parse(handler.RequestBodies.Last(b => b.Length > 0));
-        body.RootElement.GetProperty("whatsapp_phone_number").GetString().Should().Be("+5548999990000");
+        body.RootElement.GetProperty("full_name").GetString().Should().Be("John Doe");
+        body.RootElement.GetProperty("email").GetString().Should().Be("john@example.com");
+        body.RootElement.GetProperty("government_id").GetString().Should().Be("12345678900");
+        body.RootElement.GetProperty("whatsapp_phone_number").GetString()
+            .Should().Be("+5548999990000");
         body.RootElement.GetProperty("has_accepted_terms").GetBoolean().Should().BeTrue();
     }
 
@@ -163,19 +179,23 @@ public sealed class SignerResourceTests
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data",
-            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+            FakeHttpMessageHandler.ApiOk(new { id = "signer-1", full_name = "John" }));
 
-        var resource = CreateResource(handler);
+        var resource = new SignerResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            "test-account",
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
         await resource.ConfirmDataAsync(
             "doc-1",
             "access",
             new ConfirmSignerDataRequest
             {
                 Email = "john@example.com",
-                HasAcceptedTerms = true,
             });
 
-        handler.Requests.Should().Contain(r =>
-            r.RequestUri!.PathAndQuery.Contains("/documents/doc-1/signers/confirm-data?signer-access-code=access"));
+        var sent = handler.Requests.Single();
+        sent.RequestUri!.PathAndQuery.Should().Be(
+            "/v1/documents/doc-1/signers/confirm-data?signer-access-code=access");
+        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
     }
 }

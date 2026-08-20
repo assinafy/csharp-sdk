@@ -12,6 +12,9 @@ public static class DocumentArtifactNames
     /// <summary>The standalone certificate page.</summary>
     public const string CertificatePage = "certificate-page";
 
+    /// <summary>The signed PDF using the PAdES signature format.</summary>
+    public const string Pades = "pades";
+
     /// <summary>The signed PDF bundled with the certificate page.</summary>
     public const string Bundle = "bundle";
 }

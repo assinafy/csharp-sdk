@@ -24,26 +24,29 @@ jobs:
   publish:
     name: Pack & publish
     runs-on: ubuntu-latest
-    env:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+    environment: release
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup .NET SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+            8.0.424
+            9.0.317
+            10.0.400
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            VERSION="${{ inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="$INPUT_VERSION"
           else
             VERSION="${GITHUB_REF_NAME#v}"
           fi
@@ -60,20 +63,34 @@ jobs:
         run: dotnet build src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
       - name: Test
-        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release -p:Version=${{ steps.version.outputs.version }}
+        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release --filter "Category!=Live" -p:Version=${{ steps.version.outputs.version }}
 
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-build --output ./artifacts -p:Version=${{ steps.version.outputs.version }}
 
       - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
         with:
           subject-path: ./artifacts/*.nupkg
 
+      - name: Verify NuGet.org configuration
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        run: |
+          if [ -z "$NUGET_USER" ]; then
+            echo "::error::Configure the NUGET_USER repository variable and NuGet.org trusted-publishing policy"
+            exit 1
+          fi
+
+      - name: NuGet.org login
+        id: nuget_login
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
       - name: Push to NuGet.org
-        # Runs only when a NUGET_API_KEY secret is configured; nuget.org is the primary public feed
-        # so `dotnet add package Assinafy.Sdk` works without authenticating to a private source.
-        if: ${{ env.NUGET_API_KEY != '' }}
+        env:
+          NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push "./artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
       - name: Add GitHub Packages source
@@ -85,7 +102,7 @@ jobs:
         run: dotnet nuget push "./artifacts/*.nupkg" --source github --skip-duplicate
 
       - name: Upload package artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nupkg-${{ steps.version.outputs.version }}
           path: ./artifacts/*.nupkg

@@ -52,8 +52,11 @@ public sealed class UploadAndRequestSignaturesOptions
     /// <summary>Optional assignment expiration as an ISO-8601 date-time string; no expiration by default.</summary>
     public string? ExpiresAt { get; set; }
 
-    /// <summary>Optional email addresses that receive a copy of the assignment.</summary>
+    /// <summary>Optional existing signer IDs that receive a copy of the assignment.</summary>
     public string[]? CopyReceivers { get; set; }
+
+    /// <summary>Field placements required when <see cref="Method"/> is <see cref="AssignmentMethods.Collect"/>.</summary>
+    public IReadOnlyList<AssignmentEntry>? Entries { get; set; }
 
     /// <summary>Optional workspace account ID for this call; overrides the client's default account.</summary>
     public string? AccountId { get; set; }

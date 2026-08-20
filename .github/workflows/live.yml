@@ -1,8 +1,6 @@
 name: Live integration
 
-# Exercises the SDK against the real Assinafy sandbox. Runs on demand and nightly.
-# The LiveIntegrationTests self-skip when ASSINAFY_API_KEY / ASSINAFY_ACCOUNT_ID are unset,
-# so this workflow is a no-op (green) until the repository secrets are configured.
+# Exercises the SDK against the Assinafy sandbox. Runs on demand and nightly.
 on:
   workflow_dispatch:
   schedule:
@@ -19,22 +17,39 @@ jobs:
   live:
     name: Live sandbox tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       ASSINAFY_API_KEY: ${{ secrets.ASSINAFY_API_KEY }}
       ASSINAFY_ACCOUNT_ID: ${{ secrets.ASSINAFY_ACCOUNT_ID }}
-      ASSINAFY_BASE_URL: ${{ vars.ASSINAFY_BASE_URL || 'https://sandbox.assinafy.com.br/v1' }}
+      ASSINAFY_BASE_URL: https://sandbox.assinafy.com.br/v1
+      ASSINAFY_TEST_EMAIL_PRIMARY: ${{ secrets.ASSINAFY_TEST_EMAIL_PRIMARY }}
+      ASSINAFY_TEST_EMAIL_SECONDARY: ${{ secrets.ASSINAFY_TEST_EMAIL_SECONDARY }}
 
     steps:
+      - name: Validate sandbox configuration
+        shell: bash
+        run: |
+          missing=0
+          for name in ASSINAFY_API_KEY ASSINAFY_ACCOUNT_ID ASSINAFY_TEST_EMAIL_PRIMARY ASSINAFY_TEST_EMAIL_SECONDARY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::$name is required"
+              missing=1
+            fi
+          done
+          test "$missing" -eq 0
+
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup .NET SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+            8.0.424
+            9.0.317
+            10.0.400
 
       - name: Run live integration tests
         run: >-

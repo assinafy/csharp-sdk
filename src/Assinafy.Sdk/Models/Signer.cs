@@ -21,6 +21,10 @@ public record Signer
     [JsonPropertyName("email")]
     public string? Email { get; init; }
 
+    /// <summary>Government-issued identity number, or <see langword="null"/> when not set.</summary>
+    [JsonPropertyName("government_id")]
+    public string? GovernmentId { get; init; }
+
     /// <summary>Signer's WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> when not set.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; init; }
@@ -70,6 +74,9 @@ public sealed class UpdateSignerRequest
     /// <summary>New email address, or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified email on an in-flight (not yet certificated) document.</summary>
     public string? Email { get; set; }
 
+    /// <summary>New government-issued identity number, or <see langword="null"/> to leave unchanged.</summary>
+    public string? GovernmentId { get; set; }
+
     /// <summary>New WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified WhatsApp on an in-flight (not yet certificated) document.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
@@ -78,18 +85,27 @@ public sealed class UpdateSignerRequest
 /// <summary>Body for <c>PUT /documents/{document_id}/signers/confirm-data</c>.</summary>
 public sealed class ConfirmSignerDataRequest
 {
+    /// <summary>Signer's full name to confirm or supply, or <see langword="null"/> to omit.</summary>
+    public string? FullName { get; set; }
+
     /// <summary>Signer's email address to confirm or supply, or <see langword="null"/> to omit.</summary>
     public string? Email { get; set; }
 
-    /// <summary>Signer's WhatsApp number in E.164 format (normalized on save) to confirm or supply, or <see langword="null"/> to omit.</summary>
+    /// <summary>Signer's government-issued identity number to confirm or supply, or <see langword="null"/> to omit.</summary>
+    public string? GovernmentId { get; set; }
+
+    /// <summary>Compatibility field accepted by older deployments for confirming the WhatsApp number.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 
-    /// <summary>Whether the signer accepts the terms of use, or <see langword="null"/> to omit.</summary>
+    /// <summary>
+    /// Compatibility terms flag. The published schema omits it, but the production signing guide
+    /// still requires it for digital-certificate confirmation.
+    /// </summary>
     public bool? HasAcceptedTerms { get; set; }
 }
 
-/// <summary>Result of submitting the signer's verification code (OTP), reporting whether the signer's email is now verified.</summary>
+/// <summary>Legacy verification response model retained for compatibility. The current verification endpoint returns an envelope without data.</summary>
 public sealed record VerifyEmailResult
 {
     /// <summary>Whether the signer's email address is verified.</summary>

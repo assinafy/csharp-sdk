@@ -23,7 +23,8 @@ public sealed class AuthenticationResource : BaseResource
             "login",
             HttpMethod.Post,
             request,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 
     /// <summary><c>POST /authentication/social-login</c> — exchange a third-party provider token (e.g. Google) for an Assinafy access token.</summary>
@@ -41,13 +42,13 @@ public sealed class AuthenticationResource : BaseResource
             "authentication/social-login",
             HttpMethod.Post,
             request,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 
     /// <summary>
     /// <c>POST /auth/link-social-login</c> — link a social-login provider (e.g. Google) to the currently
-    /// authenticated user. Requires a user bearer token (create the client with <c>Token</c> set), not an
-    /// API key.
+    /// authenticated user. The API accepts either a bearer token or an API key.
     /// </summary>
     /// <param name="request">The provider name and the provider-issued token to link.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -136,7 +137,8 @@ public sealed class AuthenticationResource : BaseResource
             "authentication/request-password-reset",
             HttpMethod.Put,
             request,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 
     /// <summary><c>PUT /authentication/reset-password</c> — set a new password using the reset token from <see cref="RequestPasswordResetAsync"/>.</summary>
@@ -148,13 +150,13 @@ public sealed class AuthenticationResource : BaseResource
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Email);
-        ArgumentException.ThrowIfNullOrWhiteSpace(request.Token);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.NewPassword);
 
         return CallAsync<EmailResult>(
             "authentication/reset-password",
             HttpMethod.Put,
             request,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: false);
     }
 }

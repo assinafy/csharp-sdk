@@ -54,4 +54,24 @@ public sealed class UpdateTagRequest
 
     /// <summary>Optional six-character hex color, with or without a leading <c>#</c>.</summary>
     public string? Color { get; set; }
+
+    /// <summary>When <see langword="true"/>, clear the existing color by sending <c>"color": null</c>. Cannot be combined with <see cref="Color"/>.</summary>
+    [JsonIgnore]
+    public bool ClearColor { get; set; }
+}
+
+/// <summary>Response from deleting a workspace tag.</summary>
+public sealed record DeleteTagResult
+{
+    /// <summary>Whether the tag was deleted.</summary>
+    [JsonPropertyName("deleted")]
+    public bool Deleted { get; init; }
+}
+
+/// <summary>Response from detaching a tag from a document.</summary>
+public sealed record DetachTagResult
+{
+    /// <summary>Whether the tag was detached.</summary>
+    [JsonPropertyName("detached")]
+    public bool Detached { get; init; }
 }

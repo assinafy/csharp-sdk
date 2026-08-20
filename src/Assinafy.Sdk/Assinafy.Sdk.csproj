@@ -12,7 +12,10 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- Pinned (not 'latest') so the analyzer set is deterministic regardless of which
          installed .NET SDK runs the multi-target (net8/9/10) build in CI. -->
-    <AnalysisLevel>8.0</AnalysisLevel>
+    <AnalysisLevel>10.0</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <!-- Do NOT suppress CS1591 (missing XML doc): with TreatWarningsAsErrors this enforces that
          every public API member is documented. -->
@@ -20,7 +23,7 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>1.3.0</Version>
+    <Version>1.3.1</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
@@ -38,10 +41,15 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <EnablePackageValidation>true</EnablePackageValidation>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
+    <None Include="..\..\SECURITY.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\docs\API.md" Pack="true" PackagePath="docs\" />
+    <None Include="..\..\docs\openapi.json" Pack="true" PackagePath="docs\" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
@@ -50,13 +58,13 @@
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.19" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.19" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
   </ItemGroup>
 
   <ItemGroup>

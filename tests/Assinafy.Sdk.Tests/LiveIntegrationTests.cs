@@ -1,5 +1,4 @@
 using System.Text;
-using Assinafy.Sdk;
 using Assinafy.Sdk.Models;
 using FluentAssertions;
 using Xunit;
@@ -7,37 +6,43 @@ using Xunit;
 namespace Assinafy.Sdk.Tests;
 
 /// <summary>
-/// End-to-end tests that exercise the real Assinafy API. They are inert unless the
-/// <c>ASSINAFY_API_KEY</c> and <c>ASSINAFY_ACCOUNT_ID</c> environment variables are set
-/// (optionally <c>ASSINAFY_BASE_URL</c>, defaulting to the sandbox), so the normal unit-test
-/// run and CI are unaffected. Run against the sandbox with, e.g.:
+/// End-to-end tests that exercise the Assinafy sandbox. Required configuration is read from
+/// environment variables, and the tests fail before sending a request if the base URL is not
+/// the sandbox. Run with, e.g.:
 /// <code>
 /// ASSINAFY_API_KEY=... ASSINAFY_ACCOUNT_ID=... ASSINAFY_BASE_URL=https://sandbox.assinafy.com.br/v1 \
+/// ASSINAFY_TEST_EMAIL_PRIMARY=... ASSINAFY_TEST_EMAIL_SECONDARY=... \
 ///   dotnet test --filter FullyQualifiedName~LiveIntegrationTests
 /// </code>
 /// </summary>
 public sealed class LiveIntegrationTests
 {
-    private static AssinafyClient? TryCreateClient()
+    private const string SandboxBaseUrl = "https://sandbox.assinafy.com.br/v1";
+
+    private static AssinafyClient CreateClient(string? accountId = null)
     {
-        var apiKey = Environment.GetEnvironmentVariable("ASSINAFY_API_KEY");
-        var accountId = Environment.GetEnvironmentVariable("ASSINAFY_ACCOUNT_ID");
-        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(accountId))
-            return null;
+        var baseUrl = RequiredEnvironmentVariable("ASSINAFY_BASE_URL").TrimEnd('/');
+        if (!string.Equals(baseUrl, SandboxBaseUrl, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Live tests only run against {SandboxBaseUrl}.");
 
-        var options = new AssinafyClientOptions { ApiKey = apiKey, AccountId = accountId };
-        var baseUrl = Environment.GetEnvironmentVariable("ASSINAFY_BASE_URL");
-        if (!string.IsNullOrWhiteSpace(baseUrl))
-            options.BaseUrl = baseUrl;
-
-        return new AssinafyClient(options);
+        return new AssinafyClient(new AssinafyClientOptions
+        {
+            ApiKey = RequiredEnvironmentVariable("ASSINAFY_API_KEY"),
+            AccountId = accountId ?? RequiredEnvironmentVariable("ASSINAFY_ACCOUNT_ID"),
+            BaseUrl = baseUrl,
+        });
     }
 
+    private static string RequiredEnvironmentVariable(string name) =>
+        Environment.GetEnvironmentVariable(name) is { } value && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : throw new InvalidOperationException($"{name} must be configured to run live tests.");
+
     [Fact]
+    [Trait("Category", "Live")]
     public async Task ReadEndpoints_AuthenticateAndReturnData()
     {
-        var client = TryCreateClient();
-        if (client is null) return; // not configured — skipped
+        var client = CreateClient();
 
         using (client)
         {
@@ -55,10 +60,10 @@ public sealed class LiveIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task UploadWaitGetDelete_RoundTrips()
     {
-        var client = TryCreateClient();
-        if (client is null) return; // not configured — skipped
+        var client = CreateClient();
 
         using (client)
         {
@@ -89,10 +94,10 @@ public sealed class LiveIntegrationTests
     }
 
     [Fact]
+    [Trait("Category", "Live")]
     public async Task NewEndpoints_AccountsAssignmentsAndSearch_Work()
     {
-        var client = TryCreateClient();
-        if (client is null) return; // not configured — skipped
+        var client = CreateClient();
 
         using (client)
         {
@@ -107,12 +112,196 @@ public sealed class LiveIntegrationTests
             theme.AccountName.Should().NotBeNull();
 
             // GET /assignments (account context sent via the accountId query parameter).
-            var assignments = await client.Assignments.ListAsync(new AssignmentListParams { PerPage = 5 });
+            var assignments = await client.Assignments.ListAsync(
+                new AssignmentListParams { PerPage = 5 },
+                account.Id);
             assignments.Should().NotBeNull();
 
             // Compact document-search route.
             var search = await client.Documents.SearchAsync(perPage: 5);
             search.Should().NotBeNull();
+
+            _ = await client.Signers.FindByEmailAsync(
+                RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_PRIMARY"));
+            _ = await client.Signers.FindByEmailAsync(
+                RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_SECONDARY"));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task DisposableAccountLifecycle_CoversAuthenticatedEndpointsAndCleansUp()
+    {
+        var primaryEmail = RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_PRIMARY");
+        var secondaryEmail = RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_SECONDARY");
+        primaryEmail.Should().NotBeEquivalentTo(secondaryEmail);
+
+        using var bootstrap = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        Account? account = null;
+
+        try
+        {
+            account = await bootstrap.Accounts.CreateAsync(new CreateAccountRequest
+            {
+                Name = $"sdk-live-{suffix}",
+            });
+            account.Id.Should().NotBeNullOrWhiteSpace();
+
+            using var client = CreateClient(account.Id);
+
+            (await client.Accounts.GetAsync()).Id.Should().Be(account.Id);
+            (await client.Accounts.UpdateAsync(new UpdateAccountRequest
+            {
+                Name = $"sdk-live-updated-{suffix}",
+            })).Id.Should().Be(account.Id);
+            (await client.Accounts.GetThemeAsync()).AccountName.Should().NotBeNullOrWhiteSpace();
+
+            using (var logo = new MemoryStream(Convert.FromBase64String(
+                       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=")))
+            {
+                await client.Accounts.UploadLogoAsync(logo, "sdk-live.png");
+            }
+            (await client.Accounts.DownloadLogoAsync()).Should().NotBeEmpty();
+            await client.Accounts.DeleteLogoAsync();
+
+            var primarySigner = await client.Signers.CreateAsync(new CreateSignerRequest
+            {
+                FullName = $"SDK Primary {suffix}",
+                Email = primaryEmail,
+            });
+            var secondarySigner = await client.Signers.CreateAsync(new CreateSignerRequest
+            {
+                FullName = $"SDK Secondary {suffix}",
+                Email = secondaryEmail,
+            });
+
+            (await client.Signers.GetAsync(primarySigner.Id)).Email.Should().Be(primaryEmail);
+            (await client.Signers.UpdateAsync(primarySigner.Id, new UpdateSignerRequest
+            {
+                FullName = $"SDK Primary Updated {suffix}",
+            })).FullName.Should().Contain("Updated");
+            (await client.Signers.ListAsync(new Dictionary<string, string?>
+            {
+                ["search"] = primaryEmail,
+            })).Data.Should().Contain(signer => signer.Id == primarySigner.Id);
+            (await client.Signers.FindByEmailAsync(secondaryEmail))?.Id.Should().Be(secondarySigner.Id);
+
+            using var pdf = new MemoryStream(BuildMinimalPdf());
+            var document = await client.Documents.UploadAsync(pdf, $"sdk-live-{suffix}.pdf");
+            var ready = await client.Documents.WaitUntilReadyAsync(
+                document.Id,
+                maxWait: TimeSpan.FromMinutes(2));
+            ready.Id.Should().Be(document.Id);
+            ready.Pages.Should().NotBeEmpty();
+
+            (await client.Documents.GetAsync(document.Id)).Id.Should().Be(document.Id);
+            (await client.Documents.ListAsync(new Dictionary<string, string?>
+            {
+                ["search"] = suffix,
+            })).Data.Should().Contain(item => item.Id == document.Id);
+
+            (await client.Documents.RenameAsync(document.Id, $"sdk-live-renamed-{suffix}"))
+                .Id.Should().Be(document.Id);
+            (await client.Documents.SearchAsync(search: suffix)).Data
+                .Should().Contain(item => item.Id == document.Id);
+            (await client.Documents.DownloadAsync(document.Id, DocumentArtifactNames.Original))
+                .Should().NotBeEmpty();
+            (await client.Documents.ThumbnailAsync(document.Id)).Should().NotBeEmpty();
+            (await client.Documents.DownloadPageAsync(document.Id, ready.Pages[0].Id))
+                .Should().NotBeEmpty();
+            (await client.Documents.ActivitiesAsync(document.Id)).Should().NotBeEmpty();
+
+            var tagName = $"sdk-live-{suffix}";
+            var tag = await client.Tags.CreateAsync(new CreateTagRequest
+            {
+                Name = tagName,
+                Color = "224466",
+            });
+            tag = await client.Tags.UpdateAsync(tag.Id, new UpdateTagRequest
+            {
+                Name = $"{tagName}-updated",
+                ClearColor = true,
+            });
+            tag.Color.Should().BeNull();
+            (await client.Tags.ListAsync(search: suffix)).Should().Contain(item => item.Id == tag.Id);
+            // Sandbox interprets this array as names; production OpenAPI documents tag IDs.
+            (await client.Tags.AddToDocumentAsync(document.Id, [tag.Name]))
+                .Should().Contain(item => item.Id == tag.Id);
+            (await client.Tags.ListForDocumentAsync(document.Id))
+                .Should().Contain(item => item.Id == tag.Id);
+            (await client.Tags.RemoveFromDocumentWithResultAsync(document.Id, tag.Id))
+                .Detached.Should().BeTrue();
+            (await client.Tags.DeleteWithResultAsync(tag.Id)).Deleted.Should().BeTrue();
+
+            var fieldTypes = await client.Fields.ListTypesAsync();
+            fieldTypes.Should().Contain(type => type.Type == "text");
+            var field = await client.Fields.CreateAsync(new CreateFieldDefinitionRequest
+            {
+                Type = "text",
+                Name = $"SDK Live {suffix}",
+                IsRequired = true,
+            });
+            (await client.Fields.GetAsync(field.Id)).Id.Should().Be(field.Id);
+            field = await client.Fields.UpdateAsync(field.Id, new UpdateFieldDefinitionRequest
+            {
+                Name = $"SDK Live Updated {suffix}",
+                ClearRegex = true,
+            });
+            field.Regex.Should().BeNull();
+            (await client.Fields.ListAsync()).Data.Should().Contain(item => item.Id == field.Id);
+            (await client.Fields.ValidateAsync(field.Id, new ValidateFieldValueRequest
+            {
+                Value = "sdk-live",
+            })).Success.Should().BeTrue();
+            (await client.Fields.ValidateMultipleAsync(
+            [
+                new ValidateFieldValueItem { FieldId = field.Id, Value = "sdk-live" },
+            ])).Should().ContainSingle(result => result.Success);
+            await client.Fields.DeleteAsync(field.Id);
+
+            var estimate = await client.Assignments.EstimateCostAsync(document.Id, new CreateAssignmentRequest
+            {
+                Method = AssignmentMethods.Virtual,
+                Signers =
+                [
+                    new SignerRef
+                    {
+                        VerificationMethod = SignerChannels.Email,
+                        NotificationMethods = [SignerChannels.Email],
+                    },
+                ],
+            });
+            estimate.TotalCredits.Should().BeGreaterThanOrEqualTo(0);
+            (await client.Assignments.ListAsync(
+                new AssignmentListParams { PerPage = 5 },
+                account.Id))
+                .Should().NotBeNull();
+
+            var eventTypes = await client.Webhooks.ListEventTypesAsync();
+            var eventType = eventTypes.First(type => !string.IsNullOrWhiteSpace(type.Id));
+            var subscription = await client.Webhooks.UpdateSubscriptionAsync(
+                new UpdateWebhookSubscriptionRequest
+                {
+                    Events = [eventType.Id],
+                    IsActive = true,
+                    Url = "https://example.invalid/assinafy-sdk-live-test",
+                    Email = secondaryEmail,
+                });
+            subscription.IsActive.Should().BeTrue();
+            (await client.Webhooks.GetAsync())?.Events.Should().Contain(eventType.Id);
+            (await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { PerPage = 5 }))
+                .Should().NotBeNull();
+            (await client.Webhooks.InactivateAsync()).IsActive.Should().BeFalse();
+
+            await client.Documents.DeleteAsync(document.Id);
+            await client.Signers.DeleteAsync(primarySigner.Id);
+            await client.Signers.DeleteAsync(secondarySigner.Id);
+        }
+        finally
+        {
+            if (account is not null && !string.IsNullOrWhiteSpace(account.Id))
+                await bootstrap.Accounts.DeleteAsync(force: true, accountId: account.Id);
         }
     }
 

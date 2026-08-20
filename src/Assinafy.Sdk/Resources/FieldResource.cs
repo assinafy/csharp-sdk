@@ -1,3 +1,4 @@
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
@@ -74,13 +75,16 @@ public sealed class FieldResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.ClearRegex && request.Regex is not null)
+            throw new ValidationException("Regex and ClearRegex cannot both be set.");
+
         var id = AccountId(accountId);
         var field = RequireId(fieldId, "Field ID");
 
         return CallAsync<FieldDefinition>(
             $"accounts/{id}/fields/{field}",
             HttpMethod.Put,
-            request,
+            BuildUpdatePayload(request),
             cancellationToken: cancellationToken);
     }
 
@@ -177,6 +181,20 @@ public sealed class FieldResource : BaseResource
             query["include_standard"] = parameters.IncludeStandard.Value ? "true" : "false";
 
         return query.Count > 0 ? query : null;
+    }
+
+    private static Dictionary<string, object?> BuildUpdatePayload(UpdateFieldDefinitionRequest request)
+    {
+        var body = new Dictionary<string, object?>();
+        if (request.Name is not null) body["name"] = request.Name;
+        if (request.ClearRegex) body["regex"] = null;
+        else if (request.Regex is not null) body["regex"] = request.Regex;
+        if (request.IsActive.HasValue) body["is_active"] = request.IsActive.Value;
+
+        // Compatibility extensions supported by older deployments.
+        if (request.Type is not null) body["type"] = request.Type;
+        if (request.IsRequired.HasValue) body["is_required"] = request.IsRequired.Value;
+        return body;
     }
 
     private static IDictionary<string, string?>? OptionalAccessCodeQuery(string? signerAccessCode)

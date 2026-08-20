@@ -178,10 +178,9 @@ public static class AssignmentMethods
 }
 
 /// <summary>
-/// Allowed values for a signer's <c>verification_method</c> and <c>notification_methods</c>
-/// (see <see cref="SignerRef.VerificationMethod"/> and <see cref="SignerRef.NotificationMethods"/>).
-/// Note the API expects these capitalized. <c>Whatsapp</c> incurs an additional cost and is
-/// available only on paid subscriptions.
+/// Allowed verification and notification channel values. <c>Email</c> and <c>Whatsapp</c> may be
+/// used for either purpose; <c>DigitalCertificate</c> is a verification method only. The API expects
+/// these values capitalized. <c>Whatsapp</c> incurs an additional cost and is paid-only.
 /// </summary>
 public static class SignerChannels
 {
@@ -190,6 +189,9 @@ public static class SignerChannels
 
     /// <summary>WhatsApp channel (paid subscriptions only; additional cost).</summary>
     public const string Whatsapp = "Whatsapp";
+
+    /// <summary>ICP-Brasil digital-certificate verification.</summary>
+    public const string DigitalCertificate = "DigitalCertificate";
 }
 
 /// <summary>
@@ -202,10 +204,10 @@ public sealed class SignerRef
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing — one of <see cref="SignerChannels"/> (<c>Email</c> by default, or <c>Whatsapp</c>). If set without <see cref="NotificationMethods"/>, that channel is also used for notification.</summary>
+    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If a notification-capable channel is set without <see cref="NotificationMethods"/>, it is also used for notification.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>Channels used to notify the signer — any combination of <see cref="SignerChannels"/> (<c>Email</c>, <c>Whatsapp</c>). If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
+    /// <summary>The single channel used to notify the signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
@@ -260,6 +262,41 @@ public sealed class AssignmentEntry
     public required IReadOnlyList<AssignmentEntryField> Fields { get; set; }
 }
 
+/// <summary>
+/// Placement rectangle for a collect field. Coordinates use the document page's 150-DPI image
+/// coordinate system and are measured from its upper-left corner.
+/// </summary>
+public sealed class DisplaySettings
+{
+    /// <summary>Horizontal distance from the page's left edge, in pixels.</summary>
+    [JsonPropertyName("left")]
+    public required double Left { get; set; }
+
+    /// <summary>Vertical distance from the page's top edge, in pixels.</summary>
+    [JsonPropertyName("top")]
+    public required double Top { get; set; }
+
+    /// <summary>Positive rectangle width, in pixels.</summary>
+    [JsonPropertyName("width")]
+    public required double Width { get; set; }
+
+    /// <summary>Positive rectangle height, in pixels.</summary>
+    [JsonPropertyName("height")]
+    public required double Height { get; set; }
+
+    /// <summary>Positive font size in the page-image coordinate system.</summary>
+    [JsonPropertyName("fontSize")]
+    public required double FontSize { get; set; }
+
+    /// <summary>Optional font-family presentation metadata.</summary>
+    [JsonPropertyName("fontFamily")]
+    public string? FontFamily { get; set; }
+
+    /// <summary>Optional CSS-compatible background color.</summary>
+    [JsonPropertyName("backgroundColor")]
+    public string? BackgroundColor { get; set; }
+}
+
 /// <summary>A single field placement on a page, tying a signer to a field.</summary>
 public sealed class AssignmentEntryField
 {
@@ -269,8 +306,8 @@ public sealed class AssignmentEntryField
     /// <summary>The field to place, matching a field ID in the document/template.</summary>
     public required string FieldId { get; set; }
 
-    /// <summary>Optional placement/display settings (e.g. <c>new { x = 100, y = 200, width = 150, height = 40 }</c>).</summary>
-    public object? DisplaySettings { get; set; }
+    /// <summary>Placement and display settings using the API's required <c>left</c>, <c>top</c>, <c>width</c>, <c>height</c>, and <c>fontSize</c> values.</summary>
+    public DisplaySettings? DisplaySettings { get; set; }
 }
 
 /// <summary>Cost breakdown for creating an assignment plus the account's current balances, returned by the estimate-cost endpoint.</summary>
@@ -278,7 +315,7 @@ public sealed record AssignmentCostEstimate
 {
     /// <summary>Documents consumed from the plan allowance (always 1).</summary>
     [JsonPropertyName("documents")]
-    public decimal Documents { get; init; }
+    public int Documents { get; init; }
 
     /// <summary>Total notification credits needed.</summary>
     [JsonPropertyName("credits")]
@@ -337,10 +374,33 @@ public sealed record ResendNotificationResult
     public string SignerId { get; init; } = string.Empty;
 }
 
-/// <summary>Cost estimate for resending a signature request to a signer, plus the account's credit balance.</summary>
+/// <summary>
+/// Cost estimate for resending a signature request. It includes the current full-cost shape and
+/// retains legacy fields returned by older deployments.
+/// </summary>
 public sealed record ResendCostEstimate
 {
-    /// <summary>Total credits required to resend.</summary>
+    /// <summary>Documents consumed from the plan allowance.</summary>
+    [JsonPropertyName("documents")]
+    public int Documents { get; init; }
+
+    /// <summary>Total notification credits needed.</summary>
+    [JsonPropertyName("credits")]
+    public decimal Credits { get; init; }
+
+    /// <summary>Whether an extra document must be charged from credits.</summary>
+    [JsonPropertyName("needs_extra_document")]
+    public bool NeedsExtraDocument { get; init; }
+
+    /// <summary>Credits charged for an extra document.</summary>
+    [JsonPropertyName("extra_document_cost")]
+    public decimal ExtraDocumentCost { get; init; }
+
+    /// <summary>Total credits required.</summary>
+    [JsonPropertyName("total_credits")]
+    public decimal TotalCredits { get; init; }
+
+    /// <summary>Legacy total-credit field returned by older deployments.</summary>
     [JsonPropertyName("total")]
     public decimal Total { get; init; }
 
@@ -348,13 +408,29 @@ public sealed record ResendCostEstimate
     [JsonPropertyName("breakdown")]
     public IReadOnlyList<CostBreakdownItem> Breakdown { get; init; } = [];
 
+    /// <summary>The account's current document balance.</summary>
+    [JsonPropertyName("document_balance")]
+    public decimal DocumentBalance { get; init; }
+
     /// <summary>The account's current credit balance.</summary>
     [JsonPropertyName("credit_balance")]
     public decimal CreditBalance { get; init; }
 
-    /// <summary>Whether the account has enough credits to resend.</summary>
+    /// <summary>Whether the account has enough documents and credits.</summary>
+    [JsonPropertyName("has_sufficient_resources")]
+    public bool HasSufficientResources { get; init; }
+
+    /// <summary>Legacy sufficiency field returned by older deployments.</summary>
     [JsonPropertyName("has_sufficient_credits")]
     public bool HasSufficientCredits { get; init; }
+
+    /// <summary>Machine-readable reason resources are insufficient, or <see langword="null"/>.</summary>
+    [JsonPropertyName("blocking_reason")]
+    public string? BlockingReason { get; init; }
+
+    /// <summary>Human-readable explanation accompanying the estimate, or <see langword="null"/>.</summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
 }
 
 /// <summary>A single line item within a cost breakdown.</summary>
@@ -372,9 +448,9 @@ public sealed record CostBreakdownItem
     [JsonPropertyName("cost")]
     public decimal Cost { get; init; }
 
-    /// <summary>Number of units charged, or <see langword="null"/>.</summary>
+    /// <summary>Integer number of units charged, or <see langword="null"/> when omitted.</summary>
     [JsonPropertyName("quantity")]
-    public decimal? Quantity { get; init; }
+    public int? Quantity { get; init; }
 
     /// <summary>Cost per unit, in credits, or <see langword="null"/>.</summary>
     [JsonPropertyName("unit_cost")]
@@ -427,13 +503,16 @@ public sealed class TemplateSigner
     /// <summary>The template role ID this signer fills.</summary>
     public required string RoleId { get; set; }
 
-    /// <summary>The ID of the existing signer to assign to the role.</summary>
-    public required string Id { get; set; }
+    /// <summary>
+    /// ID of the existing signer to assign to the role. Required when creating a document and
+    /// omitted when estimating a template's cost.
+    /// </summary>
+    public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing — one of <see cref="SignerChannels"/> (<c>Email</c> by default, or <c>Whatsapp</c>). If set without <see cref="NotificationMethods"/>, that channel is also used for notification.</summary>
+    /// <summary>How the signer's identity is verified before signing: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If a notification-capable channel is set without <see cref="NotificationMethods"/>, it is also used for notification.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>Channels used to notify the signer — any combination of <see cref="SignerChannels"/> (<c>Email</c>, <c>Whatsapp</c>). If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
+    /// <summary>The single channel used to notify the signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>

@@ -27,15 +27,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup .NET SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+            8.0.424
+            9.0.317
+            10.0.400
 
       - name: Restore
         run: dotnet restore
@@ -44,11 +46,11 @@ jobs:
         run: dotnet build --configuration Release --no-restore --framework ${{ matrix.tfm }}
 
       - name: Test
-        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release --no-build --framework ${{ matrix.tfm }} --logger "trx;LogFileName=test-results-${{ matrix.tfm }}.trx" --collect:"XPlat Code Coverage" --results-directory ./test-results
+        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release --no-build --framework ${{ matrix.tfm }} --filter "Category!=Live" --logger "trx;LogFileName=test-results-${{ matrix.tfm }}.trx" --collect:"XPlat Code Coverage" --results-directory ./test-results
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-${{ matrix.tfm }}
           path: ./test-results
@@ -61,21 +63,23 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
 
       - name: Setup .NET SDKs
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+            8.0.424
+            9.0.317
+            10.0.400
 
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --output ./artifacts
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nupkg
           path: ./artifacts/*.nupkg

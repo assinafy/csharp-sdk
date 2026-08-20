@@ -10,20 +10,20 @@ public sealed class AssignmentResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary>
-    /// <c>GET /assignments?accountId={account_id}</c> — list the assignments belonging to a workspace
-    /// account. The account context is supplied via the <c>accountId</c> query parameter (the SDK sends
-    /// the client's default account when none is passed); the API returns <c>400</c> if it is absent.
+    /// <c>GET /assignments</c> — list assignments for the authenticated user's current account.
+    /// Passing <paramref name="accountId"/> explicitly sends the legacy, undocumented
+    /// <c>accountId</c> compatibility extension; the configured client default is not sent.
     /// </summary>
     /// <param name="parameters">Optional pagination (<c>page</c>, <c>per-page</c>).</param>
-    /// <param name="accountId">Account whose assignments to list; falls back to the client default.</param>
+    /// <param name="accountId">Optional legacy account query extension. Leave <see langword="null"/> for the documented current-account request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     public Task<PaginatedResult<Assignment>> ListAsync(
         AssignmentListParams? parameters = null,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        var id = AccountId(accountId);
-        var query = new Dictionary<string, string?> { ["accountId"] = id };
+        var query = new Dictionary<string, string?>();
+        if (accountId is not null) query["accountId"] = RequireId(accountId, "Account ID");
         if (parameters?.Page is int page) query["page"] = page.ToString();
         if (parameters?.PerPage is int perPage) query["per-page"] = perPage.ToString();
 
@@ -64,7 +64,7 @@ public sealed class AssignmentResource : BaseResource
         return CallAsync<AssignmentCostEstimate>(
             $"documents/{document}/assignments/estimate-cost",
             HttpMethod.Post,
-            BuildPayload(request, allowSignersWithoutId: true),
+            BuildEstimatePayload(request),
             cancellationToken: cancellationToken);
     }
 
@@ -149,16 +149,15 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
-    internal static Dictionary<string, object?> BuildPayload(
-        CreateAssignmentRequest request,
-        bool allowSignersWithoutId = false)
+    internal static Dictionary<string, object?> BuildPayload(CreateAssignmentRequest request)
     {
+        ValidateEntries(request.Entries);
         var signerRefs = ExtractSignerRefs(request);
         if (signerRefs.Count == 0)
             throw new ValidationException("At least one signer is required.");
 
         var signers = signerRefs
-            .Select(r => NormaliseSignerRef(r, allowSignersWithoutId))
+            .Select(NormaliseSignerRef)
             .ToList();
 
         var body = new Dictionary<string, object?>
@@ -175,6 +174,56 @@ public sealed class AssignmentResource : BaseResource
         return body;
     }
 
+    internal static Dictionary<string, object?> BuildEstimatePayload(CreateAssignmentRequest request)
+    {
+        ValidateEntries(request.Entries);
+        var body = new Dictionary<string, object?>();
+        if (!string.IsNullOrWhiteSpace(request.Method)) body["method"] = request.Method;
+
+        var signerRefs = ExtractSignerRefs(request);
+        if (signerRefs.Count > 0)
+        {
+            body["signers"] = signerRefs.Select(reference =>
+            {
+                var signer = new Dictionary<string, object?>();
+                if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
+                    signer["verification_method"] = reference.VerificationMethod;
+                if (reference.NotificationMethods?.Length > 0)
+                    signer["notification_methods"] = reference.NotificationMethods;
+                return signer;
+            }).ToList();
+        }
+
+        if (request.Entries?.Count > 0) body["entries"] = request.Entries;
+        return body;
+    }
+
+    private static void ValidateEntries(IReadOnlyList<AssignmentEntry>? entries)
+    {
+        if (entries is null) return;
+
+        foreach (var entry in entries)
+        {
+            if (string.IsNullOrWhiteSpace(entry.PageId))
+                throw new ValidationException("Assignment entry page ID is required.");
+
+            foreach (var field in entry.Fields)
+            {
+                if (string.IsNullOrWhiteSpace(field.SignerId) || string.IsNullOrWhiteSpace(field.FieldId))
+                    throw new ValidationException("Assignment entry signer and field IDs are required.");
+
+                var settings = field.DisplaySettings;
+                if (settings is not null &&
+                    (!double.IsFinite(settings.Left) || settings.Left < 0 ||
+                     !double.IsFinite(settings.Top) || settings.Top < 0 ||
+                     !double.IsFinite(settings.Width) || settings.Width <= 0 ||
+                     !double.IsFinite(settings.Height) || settings.Height <= 0 ||
+                     !double.IsFinite(settings.FontSize) || settings.FontSize <= 0))
+                    throw new ValidationException("Display settings require non-negative left/top and positive width/height/font size.");
+            }
+        }
+    }
+
     private static List<SignerRef> ExtractSignerRefs(CreateAssignmentRequest request)
     {
         if (request.Signers?.Count > 0)
@@ -186,7 +235,7 @@ public sealed class AssignmentResource : BaseResource
         return [];
     }
 
-    private static Dictionary<string, object?> NormaliseSignerRef(SignerRef reference, bool allowWithoutId)
+    private static Dictionary<string, object?> NormaliseSignerRef(SignerRef reference)
     {
         var result = new Dictionary<string, object?>();
 
@@ -202,7 +251,7 @@ public sealed class AssignmentResource : BaseResource
         if (reference.Step.HasValue)
             result["step"] = reference.Step.Value;
 
-        if (string.IsNullOrWhiteSpace(reference.Id) && !allowWithoutId)
+        if (string.IsNullOrWhiteSpace(reference.Id))
             throw new ValidationException("Invalid signer reference: ID is required for this operation.");
 
         return result;

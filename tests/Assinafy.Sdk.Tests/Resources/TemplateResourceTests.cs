@@ -1,4 +1,3 @@
-using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Resources;
 using Assinafy.Sdk.Tests.Helpers;
 using FluentAssertions;

@@ -1,4 +1,5 @@
 using Assinafy.Sdk.Exceptions;
+using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Tests.Helpers;
 using FluentAssertions;
 using Xunit;
@@ -22,6 +23,8 @@ public sealed class AssinafyClientTests
         using var client = new AssinafyClient(new AssinafyClientOptions { ApiKey = "k", AccountId = "acc" });
 
         client.Authentication.Should().NotBeNull();
+        client.Accounts.Should().NotBeNull();
+        client.Users.Should().NotBeNull();
         client.Documents.Should().NotBeNull();
         client.Signers.Should().NotBeNull();
         client.Assignments.Should().NotBeNull();
@@ -132,5 +135,54 @@ public sealed class AssinafyClientTests
         var act = async () => await client.Documents.ListStatusesAsync();
         await act.Should().NotThrowAsync();
         http.Dispose();
+    }
+
+    [Fact]
+    public async Task UploadAndRequestSignatures_CompletesDocumentSignerAssignmentFlow()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/documents",
+            FakeHttpMessageHandler.ApiOk(new { id = "doc-1", status = "metadata_ready" }));
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/signers",
+            FakeHttpMessageHandler.ApiOk(new { id = "signer-1", full_name = "Test Signer" }));
+        handler.AddJsonResponse(HttpMethod.Post, "/documents/doc-1/assignments",
+            FakeHttpMessageHandler.ApiOk(new { id = "assignment-1", method = "virtual" }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(
+            new AssinafyClientOptions { ApiKey = "key", AccountId = "acc" }, http);
+        using var stream = new MemoryStream([1, 2, 3]);
+
+        var result = await client.UploadAndRequestSignaturesAsync(new UploadAndRequestSignaturesOptions
+        {
+            FileStream = stream,
+            FileName = "contract.pdf",
+            WaitForReady = false,
+            Signers = [new UploadAndRequestSignaturesSigner { FullName = "Test Signer" }],
+        });
+
+        result.Document.Id.Should().Be("doc-1");
+        result.SignerIds.Should().Equal("signer-1");
+        result.Assignment.Id.Should().Be("assignment-1");
+        handler.Requests.Select(request => request.Method)
+            .Should().Equal(HttpMethod.Post, HttpMethod.Post, HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task UploadAndRequestSignatures_ValidatesAllSignersBeforeUploading()
+    {
+        var handler = new FakeHttpMessageHandler();
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(
+            new AssinafyClientOptions { ApiKey = "key", AccountId = "acc" }, http);
+
+        await ((Func<Task>)(() => client.UploadAndRequestSignaturesAsync(
+            new UploadAndRequestSignaturesOptions
+            {
+                FileStream = new MemoryStream([1]),
+                FileName = "contract.pdf",
+                Signers = [new UploadAndRequestSignaturesSigner { FullName = "" }],
+            }))).Should().ThrowAsync<ValidationException>();
+
+        handler.Requests.Should().BeEmpty();
     }
 }

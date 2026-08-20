@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Resources;
 using Assinafy.Sdk.Tests.Helpers;
@@ -40,6 +42,37 @@ public sealed class FieldResourceTests
 
         handler.Requests.Should().Contain(r =>
             r.RequestUri!.Query.Contains("include_standard=true"));
+    }
+
+    [Fact]
+    public async Task Update_CanSendExplicitNullRegexAndPreserveLegacyExtensions()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/accounts/acc/fields/field-1",
+            FakeHttpMessageHandler.ApiOk(new { id = "field-1", name = "Reference", type = "text" }));
+        var resource = CreateResource(handler);
+
+        await resource.UpdateAsync("field-1", new UpdateFieldDefinitionRequest
+        {
+            Name = "Reference",
+            ClearRegex = true,
+            IsActive = false,
+            Type = "text",
+            IsRequired = true,
+        });
+
+        var body = JsonDocument.Parse(handler.RequestBodies.Single());
+        body.RootElement.GetProperty("regex").ValueKind.Should().Be(JsonValueKind.Null);
+        body.RootElement.GetProperty("is_active").GetBoolean().Should().BeFalse();
+        body.RootElement.GetProperty("type").GetString().Should().Be("text");
+        body.RootElement.GetProperty("is_required").GetBoolean().Should().BeTrue();
+
+        var invalid = () => resource.UpdateAsync("field-1", new UpdateFieldDefinitionRequest
+        {
+            Regex = ".+",
+            ClearRegex = true,
+        });
+        await invalid.Should().ThrowAsync<ValidationException>();
     }
 
     [Fact]

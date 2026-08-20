@@ -97,7 +97,7 @@ public sealed class CreateFieldDefinitionRequest
     /// <summary>Whether a value for this field is required.</summary>
     public bool? IsRequired { get; set; }
 
-    /// <summary>Whether the field definition should be active.</summary>
+    /// <summary>Compatibility extension accepted by older deployments; omitted unless explicitly set.</summary>
     public bool? IsActive { get; set; }
 }
 
@@ -107,20 +107,24 @@ public sealed class CreateFieldDefinitionRequest
 /// </summary>
 public sealed class UpdateFieldDefinitionRequest
 {
-    /// <summary>New field/validation type. See <c>GET /field-types</c> for the full list.</summary>
+    /// <summary>Compatibility type update accepted by older deployments; omitted unless explicitly set.</summary>
     public string? Type { get; set; }
 
     /// <summary>New display name.</summary>
     public string? Name { get; set; }
 
-    /// <summary>New validation regular expression.</summary>
+    /// <summary>New validation regular expression. Use <see cref="ClearRegex"/> to send an explicit JSON <see langword="null"/>.</summary>
     public string? Regex { get; set; }
 
-    /// <summary>Whether a value for this field is required.</summary>
+    /// <summary>Compatibility required-state update accepted by older deployments; omitted unless explicitly set.</summary>
     public bool? IsRequired { get; set; }
 
     /// <summary>Whether the field definition is active.</summary>
     public bool? IsActive { get; set; }
+
+    /// <summary>When <see langword="true"/>, clear the existing regex by sending <c>"regex": null</c>. Cannot be combined with <see cref="Regex"/>.</summary>
+    [JsonIgnore]
+    public bool ClearRegex { get; set; }
 }
 
 /// <summary>Optional filters for <c>Fields.ListAsync</c> (<c>GET /accounts/{account_id}/fields</c>).</summary>
