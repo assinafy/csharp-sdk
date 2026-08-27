@@ -15,6 +15,11 @@ updates:
       interval: weekly
     commit-message:
       prefix: deps
+    ignore:
+      # FluentAssertions 8+ switched from Apache-2.0 to the Xceed license, which
+      # requires a paid seat for commercial use. 7.x is the last Apache-2.0 line.
+      - dependency-name: FluentAssertions
+        versions: [">=8.0.0"]
     groups:
       microsoft-extensions:
         patterns:
