@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.0.0
+
+### Removed (breaking)
+
+- `AssinafyServiceCollectionExtensions.AddAssinafy` and the SDK's
+  `Microsoft.Extensions.DependencyInjection.Abstractions` and `Microsoft.Extensions.Http`
+  dependencies. The package now has **no NuGet dependencies** and cannot constrain which
+  `Microsoft.Extensions.*` version an application resolves.
+
+  Register the client with the container packages your application already references:
+
+  ```csharp
+  builder.Services
+      .AddHttpClient("Assinafy", http =>
+      {
+          http.BaseAddress = new Uri("https://api.assinafy.com.br/v1/");
+          http.Timeout = TimeSpan.FromSeconds(30);
+      })
+      .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
+      .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+
+  builder.Services.AddSingleton(serviceProvider => new AssinafyClient(
+      options,
+      serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("Assinafy")));
+  ```
+
+  No other API changed.
+
+### Added
+
+- `AssinafyClient.CreatePrimaryHandler()` is now public. It returns the handler the SDK uses for
+  its own transport — automatic redirects disabled, five-minute pooled connection lifetime — so a
+  container-registered or caller-supplied `HttpClient` gets the same credential protection.
+
+### Changed
+
+- `Signing.DownloadAsync` is marked `[Obsolete]`, matching the other compatibility overloads. It
+  ignores its `signerAccessCode` argument; use `Signing.DownloadPublicAsync`.
+- The README is a complete integration guide: credentials and environments, client construction and
+  lifetime, container registration, the response envelope, pagination, error handling, the signature
+  lifecycle end to end, a section per resource, and reference tables.
+
 ## 1.3.2
 
 ### Added

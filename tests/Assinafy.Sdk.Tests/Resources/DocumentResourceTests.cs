@@ -27,6 +27,19 @@ public sealed class DocumentResourceTests
     }
 
     [Fact]
+    public async Task Upload_RejectsStreamOverTheSharedUploadCap()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+        using var stream = new MemoryStream(new byte[25 * 1024 * 1024 + 1]);
+
+        var act = () => resource.UploadAsync(stream, "contract.pdf");
+
+        await act.Should().ThrowAsync<ValidationException>().WithMessage("Document file size*25MB*");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Upload_PostsToAccountsDocumentsWithoutDroppingV1()
     {
         var handler = new FakeHttpMessageHandler();

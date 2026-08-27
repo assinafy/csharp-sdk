@@ -1,15 +1,11 @@
-using System.Net.Http.Headers;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
-using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Resources;
 
 /// <summary>Documents resource: upload, list, get, download, verify, and activities.</summary>
 public sealed class DocumentResource : BaseResource
 {
-    private const long MaximumFileSizeBytes = 25L * 1024L * 1024L;
-
     private static readonly IReadOnlySet<string> ReadyStatuses = new HashSet<string>
     {
         "metadata_ready", "pending_signature", "certificated",
@@ -52,29 +48,11 @@ public sealed class DocumentResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(fileStream);
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
-
-        if (!fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            throw new ValidationException(
-                "Only PDF files are supported.",
-                new Dictionary<string, object?> { ["fileName"] = fileName });
-
-        if (fileStream.CanSeek)
-        {
-            var remainingBytes = fileStream.Length - fileStream.Position;
-            if (remainingBytes > MaximumFileSizeBytes)
-                throw new ValidationException(
-                    "Document file size must not exceed 25MB.",
-                    new Dictionary<string, object?> { ["fileName"] = fileName, ["size"] = remainingBytes });
-        }
+        ValidatePdfUpload(fileStream, fileName, "Document");
 
         var id = AccountId(accountId);
 
-        using var content = new MultipartFormDataContent();
-        var streamContent = new NonDisposingStreamContent(fileStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        content.Add(streamContent, "file", fileName);
+        using var content = BuildPdfUploadContent(fileStream, fileName);
 
         var result = await CallContentAsync<DocumentDetails>(
             $"accounts/{id}/documents",

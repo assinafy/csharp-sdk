@@ -23,11 +23,11 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>1.3.2</Version>
+    <Version>2.0.0</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
-    <Description>Official .NET SDK for the Assinafy digital signature API. Covers authentication, documents, signers, signing flows, assignments, fields, templates, tags, public documents, signature images, and webhooks.</Description>
+    <Description>Official .NET SDK for the Assinafy digital signature API. Zero dependencies. Covers authentication, documents, signers, signing flows, assignments, fields, templates, tags, public documents, signature images, and webhooks.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>assinafy;esignature;digital-signature;signature;contracts;brazil;sdk</PackageTags>
@@ -41,32 +41,22 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <!-- Validates that the net8/net9/net10 assets stay API-compatible with each other. No
+         baseline version: 2.0.0 intentionally drops AddAssinafy, so no 1.x package is a valid
+         baseline. Set PackageValidationBaselineVersion back to the previous 2.x on the next release. -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>1.3.1</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\SECURITY.md" Pack="true" PackagePath="\" />
-    <None Include="..\..\docs\API.md" Pack="true" PackagePath="docs\" />
-    <None Include="..\..\docs\openapi.json" Pack="true" PackagePath="docs\" />
+    <None Include="..\..\docs\API.md" Pack="true" PackagePath="docs" />
+    <None Include="..\..\docs\openapi.json" Pack="true" PackagePath="docs" />
   </ItemGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.1" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.19" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.19" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.11" />
-  </ItemGroup>
+  <!-- No NuGet dependencies: the SDK builds on BCL types only. Register it with
+       Microsoft.Extensions.DependencyInjection from your own application; see the README. -->
 
   <ItemGroup>
     <InternalsVisibleTo Include="Assinafy.Sdk.Tests" />

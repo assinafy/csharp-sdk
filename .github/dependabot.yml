@@ -20,9 +20,9 @@ updates:
       # requires a paid seat for commercial use. 7.x is the last Apache-2.0 line.
       - dependency-name: FluentAssertions
         versions: [">=8.0.0"]
-      # The csproj pins one Microsoft.Extensions major per TargetFramework (8/9/10)
-      # so net8.0 consumers aren't dragged onto .NET 10 runtime packages. Majors
-      # move by hand when a TFM is added; patches within a major still auto-bump.
+      # Microsoft.Extensions.* is test-only (it verifies the container registration the
+      # README documents); the shipped package has no dependencies. Majors move by hand
+      # with the .NET LTS the tests target; patches still auto-bump.
       - dependency-name: Microsoft.Extensions.*
         update-types: [version-update:semver-major]
     groups:

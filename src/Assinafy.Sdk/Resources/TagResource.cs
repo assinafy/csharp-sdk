@@ -103,14 +103,10 @@ public sealed class TagResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        var id = AccountId(accountId);
-        var tag = PathSegment(tagId, "Tag ID");
-
-        var path = AppendQueryString(
-            $"accounts/{id}/tags/{tag}",
-            force ? new Dictionary<string, string?> { ["force"] = "true" } : null);
-
-        return CallVoidAsync(path, HttpMethod.Delete, cancellationToken: cancellationToken);
+        return CallVoidAsync(
+            TagPath(tagId, force, accountId),
+            HttpMethod.Delete,
+            cancellationToken: cancellationToken);
     }
 
     /// <summary><c>DELETE /accounts/{account_id}/tags/{tag_id}</c> — delete a tag and return the API's <c>{"deleted":boolean}</c> payload.</summary>
@@ -125,12 +121,10 @@ public sealed class TagResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        var id = AccountId(accountId);
-        var tag = PathSegment(tagId, "Tag ID");
-        var path = AppendQueryString(
-            $"accounts/{id}/tags/{tag}",
-            force ? new Dictionary<string, string?> { ["force"] = "true" } : null);
-        return CallAsync<DeleteTagResult>(path, HttpMethod.Delete, cancellationToken: cancellationToken);
+        return CallAsync<DeleteTagResult>(
+            TagPath(tagId, force, accountId),
+            HttpMethod.Delete,
+            cancellationToken: cancellationToken);
     }
 
     /// <summary><c>GET /accounts/{account_id}/documents/{document_id}/tags</c> — list the tags currently attached to a document.</summary>
@@ -197,12 +191,8 @@ public sealed class TagResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        var id = AccountId(accountId);
-        var document = PathSegment(documentId, "Document ID");
-        var tag = PathSegment(tagId, "Tag ID");
-
         return CallVoidAsync(
-            $"accounts/{id}/documents/{document}/tags/{tag}",
+            DocumentTagPath(documentId, tagId, accountId),
             HttpMethod.Delete,
             cancellationToken: cancellationToken);
     }
@@ -219,13 +209,27 @@ public sealed class TagResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
+        return CallAsync<DetachTagResult>(
+            DocumentTagPath(documentId, tagId, accountId),
+            HttpMethod.Delete,
+            cancellationToken: cancellationToken);
+    }
+
+    private string TagPath(string tagId, bool force, string? accountId)
+    {
+        var id = AccountId(accountId);
+        var tag = PathSegment(tagId, "Tag ID");
+        return AppendQueryString(
+            $"accounts/{id}/tags/{tag}",
+            force ? new Dictionary<string, string?> { ["force"] = "true" } : null);
+    }
+
+    private string DocumentTagPath(string documentId, string tagId, string? accountId)
+    {
         var id = AccountId(accountId);
         var document = PathSegment(documentId, "Document ID");
         var tag = PathSegment(tagId, "Tag ID");
-        return CallAsync<DetachTagResult>(
-            $"accounts/{id}/documents/{document}/tags/{tag}",
-            HttpMethod.Delete,
-            cancellationToken: cancellationToken);
+        return $"accounts/{id}/documents/{document}/tags/{tag}";
     }
 
     private async Task<IReadOnlyList<Tag>> SendDocumentTagsAsync(

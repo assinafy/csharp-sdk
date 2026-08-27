@@ -9,10 +9,11 @@ using Xunit;
 namespace Assinafy.Sdk.Tests.Resources;
 
 /// <summary>
-/// Regression coverage for 1.2.0 behavior: signer ID payloads, signing steps, webhooks,
-/// signing progress, resend URLs, API-key CRUD, error paths, and bulk-operation guards.
+/// Request-payload shape and error-mapping contracts: signer references, signing steps,
+/// template signers, resend routes, API-key CRUD, envelope errors, transport failures,
+/// pagination follow-through, and bulk-operation guards.
 /// </summary>
-public sealed class AuditRegressionTests
+public sealed class PayloadAndErrorContractTests
 {
     private static HttpClient Client(FakeHttpMessageHandler handler) =>
         FakeHttpMessageHandler.CreateClient(handler);

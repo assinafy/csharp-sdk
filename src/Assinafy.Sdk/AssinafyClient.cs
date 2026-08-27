@@ -6,8 +6,9 @@ using Assinafy.Sdk.Resources;
 namespace Assinafy.Sdk;
 
 /// <summary>
-/// Top-level entry point for the Assinafy API. Reuse this client for the lifetime
-/// of your application, or register it through <c>services.AddAssinafy(...)</c>.
+/// Top-level entry point for the Assinafy API. It is thread-safe and holds a pooled
+/// <see cref="HttpClient"/>; create one and reuse it for the lifetime of your application,
+/// or register it as a singleton in your container.
 /// </summary>
 public sealed class AssinafyClient : IDisposable
 {
@@ -66,13 +67,14 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>
     /// Create a client backed by a caller-supplied <see cref="HttpClient"/>.
     /// The caller is responsible for the lifetime of <paramref name="http"/>;
-    /// this constructor will not dispose it. Preferred for ASP.NET Core via
-    /// <see cref="AssinafyServiceCollectionExtensions.AddAssinafy"/>.
+    /// this constructor will not dispose it. Use this overload to register the client with
+    /// <c>IHttpClientFactory</c> in an ASP.NET Core container.
     /// Authentication is attached per request, so the supplied client's default
     /// headers are not mutated with credentials. Its <see cref="HttpClient.BaseAddress"/>
     /// must match <see cref="AssinafyClientOptions.BaseUrl"/>. When using an API key,
-    /// configure the supplied primary handler with automatic redirects disabled;
-    /// .NET otherwise forwards custom headers such as <c>X-Api-Key</c> to redirect targets.
+    /// configure the supplied primary handler with automatic redirects disabled —
+    /// <see cref="CreatePrimaryHandler"/> does this — because .NET otherwise forwards
+    /// custom headers such as <c>X-Api-Key</c> to redirect targets.
     /// </summary>
     /// <param name="options">Authentication, account, and base URL configuration. Its timeout is ignored for a supplied client.</param>
     /// <param name="http">Caller-owned HTTP client whose existing base address, if set, matches <paramref name="options"/>.</param>
@@ -190,7 +192,19 @@ public sealed class AssinafyClient : IDisposable
             headers.UserAgent.Add(new ProductInfoHeaderValue("assinafy-csharp-sdk", SdkVersion));
     }
 
-    internal static SocketsHttpHandler CreatePrimaryHandler() => new()
+    /// <summary>
+    /// Create the primary handler the SDK uses for its own transport: automatic redirects disabled
+    /// (so <c>X-Api-Key</c> is never forwarded to a redirect target) and a five-minute pooled
+    /// connection lifetime (so a long-lived client still picks up DNS changes).
+    /// </summary>
+    /// <remarks>
+    /// Pass this to <c>ConfigurePrimaryHttpMessageHandler</c> when registering the client with
+    /// <c>IHttpClientFactory</c>, or use it directly when constructing your own
+    /// <see cref="HttpClient"/> for the <see cref="AssinafyClient(AssinafyClientOptions, HttpClient)"/>
+    /// overload, to get the same protections as an SDK-owned transport.
+    /// </remarks>
+    /// <returns>A handler configured for safe credential handling on a long-lived client.</returns>
+    public static SocketsHttpHandler CreatePrimaryHandler() => new()
     {
         AllowAutoRedirect = false,
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),

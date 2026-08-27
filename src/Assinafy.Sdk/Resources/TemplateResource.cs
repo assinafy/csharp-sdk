@@ -1,15 +1,11 @@
-using System.Net.Http.Headers;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
-using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Resources;
 
 /// <summary>Account template creation, listing, inspection, updates, deletion, and rendered-page downloads.</summary>
 public sealed class TemplateResource : BaseResource
 {
-    private const long MaximumFileSizeBytes = 25L * 1024L * 1024L;
-
     internal TemplateResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
         : base(http, defaultAccountId, authenticate) { }
 
@@ -34,22 +30,7 @@ public sealed class TemplateResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(fileStream);
-        ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
-
-        if (!fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            throw new ValidationException(
-                "Only PDF files are supported.",
-                new Dictionary<string, object?> { ["fileName"] = fileName });
-
-        if (fileStream.CanSeek)
-        {
-            var remainingBytes = fileStream.Length - fileStream.Position;
-            if (remainingBytes > MaximumFileSizeBytes)
-                throw new ValidationException(
-                    "Template file size must not exceed 25MB.",
-                    new Dictionary<string, object?> { ["fileName"] = fileName, ["size"] = remainingBytes });
-        }
+        ValidatePdfUpload(fileStream, fileName, "Template");
 
         if (name is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -59,10 +40,7 @@ public sealed class TemplateResource : BaseResource
             : $"{name}.pdf";
         var id = AccountId(accountId);
 
-        using var content = new MultipartFormDataContent();
-        var streamContent = new NonDisposingStreamContent(fileStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        content.Add(streamContent, "file", uploadName);
+        using var content = BuildPdfUploadContent(fileStream, uploadName);
 
         var result = await CallContentAsync<TemplateDetails>(
             $"accounts/{id}/templates",

@@ -195,7 +195,7 @@ public sealed class SigningResource : BaseResource
         var signer = PathSegment(signerId, "Signer ID");
         var code = RequireId(signerAccessCode, "Signer access code");
 
-        var query = BuildPaginationQuery(parameters);
+        var query = BuildDocumentQuery(parameters);
         query[SignerAccessCodeParam] = code;
 
         return CallListAsync<DocumentListItem>(
@@ -224,7 +224,7 @@ public sealed class SigningResource : BaseResource
         var signer = PathSegment(signerId, "Signer ID");
         var code = RequireId(signerAccessCode, "Signer access code");
 
-        var query = BuildSearchQuery(parameters);
+        var query = BuildDocumentQuery(parameters);
         query[SignerAccessCodeParam] = code;
 
         return CallListAsync<DocumentListItem>(
@@ -318,13 +318,14 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary>Legacy public-download overload. The signer access code is not used by this public endpoint.</summary>
+    /// <summary>Legacy public-download overload. The signer access code is ignored; this public endpoint does not use one.</summary>
     /// <param name="signerId">Signer requesting the download.</param>
     /// <param name="documentId">Document to download.</param>
-    /// <param name="signerAccessCode">Legacy parameter retained for compatibility; the current public endpoint does not use an access code.</param>
+    /// <param name="signerAccessCode">Ignored. Retained so existing call sites keep compiling; the current public endpoint takes no access code.</param>
     /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The raw document artifact bytes.</returns>
+    [Obsolete("Use DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken). The signerAccessCode argument is ignored.")]
     public Task<byte[]> DownloadAsync(
         string signerId,
         string documentId,
@@ -335,31 +336,21 @@ public sealed class SigningResource : BaseResource
         return DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken);
     }
 
-    private static Dictionary<string, string?> BuildPaginationQuery(SignerDocumentListParams? parameters)
+    /// <summary>
+    /// Build the shared signer-document query. Both the list and search routes accept the same keys;
+    /// each documents a different subset and ignores the rest, so only values the caller set are sent.
+    /// </summary>
+    private static Dictionary<string, string?> BuildDocumentQuery(SignerDocumentListParams? parameters)
     {
         var query = new Dictionary<string, string?>();
         if (parameters is null) return query;
 
-        if (parameters.Page.HasValue) query["page"] = parameters.Page.Value.ToString();
-        if (parameters.PerPage.HasValue) query["per-page"] = parameters.PerPage.Value.ToString();
+        if (!string.IsNullOrWhiteSpace(parameters.Search)) query["search"] = parameters.Search;
         if (!string.IsNullOrWhiteSpace(parameters.Status)) query["status"] = parameters.Status;
         if (!string.IsNullOrWhiteSpace(parameters.Method)) query["method"] = parameters.Method;
-        if (!string.IsNullOrWhiteSpace(parameters.Search)) query["search"] = parameters.Search;
         if (!string.IsNullOrWhiteSpace(parameters.Sort)) query["sort"] = parameters.Sort;
-
-        return query;
-    }
-
-    private static Dictionary<string, string?> BuildSearchQuery(SignerDocumentListParams? parameters)
-    {
-        var query = new Dictionary<string, string?>();
-        if (!string.IsNullOrWhiteSpace(parameters?.Search))
-            query["search"] = parameters.Search;
-        if (!string.IsNullOrWhiteSpace(parameters?.Status)) query["status"] = parameters.Status;
-        if (!string.IsNullOrWhiteSpace(parameters?.Method)) query["method"] = parameters.Method;
-        if (!string.IsNullOrWhiteSpace(parameters?.Sort)) query["sort"] = parameters.Sort;
-        if (parameters?.Page.HasValue == true) query["page"] = parameters.Page.Value.ToString();
-        if (parameters?.PerPage.HasValue == true) query["per-page"] = parameters.PerPage.Value.ToString();
+        if (parameters.Page.HasValue) query["page"] = parameters.Page.Value.ToString();
+        if (parameters.PerPage.HasValue) query["per-page"] = parameters.PerPage.Value.ToString();
 
         return query;
     }

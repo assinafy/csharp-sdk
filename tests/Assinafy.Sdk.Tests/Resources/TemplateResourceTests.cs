@@ -191,4 +191,30 @@ public sealed class TemplateResourceTests
         body.RootElement.GetProperty("name").GetString().Should().Be("NDA v2");
         body.RootElement.GetProperty("message").GetString().Should().Be("Please sign");
     }
+
+    [Fact]
+    public async Task Create_ThrowsForNonPdfFile()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("data"));
+
+        var act = () => resource.CreateAsync(stream, "template.docx");
+
+        await act.Should().ThrowAsync<ValidationException>().WithMessage("*PDF*");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Create_RejectsStreamOverTheSharedUploadCap()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+        using var stream = new MemoryStream(new byte[25 * 1024 * 1024 + 1]);
+
+        var act = () => resource.CreateAsync(stream, "template.pdf");
+
+        await act.Should().ThrowAsync<ValidationException>().WithMessage("Template file size*25MB*");
+        handler.Requests.Should().BeEmpty();
+    }
 }

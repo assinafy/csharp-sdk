@@ -10,14 +10,14 @@ using Xunit;
 namespace Assinafy.Sdk.Tests.Resources;
 
 /// <summary>
-/// Tests for the endpoints and model fields added in v1.3.0,
-/// plus previously-untested public methods.
+/// Route, query, and payload coverage for endpoints exercised by no single-resource suite,
+/// plus deserialization of the model fields those responses carry.
 /// </summary>
-public sealed class AuditAdditionsTests
+public sealed class EndpointCoverageTests
 {
     private static HttpClient Client(FakeHttpMessageHandler handler) => FakeHttpMessageHandler.CreateClient(handler);
 
-    // ---- New coverage-gap endpoints -------------------------------------------------
+    // ---- Routes and queries ----------------------------------------------------------
 
     [Fact]
     public async Task Assignments_List_UsesDocumentedPaginationOnly()

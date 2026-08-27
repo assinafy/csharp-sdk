@@ -356,7 +356,9 @@ User account endpoints.
 
 `AssinafyClientOptions` accepts `ApiKey` or `Token` (mutually exclusive), an optional default `AccountId`, an HTTPS `BaseUrl` whose path is exactly `/v1`, and a positive `Timeout` (or `Timeout.InfiniteTimeSpan`). `new AssinafyClient(options)` owns its transport and applies `Timeout`; `new AssinafyClient(options, httpClient)` leaves the supplied transport open, leaves its timeout unchanged, and requires its `BaseAddress` to match `BaseUrl`. A supplied API-key transport must have automatic redirects disabled.
 
-`AssinafyClient.Create(apiKey, accountId, configure)` is the API-key shorthand. `AssinafyClient.FromConfig(config)` accepts `api_key`/`apiKey`, `account_id`/`accountId`, `token`/`access_token`/`accessToken`, and `base_url`/`baseUrl`. `services.AddAssinafy(configure)` registers the client and returns `IHttpClientBuilder`. Dispose the client when it owns its transport; dependency-injected clients are disposed by the service provider.
+`AssinafyClient.Create(apiKey, accountId, configure)` is the API-key shorthand. `AssinafyClient.FromConfig(config)` accepts `api_key`/`apiKey`, `account_id`/`accountId`, `token`/`access_token`/`accessToken`, and `base_url`/`baseUrl`. Dispose the client when it owns its transport; a supplied client's lifetime stays with its owner.
+
+The package has no NuGet dependencies and ships no container adapter. For dependency injection, register a named `HttpClient` with `ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)` and `SetHandlerLifetime(Timeout.InfiniteTimeSpan)`, then register `AssinafyClient` as a singleton over `IHttpClientFactory.CreateClient`. `AssinafyClient.CreatePrimaryHandler()` is public and returns the SDK's own handler: automatic redirects disabled, five-minute pooled connection lifetime. See the README for the full registration.
 
 Every constructed client exposes `Authentication`, `Accounts`, `Users`, `Documents`, `Signers`, `Assignments`, `Templates`, `Tags`, `Fields`, `PublicDocuments`, `Signing`, `Signatures`, and `Webhooks`.
 

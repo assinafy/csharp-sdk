@@ -244,10 +244,10 @@ public sealed class AssignmentResource : BaseResource
 
     private static Dictionary<string, object?> NormaliseSignerRef(SignerRef reference)
     {
-        var result = new Dictionary<string, object?>();
+        if (string.IsNullOrWhiteSpace(reference.Id))
+            throw new ValidationException("Invalid signer reference: ID is required for this operation.");
 
-        if (!string.IsNullOrWhiteSpace(reference.Id))
-            result["id"] = reference.Id;
+        var result = new Dictionary<string, object?> { ["id"] = reference.Id };
 
         if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
             result["verification_method"] = reference.VerificationMethod;
@@ -257,9 +257,6 @@ public sealed class AssignmentResource : BaseResource
 
         if (reference.Step.HasValue)
             result["step"] = reference.Step.Value;
-
-        if (string.IsNullOrWhiteSpace(reference.Id))
-            throw new ValidationException("Invalid signer reference: ID is required for this operation.");
 
         return result;
     }
