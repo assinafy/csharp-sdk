@@ -20,6 +20,9 @@ public static class AssinafyServiceCollectionExtensions
     /// <see cref="IHttpClientBuilder"/> can be used to chain Polly handlers, custom message
     /// handlers, etc.
     /// </summary>
+    /// <param name="services">Service collection that receives the SDK registrations.</param>
+    /// <param name="configure">Callback that configures authentication, account, base URL, and timeout options.</param>
+    /// <returns>The named HTTP-client builder for additional configuration.</returns>
     public static IHttpClientBuilder AddAssinafy(
         this IServiceCollection services,
         Action<AssinafyClientOptions> configure)
@@ -35,20 +38,17 @@ public static class AssinafyServiceCollectionExtensions
 
         var builder = services
             .AddHttpClient(HttpClientName)
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
-            {
-                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            })
+            .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
             .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
 
-        if (options.Timeout > TimeSpan.Zero)
+        if (options.Timeout > TimeSpan.Zero || options.Timeout == Timeout.InfiniteTimeSpan)
             builder.ConfigureHttpClient(http => http.Timeout = options.Timeout);
 
         services.AddSingleton(sp =>
         {
             var factory = sp.GetRequiredService<IHttpClientFactory>();
             var http = factory.CreateClient(HttpClientName);
-            return new AssinafyClient(options, http);
+            return new AssinafyClient(options, http, ownsHttpClient: true);
         });
 
         return builder;

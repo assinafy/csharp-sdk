@@ -115,7 +115,7 @@ public sealed class WebhookResourceTests
     }
 
     [Fact]
-    public async Task Get_ReturnsNullWhen404()
+    public async Task Get_PropagatesApi404()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddRawResponse(HttpMethod.Get, "/webhooks/subscriptions",
@@ -123,8 +123,8 @@ public sealed class WebhookResourceTests
             System.Net.HttpStatusCode.OK);
 
         var resource = CreateResource(handler);
-        var result = await resource.GetAsync();
+        var act = () => resource.GetAsync();
 
-        result.Should().BeNull();
+        await act.Should().ThrowAsync<ApiException>().Where(exception => exception.StatusCode == 404);
     }
 }

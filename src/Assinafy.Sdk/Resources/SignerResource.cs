@@ -17,6 +17,7 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="request">New signer details; <c>FullName</c> is required and, when present, <c>Email</c> must be a valid address.</param>
     /// <param name="accountId">Workspace account to create the signer in; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly created signer.</returns>
     public Task<Signer> CreateAsync(
         CreateSignerRequest request,
         string? accountId = null,
@@ -38,13 +39,14 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="signerId">Signer to fetch.</param>
     /// <param name="accountId">Workspace account that owns the signer; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested signer.</returns>
     public Task<Signer> GetAsync(
         string signerId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         return CallAsync<Signer>($"accounts/{id}/signers/{signer}", HttpMethod.Get,
             cancellationToken: cancellationToken);
     }
@@ -53,6 +55,7 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="queryParams">Optional filters: <c>search</c> (partial name or email match), <c>page</c> (1-based), and <c>per-page</c> (page size).</param>
     /// <param name="accountId">Workspace account whose signers to list; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of signers.</returns>
     public Task<PaginatedResult<Signer>> ListAsync(
         IDictionary<string, string?>? queryParams = null,
         string? accountId = null,
@@ -67,6 +70,7 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="request">Fields to update; when present, <c>Email</c> must be a valid address.</param>
     /// <param name="accountId">Workspace account that owns the signer; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated signer.</returns>
     public Task<Signer> UpdateAsync(
         string signerId,
         UpdateSignerRequest request,
@@ -77,7 +81,7 @@ public sealed partial class SignerResource : BaseResource
         AssertOptionalEmail(request.Email);
 
         var id = AccountId(accountId);
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         return CallAsync<Signer>(
             $"accounts/{id}/signers/{signer}",
             HttpMethod.Put,
@@ -89,13 +93,14 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="signerId">Signer to remove.</param>
     /// <param name="accountId">Workspace account that owns the signer; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the signer has been removed.</returns>
     public Task DeleteAsync(
         string signerId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         return CallVoidAsync($"accounts/{id}/signers/{signer}", HttpMethod.Delete,
             cancellationToken: cancellationToken);
     }
@@ -118,6 +123,7 @@ public sealed partial class SignerResource : BaseResource
         var id = AccountId(accountId);
 
         var page = 1;
+        var seenPages = new HashSet<string>(StringComparer.Ordinal);
         while (true)
         {
             var result = await CallListAsync<Signer>(
@@ -134,8 +140,17 @@ public sealed partial class SignerResource : BaseResource
                 string.Equals(s.Email, email, StringComparison.OrdinalIgnoreCase));
             if (match is not null) return match;
 
-            var lastPage = result.Meta?.LastPage ?? 1;
-            if (result.Data.Count == 0 || page >= lastPage) return null;
+            var pageFingerprint = string.Join(
+                '\n',
+                result.Data.Select(signer => $"{signer.Id}\t{signer.Email}"));
+            var lastPage = result.Meta?.LastPage;
+            if (lastPage is null && result.Meta is { Total: int total, PerPage: > 0 } meta)
+                lastPage = (total + meta.PerPage!.Value - 1) / meta.PerPage.Value;
+
+            if (result.Data.Count == 0 ||
+                !seenPages.Add(pageFingerprint) ||
+                lastPage is not null && page >= lastPage)
+                return null;
 
             page++;
         }
@@ -144,6 +159,7 @@ public sealed partial class SignerResource : BaseResource
     /// <summary><c>GET /signers/self</c> — signer-facing endpoint: load the signer's own profile using only an access code.</summary>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The signer's profile and current signing-state flags.</returns>
     public Task<Signer> GetSelfAsync(
         string signerAccessCode,
         CancellationToken cancellationToken = default)
@@ -178,7 +194,29 @@ public sealed partial class SignerResource : BaseResource
         return new Signer { HasAcceptedTerms = true };
     }
 
-    /// <summary><c>POST /verify</c> — verify the emailed OTP. The API returns no data; the returned <see cref="VerifyEmailResult"/> is a synthetic legacy-compatibility result.</summary>
+    /// <summary><c>POST /verify</c> — verify an email or WhatsApp one-time code. The API returns no data.</summary>
+    /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
+    /// <param name="verificationCode">The one-time verification code delivered to the signer.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the one-time code has been verified.</returns>
+    public Task VerifyAsync(
+        string signerAccessCode,
+        string verificationCode,
+        CancellationToken cancellationToken = default)
+    {
+        var accessCode = RequireId(signerAccessCode, "Signer access code");
+        var code = RequireId(verificationCode, "Verification code");
+        var path = AppendQueryString("verify", AccessCodeQuery(accessCode));
+
+        return CallVoidAsync(
+            path,
+            HttpMethod.Post,
+            new Dictionary<string, object?> { ["verification-code"] = code },
+            cancellationToken,
+            authenticate: false);
+    }
+
+    /// <summary><c>POST /verify</c> — verify an emailed OTP. The API returns no data; the returned <see cref="VerifyEmailResult"/> is a synthetic legacy result.</summary>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
     /// <param name="verificationCode">The one-time code that was emailed to the signer.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -188,20 +226,7 @@ public sealed partial class SignerResource : BaseResource
         string verificationCode,
         CancellationToken cancellationToken = default)
     {
-        var accessCode = RequireId(signerAccessCode, "Signer access code");
-        var code = RequireId(verificationCode, "Verification code");
-
-        var path = AppendQueryString("verify", AccessCodeQuery(accessCode));
-
-        await CallVoidAsync(
-            path,
-            HttpMethod.Post,
-            new Dictionary<string, object?>
-            {
-                ["verification-code"] = code,
-            },
-            cancellationToken,
-            authenticate: false).ConfigureAwait(false);
+        await VerifyAsync(signerAccessCode, verificationCode, cancellationToken).ConfigureAwait(false);
 
         return new VerifyEmailResult
         {
@@ -244,7 +269,7 @@ public sealed partial class SignerResource : BaseResource
         ConfirmSignerDataRequest request,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         var code = RequireId(signerAccessCode, "Signer access code");
         ArgumentNullException.ThrowIfNull(request);
         AssertOptionalEmail(request.Email);
@@ -272,7 +297,7 @@ public sealed partial class SignerResource : BaseResource
 
     private static void AssertOptionalEmail(string? email)
     {
-        if (!string.IsNullOrWhiteSpace(email))
+        if (email is not null)
             AssertEmail(email);
     }
 

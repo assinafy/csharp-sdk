@@ -1382,7 +1382,7 @@
                                     "token": {
                                         "description": "Token received by email.",
                                         "type": "string",
-                                        "example": "b3ac64d6c55b3ac64d6c55"
+                                        "example": "example-reset-token"
                                     },
                                     "new_password": {
                                         "type": "string",
@@ -3456,7 +3456,7 @@
                                     "email": {
                                         "type": "string",
                                         "format": "email",
-                                        "example": "john@email.com"
+                                        "example": "john@example.com"
                                     },
                                     "whatsapp_phone_number": {
                                         "description": "E.164; normalized on save.",
@@ -3612,7 +3612,7 @@
                                     "email": {
                                         "type": "string",
                                         "format": "email",
-                                        "example": "john@email.com"
+                                        "example": "john@example.com"
                                     },
                                     "whatsapp_phone_number": {
                                         "description": "E.164; normalized on save.",
@@ -4743,7 +4743,7 @@
                                     "token": {
                                         "description": "Access/ID token from the provider.",
                                         "type": "string",
-                                        "example": "yOTUvImV4cCI6MTY3OTY1ODY5NS..."
+                                        "example": "example-provider-token"
                                     },
                                     "has_accepted_terms": {
                                         "type": "boolean",
@@ -6021,7 +6021,7 @@
                                         "description": "Email that receives important webhook-communication notices.",
                                         "type": "string",
                                         "format": "email",
-                                        "example": "email@test.com"
+                                        "example": "email@example.com"
                                     }
                                 },
                                 "type": "object"
@@ -6468,7 +6468,7 @@
                 "properties": {
                     "api_key": {
                         "type": "string",
-                        "example": "mIpe_zdJfKUpMK9Va3XuYgzPXMxz49fIaRCWXseVkpVAX608A9j3i_D67qU5qW3M",
+                        "example": "example-api-key",
                         "nullable": true
                     }
                 },
@@ -6571,7 +6571,7 @@
                     "email": {
                         "type": "string",
                         "format": "email",
-                        "example": "john@email.com",
+                        "example": "john@example.com",
                         "nullable": true
                     },
                     "whatsapp_phone_number": {
@@ -7437,7 +7437,7 @@
                     "email": {
                         "description": "Contact email for delivery notices.",
                         "type": "string",
-                        "example": "email@test.com",
+                        "example": "email@example.com",
                         "nullable": true
                     },
                     "updated_at": {
@@ -7759,7 +7759,7 @@
                 "properties": {
                     "access_token": {
                         "type": "string",
-                        "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+                        "example": "example-access-token"
                     },
                     "user": {
                         "$ref": "#/components/schemas/AuthUser"
@@ -7774,7 +7774,7 @@
                 "type": "object"
             },
             "DocumentStatsRow": {
-                "description": "One period of the document-funnel KPI series. `period` is `YYYY-MM` (monthly) or `YYYY-MM-DD` (daily); series are zero-filled, no gaps.",
+                "description": "One period of the document-funnel KPI series. `period` is `YYYY-MM` (monthly) or `YYYY-MM-DD` (daily); series are zero-filled, no gaps. Signature requests come with two independent breakdowns: the `signature_requests_notification_*` counters split them by the channels the signer was notified on — a signer reached on more than one channel counts once per channel, so these add up to at least `signature_requests` — while the `signature_requests_verification_*` counters split them by how the signer's identity is verified, and since each request has exactly one verification method those four always add up to `signature_requests`.",
                 "properties": {
                     "period": {
                         "description": "`YYYY-MM` (monthly) or `YYYY-MM-DD` (daily).",
@@ -7793,13 +7793,40 @@
                         "type": "integer",
                         "example": 61
                     },
-                    "signature_requests_email": {
+                    "signature_requests_notification_email": {
+                        "description": "Requests notified by e-mail.",
                         "type": "integer",
                         "example": 55
                     },
-                    "signature_requests_whatsapp": {
+                    "signature_requests_notification_whatsapp": {
+                        "description": "Requests notified by WhatsApp.",
                         "type": "integer",
                         "example": 18
+                    },
+                    "signature_requests_notification_bypass": {
+                        "description": "Requests with no notification sent (`Bypass`).",
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "signature_requests_verification_email": {
+                        "description": "Requests verified by an e-mail token.",
+                        "type": "integer",
+                        "example": 48
+                    },
+                    "signature_requests_verification_whatsapp": {
+                        "description": "Requests verified by a WhatsApp token.",
+                        "type": "integer",
+                        "example": 6
+                    },
+                    "signature_requests_verification_bypass": {
+                        "description": "Requests signed without token verification (`Bypass`).",
+                        "type": "integer",
+                        "example": 3
+                    },
+                    "signature_requests_verification_digital_certificate": {
+                        "description": "Requests signed with the signer's own ICP-Brasil digital certificate.",
+                        "type": "integer",
+                        "example": 4
                     },
                     "signature_requests_viewed": {
                         "description": "Signature requests whose document was first viewed during the period.",
@@ -8347,7 +8374,7 @@
                             {
                                 "id": "61521202f665dffcef5f6b24",
                                 "full_name": "Kennith Kuphal",
-                                "email": "tromp.deon@kemmer.com",
+                                "email": "tromp.deon@example.com",
                                 "verification_method": "Email",
                                 "notification_methods": [
                                     "Email"
@@ -8359,7 +8386,7 @@
                             {
                                 "id": "615212039529a822e24b6913",
                                 "full_name": "Sonny Bayer",
-                                "email": "tillman31@yahoo.com",
+                                "email": "tillman31@example.com",
                                 "verification_method": "Whatsapp",
                                 "notification_methods": [
                                     "Whatsapp"
@@ -8383,7 +8410,7 @@
                                 "signer": {
                                     "id": "61521202f665dffcef5f6b24",
                                     "full_name": "Kennith Kuphal",
-                                    "email": "tromp.deon@kemmer.com"
+                                    "email": "tromp.deon@example.com"
                                 },
                                 "field": {
                                     "id": "6152120297080d55bdd13197",
@@ -8414,7 +8441,7 @@
                                 "signer": {
                                     "id": "615212039529a822e24b6913",
                                     "full_name": "Sonny Bayer",
-                                    "email": "tillman31@yahoo.com"
+                                    "email": "tillman31@example.com"
                                 },
                                 "field": {
                                     "id": "6152120297080d55bdd13197",
@@ -8441,13 +8468,13 @@
                                 {
                                     "id": "61521202f665dffcef5f6b24",
                                     "full_name": "Kennith Kuphal",
-                                    "email": "tromp.deon@kemmer.com",
+                                    "email": "tromp.deon@example.com",
                                     "completed": false
                                 },
                                 {
                                     "id": "615212039529a822e24b6913",
                                     "full_name": "Sonny Bayer",
-                                    "email": "tillman31@yahoo.com",
+                                    "email": "tillman31@example.com",
                                     "completed": false
                                 }
                             ]
@@ -8455,11 +8482,11 @@
                         "signing_urls": [
                             {
                                 "signer_id": "61521202f665dffcef5f6b24",
-                                "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=tromp.deon@kemmer.com"
+                                "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=tromp.deon@example.com"
                             },
                             {
                                 "signer_id": "615212039529a822e24b6913",
-                                "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=tillman31@yahoo.com"
+                                "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=tillman31@example.com"
                             }
                         ]
                     }
@@ -8490,7 +8517,7 @@
     "tags": [
         {
             "name": "Quick Start",
-            "description": "Steps to quickly start using the API. By the end you'll be able to create a document and invite signers.\n\n### 1. Create a user account\n\nDuring development, create a user account in the **sandbox** (https://app-sandbox.assinafy.com.br). For integrations using an API key, create a *separate* user account (e.g. *My App*) so you can grant it only the access it needs. Use the production app (https://app.assinafy.com.br) once you go live.\n\n### 2. Set up credentials\n\nGenerate an **API key** from the *My Account → API* page in the Assinafy app, and note your **workspace account ID** from *My Account → Workspaces*. Use the API key only from a back-end system — never store it in client-side code.\n\nFor sandbox plan/credit purchases, use the test card `5510 3647 0363 3414`.\n\n### 3. Upload a document\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/documents\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -F 'file=@/tmp/document.pdf'\n```\n\nSave the returned document `id` for the next steps.\n\n### 4. Create signers\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/signers\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"full_name\": \"John Dove\", \"email\": \"john@email.com\" }'\n```\n\nSave each signer `id`.\n\n### 5. Request signatures\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/documents/{document_id}/assignments\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"method\": \"virtual\", \"signerIds\": [\"{signer_id}\"] }'\n```\n\nThe `virtual` method requires no input from the signer. To collect input fields, use the `collect` method — see the Assignment section.",
+            "description": "Steps to quickly start using the API. By the end you'll be able to create a document and invite signers.\n\n### 1. Create a user account\n\nDuring development, create a user account in the **sandbox** (https://app-sandbox.assinafy.com.br). For integrations using an API key, create a *separate* user account (e.g. *My App*) so you can grant it only the access it needs. Use the production app (https://app.assinafy.com.br) once you go live.\n\n### 2. Set up credentials\n\nGenerate an **API key** from the *My Account → API* page in the Assinafy app, and note your **workspace account ID** from *My Account → Workspaces*. Use the API key only from a back-end system — never store it in client-side code.\n\nFor sandbox plan/credit purchases, use the test card `5510 3647 0363 3414`.\n\n### 3. Upload a document\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/documents\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -F 'file=@/tmp/document.pdf'\n```\n\nSave the returned document `id` for the next steps.\n\n### 4. Create signers\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/signers\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"full_name\": \"John Dove\", \"email\": \"john@example.com\" }'\n```\n\nSave each signer `id`.\n\n### 5. Request signatures\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/documents/{document_id}/assignments\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"method\": \"virtual\", \"signerIds\": [\"{signer_id}\"] }'\n```\n\nThe `virtual` method requires no input from the signer. To collect input fields, use the `collect` method — see the Assignment section.",
             "x-content": true
         },
         {

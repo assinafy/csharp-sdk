@@ -3,7 +3,7 @@ using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
 
-/// <summary>Signer-facing document access, signing, declining, and downloads.</summary>
+/// <summary>Signer-facing document access, signing, declining, certificate signing, and public downloads.</summary>
 public sealed class SigningResource : BaseResource
 {
     internal SigningResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
@@ -13,6 +13,7 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code identifying which assignment to load.</param>
     /// <param name="hasAcceptedTerms">When set, records whether the signer has accepted the terms of use; sent as the <c>has_accepted_terms</c> query flag.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document and assignment details available to the signer.</returns>
     public Task<DocumentDetails> GetAsync(
         string signerAccessCode,
         bool? hasAcceptedTerms = null,
@@ -43,6 +44,7 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code authorizing the submission.</param>
     /// <param name="values">Field values to submit, one entry per field; serialized with camelCase keys.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the assignment has been signed.</returns>
     public Task SignAsync(
         string documentId,
         string assignmentId,
@@ -50,8 +52,8 @@ public sealed class SigningResource : BaseResource
         IReadOnlyList<SignAssignmentValue> values,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
         var code = RequireId(signerAccessCode, "Signer access code");
         ArgumentNullException.ThrowIfNull(values);
 
@@ -67,12 +69,69 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
+    /// <summary>
+    /// <c>POST /signers/certificate/start?signer-access-code={code}</c> — start an
+    /// ICP-Brasil digital-certificate signature and return the Web PKI token to sign.
+    /// This route is required for assignments whose verification method is
+    /// <c>DigitalCertificate</c>. It is a production-only deployed extension that is not
+    /// exposed by the sandbox or included in the published OpenAPI document.
+    /// </summary>
+    /// <param name="signerAccessCode">The signer's access code authorizing the signature.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The Web PKI token required to create the digital signature.</returns>
+    public Task<CertificateStartResult> StartCertificateAsync(
+        string signerAccessCode,
+        CancellationToken cancellationToken = default)
+    {
+        var code = RequireId(signerAccessCode, "Signer access code");
+        var path = AppendQueryString("signers/certificate/start", AccessCodeQuery(code));
+
+        return CallAsync<CertificateStartResult>(
+            path,
+            HttpMethod.Post,
+            new Dictionary<string, object?> { [SignerAccessCodeParam] = code },
+            cancellationToken: cancellationToken,
+            authenticate: false);
+    }
+
+    /// <summary>
+    /// <c>POST /signers/certificate/complete?signer-access-code={code}</c> — complete
+    /// an ICP-Brasil digital-certificate signature using the signed Web PKI token returned by
+    /// <see cref="StartCertificateAsync"/>. It is a production-only deployed extension that is
+    /// not exposed by the sandbox or included in the published OpenAPI document.
+    /// </summary>
+    /// <param name="signerAccessCode">The signer's access code authorizing the signature.</param>
+    /// <param name="token">The Web PKI token returned by <see cref="StartCertificateAsync"/> after it has been signed.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The signer identity reported after the certificate signature is completed.</returns>
+    public Task<CertificateCompleteResult> CompleteCertificateAsync(
+        string signerAccessCode,
+        string token,
+        CancellationToken cancellationToken = default)
+    {
+        var code = RequireId(signerAccessCode, "Signer access code");
+        var signedToken = RequireId(token, "Certificate token");
+        var path = AppendQueryString("signers/certificate/complete", AccessCodeQuery(code));
+
+        return CallAsync<CertificateCompleteResult>(
+            path,
+            HttpMethod.Post,
+            new Dictionary<string, object?>
+            {
+                [SignerAccessCodeParam] = code,
+                ["token"] = signedToken,
+            },
+            cancellationToken: cancellationToken,
+            authenticate: false);
+    }
+
     /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reject?signer-access-code={code}</c> — signer-facing endpoint: decline an assignment with a reason.</summary>
     /// <param name="documentId">Document containing the assignment.</param>
     /// <param name="assignmentId">Assignment being declined.</param>
     /// <param name="signerAccessCode">The signer's access code authorizing the decline.</param>
     /// <param name="declineReason">Reason the signer is declining the assignment.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the assignment has been declined.</returns>
     public Task DeclineAsync(
         string documentId,
         string assignmentId,
@@ -80,8 +139,8 @@ public sealed class SigningResource : BaseResource
         string declineReason,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
         var code = RequireId(signerAccessCode, "Signer access code");
         ArgumentException.ThrowIfNullOrWhiteSpace(declineReason);
 
@@ -101,12 +160,13 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerId">Signer whose current document to fetch.</param>
     /// <param name="signerAccessCode">The signer's access code.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The signer's current document details.</returns>
     public Task<DocumentDetails> GetCurrentDocumentAsync(
         string signerId,
         string signerAccessCode,
         CancellationToken cancellationToken = default)
     {
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         var code = RequireId(signerAccessCode, "Signer access code");
 
         var path = AppendQueryString(
@@ -125,13 +185,14 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code.</param>
     /// <param name="parameters">Optional pagination. The documented endpoint accepts <c>Page</c> and <c>PerPage</c>; explicitly set legacy filters are retained for compatibility.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of documents associated with the signer.</returns>
     public Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(
         string signerId,
         string signerAccessCode,
         SignerDocumentListParams? parameters = null,
         CancellationToken cancellationToken = default)
     {
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         var code = RequireId(signerAccessCode, "Signer access code");
 
         var query = BuildPaginationQuery(parameters);
@@ -153,13 +214,14 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code.</param>
     /// <param name="parameters">Optional search term. The documented endpoint accepts <c>Search</c>; explicitly set legacy filters and pagination are retained for compatibility.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of documents matching the search.</returns>
     public Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsync(
         string signerId,
         string signerAccessCode,
         SignerDocumentListParams? parameters = null,
         CancellationToken cancellationToken = default)
     {
-        var signer = RequireId(signerId, "Signer ID");
+        var signer = PathSegment(signerId, "Signer ID");
         var code = RequireId(signerAccessCode, "Signer access code");
 
         var query = BuildSearchQuery(parameters);
@@ -176,6 +238,7 @@ public sealed class SigningResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code authorizing the signatures.</param>
     /// <param name="documentIds">Documents to sign; must contain at least one id.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when all requested documents have been signed.</returns>
     public Task SignMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -203,6 +266,7 @@ public sealed class SigningResource : BaseResource
     /// <param name="documentIds">Documents to decline; must contain at least one id.</param>
     /// <param name="declineReason">Reason applied to every declined document.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when all requested documents have been declined.</returns>
     public Task DeclineMultipleAsync(
         string signerAccessCode,
         IReadOnlyList<string> documentIds,
@@ -234,9 +298,33 @@ public sealed class SigningResource : BaseResource
     /// <summary><c>GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}</c> — public download of a signer document artifact.</summary>
     /// <param name="signerId">Signer requesting the download.</param>
     /// <param name="documentId">Document to download.</param>
+    /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw document artifact bytes.</returns>
+    public Task<byte[]> DownloadPublicAsync(
+        string signerId,
+        string documentId,
+        string artifactName = DocumentArtifactNames.Certificated,
+        CancellationToken cancellationToken = default)
+    {
+        var signer = PathSegment(signerId, "Signer ID");
+        var document = PathSegment(documentId, "Document ID");
+        var artifact = PathSegment(artifactName, "Artifact name");
+
+        return CallBinaryAsync(
+            $"signers/{signer}/documents/{document}/download/{artifact}",
+            HttpMethod.Get,
+            cancellationToken,
+            authenticate: false);
+    }
+
+    /// <summary>Legacy public-download overload. The signer access code is not used by this public endpoint.</summary>
+    /// <param name="signerId">Signer requesting the download.</param>
+    /// <param name="documentId">Document to download.</param>
     /// <param name="signerAccessCode">Legacy parameter retained for compatibility; the current public endpoint does not use an access code.</param>
     /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw document artifact bytes.</returns>
     public Task<byte[]> DownloadAsync(
         string signerId,
         string documentId,
@@ -244,13 +332,7 @@ public sealed class SigningResource : BaseResource
         string artifactName = DocumentArtifactNames.Certificated,
         CancellationToken cancellationToken = default)
     {
-        var signer = RequireId(signerId, "Signer ID");
-        var document = RequireId(documentId, "Document ID");
-        var artifact = RequireId(artifactName, "Artifact name");
-
-        var path = $"signers/{signer}/documents/{document}/download/{artifact}";
-
-        return CallBinaryAsync(path, HttpMethod.Get, cancellationToken, authenticate: false);
+        return DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken);
     }
 
     private static Dictionary<string, string?> BuildPaginationQuery(SignerDocumentListParams? parameters)

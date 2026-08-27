@@ -180,7 +180,10 @@ public sealed class AccountResourceTests
             Month = "2026-06",
         });
 
-        result.Should().ContainSingle().Which.DocumentsUploaded.Should().Be(2);
+        var row = result.Should().ContainSingle().Which;
+        row.DocumentsUploaded.Should().Be(2);
+        row.SignatureRequestsNotificationEmail.Should().Be(2);
+        row.SignatureRequestsNotificationWhatsapp.Should().Be(1);
         handler.Requests.Single().RequestUri!.PathAndQuery.Should()
             .EndWith("/accounts/acc/stats?granularity=daily&month=2026-06");
     }

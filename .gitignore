@@ -7,6 +7,14 @@ obj/
 *.suo
 *.nupkg
 *.snupkg
+*.trx
 .DS_Store
+.env
+.env.*
+!.env.example
 .claude/
 .live-test/
+TestResults/
+test-results/
+artifacts/
+coverage.*

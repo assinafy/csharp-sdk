@@ -13,6 +13,7 @@ public sealed class FieldResource : BaseResource
     /// <param name="request">Field definition to create (type and name are required).</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly created field definition.</returns>
     public Task<FieldDefinition> CreateAsync(
         CreateFieldDefinitionRequest request,
         string? accountId = null,
@@ -34,6 +35,7 @@ public sealed class FieldResource : BaseResource
     /// <param name="parameters">Optional filters to include inactive or standard built-in fields.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page of field definitions and any pagination metadata returned by the API.</returns>
     public Task<PaginatedResult<FieldDefinition>> ListAsync(
         FieldListParams? parameters = null,
         string? accountId = null,
@@ -50,13 +52,14 @@ public sealed class FieldResource : BaseResource
     /// <param name="fieldId">Field definition to fetch.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested field definition.</returns>
     public Task<FieldDefinition> GetAsync(
         string fieldId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var field = RequireId(fieldId, "Field ID");
+        var field = PathSegment(fieldId, "Field ID");
         return CallAsync<FieldDefinition>(
             $"accounts/{id}/fields/{field}",
             HttpMethod.Get,
@@ -68,6 +71,7 @@ public sealed class FieldResource : BaseResource
     /// <param name="request">New field-definition values.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated field definition.</returns>
     public Task<FieldDefinition> UpdateAsync(
         string fieldId,
         UpdateFieldDefinitionRequest request,
@@ -79,7 +83,7 @@ public sealed class FieldResource : BaseResource
             throw new ValidationException("Regex and ClearRegex cannot both be set.");
 
         var id = AccountId(accountId);
-        var field = RequireId(fieldId, "Field ID");
+        var field = PathSegment(fieldId, "Field ID");
 
         return CallAsync<FieldDefinition>(
             $"accounts/{id}/fields/{field}",
@@ -92,13 +96,14 @@ public sealed class FieldResource : BaseResource
     /// <param name="fieldId">Field definition to delete.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the field definition has been deleted.</returns>
     public Task DeleteAsync(
         string fieldId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var field = RequireId(fieldId, "Field ID");
+        var field = PathSegment(fieldId, "Field ID");
 
         return CallVoidAsync(
             $"accounts/{id}/fields/{field}",
@@ -112,6 +117,7 @@ public sealed class FieldResource : BaseResource
     /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result for the supplied value.</returns>
     public Task<FieldValidationResult> ValidateAsync(
         string fieldId,
         ValidateFieldValueRequest request,
@@ -121,7 +127,7 @@ public sealed class FieldResource : BaseResource
     {
         ArgumentNullException.ThrowIfNull(request);
         var id = AccountId(accountId);
-        var field = RequireId(fieldId, "Field ID");
+        var field = PathSegment(fieldId, "Field ID");
 
         var path = AppendQueryString(
             $"accounts/{id}/fields/{field}/validate",
@@ -139,6 +145,7 @@ public sealed class FieldResource : BaseResource
     /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One validation result for each submitted field value.</returns>
     public async Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(
         IReadOnlyList<ValidateFieldValueItem> values,
         string? signerAccessCode = null,
@@ -161,6 +168,7 @@ public sealed class FieldResource : BaseResource
 
     /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The supported field types.</returns>
     public async Task<IReadOnlyList<FieldTypeInfo>> ListTypesAsync(
         CancellationToken cancellationToken = default)
     {

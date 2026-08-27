@@ -13,6 +13,7 @@ public sealed class WebhookResource : BaseResource
     /// <param name="request">Subscription settings: at least one event, plus the delivery URL and contact email.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created or updated webhook subscription.</returns>
     public Task<WebhookSubscription> UpdateSubscriptionAsync(
         UpdateWebhookSubscriptionRequest request,
         string? accountId = null,
@@ -32,30 +33,25 @@ public sealed class WebhookResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
-    /// <summary><c>GET /accounts/{account_id}/webhooks/subscriptions</c> — fetch the workspace's current webhook subscription. Returns <see langword="null"/> if there is no subscription.</summary>
+    /// <summary><c>GET /accounts/{account_id}/webhooks/subscriptions</c> — fetch the workspace's current webhook subscription.</summary>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    public async Task<WebhookSubscription?> GetAsync(
+    /// <returns>The workspace's current webhook subscription.</returns>
+    public Task<WebhookSubscription> GetAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        try
-        {
-            return await CallAsync<WebhookSubscription>(
-                $"accounts/{id}/webhooks/subscriptions",
-                HttpMethod.Get,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-        }
-        catch (ApiException ex) when (ex.StatusCode == 404)
-        {
-            return null;
-        }
+        return CallAsync<WebhookSubscription>(
+            $"accounts/{id}/webhooks/subscriptions",
+            HttpMethod.Get,
+            cancellationToken: cancellationToken);
     }
 
     /// <summary><c>PUT /accounts/{account_id}/webhooks/inactivate</c> — pause delivery without losing the subscription configuration. The API has no delete endpoint; use this (or <see cref="UpdateSubscriptionAsync"/> with <c>IsActive = false</c>) to stop deliveries.</summary>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The inactive webhook subscription.</returns>
     public Task<WebhookSubscription> InactivateAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -69,6 +65,7 @@ public sealed class WebhookResource : BaseResource
 
     /// <summary><c>GET /webhooks/event-types</c> — list all event types supported by the platform.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The webhook event types supported by the platform.</returns>
     public async Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -82,6 +79,7 @@ public sealed class WebhookResource : BaseResource
     /// <param name="parameters">Optional filters: event type, delivered flag, unix-epoch <c>from</c>/<c>to</c> bounds (seconds), and pagination.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of webhook delivery attempts.</returns>
     public Task<PaginatedResult<WebhookDispatch>> ListDispatchesAsync(
         ListDispatchesParams? parameters = null,
         string? accountId = null,
@@ -98,13 +96,14 @@ public sealed class WebhookResource : BaseResource
     /// <param name="dispatchId">Previous webhook dispatch to re-attempt.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The webhook dispatch record after the retry request.</returns>
     public Task<WebhookDispatch> RetryDispatchAsync(
         string dispatchId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var dispatch = RequireId(dispatchId, "Dispatch ID");
+        var dispatch = PathSegment(dispatchId, "Dispatch ID");
         return CallAsync<WebhookDispatch>(
             $"accounts/{id}/webhooks/{dispatch}/retry",
             HttpMethod.Post,

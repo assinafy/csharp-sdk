@@ -16,21 +16,22 @@ concurrency:
 jobs:
   live:
     name: Live sandbox tests
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: sandbox
     timeout-minutes: 30
     env:
-      ASSINAFY_API_KEY: ${{ secrets.ASSINAFY_API_KEY }}
-      ASSINAFY_ACCOUNT_ID: ${{ secrets.ASSINAFY_ACCOUNT_ID }}
       ASSINAFY_BASE_URL: https://sandbox.assinafy.com.br/v1
-      ASSINAFY_TEST_EMAIL_PRIMARY: ${{ secrets.ASSINAFY_TEST_EMAIL_PRIMARY }}
-      ASSINAFY_TEST_EMAIL_SECONDARY: ${{ secrets.ASSINAFY_TEST_EMAIL_SECONDARY }}
 
     steps:
       - name: Validate sandbox configuration
         shell: bash
+        env:
+          ASSINAFY_API_KEY: ${{ secrets.ASSINAFY_API_KEY }}
+          ASSINAFY_ACCOUNT_ID: ${{ secrets.ASSINAFY_ACCOUNT_ID }}
         run: |
           missing=0
-          for name in ASSINAFY_API_KEY ASSINAFY_ACCOUNT_ID ASSINAFY_TEST_EMAIL_PRIMARY ASSINAFY_TEST_EMAIL_SECONDARY; do
+          for name in ASSINAFY_API_KEY ASSINAFY_ACCOUNT_ID; do
             if [ -z "${!name:-}" ]; then
               echo "::error::$name is required"
               missing=1
@@ -39,7 +40,7 @@ jobs:
           test "$missing" -eq 0
 
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -52,7 +53,12 @@ jobs:
             10.0.400
 
       - name: Run live integration tests
+        env:
+          ASSINAFY_API_KEY: ${{ secrets.ASSINAFY_API_KEY }}
+          ASSINAFY_ACCOUNT_ID: ${{ secrets.ASSINAFY_ACCOUNT_ID }}
         run: >-
-          dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj
+          dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj
           --configuration Release
-          --filter "FullyQualifiedName~LiveIntegrationTests"
+          --framework net10.0
+          --
+          --filter-trait "Category=Live"

@@ -38,11 +38,10 @@ public abstract class BaseResource
     private protected string AccountId(string? explicitAccountId = null)
     {
         var id = explicitAccountId ?? _defaultAccountId;
-        if (string.IsNullOrWhiteSpace(id))
-            throw new ValidationException(
-                "Account ID is required. Provide it as a parameter or set a default in the client.");
-
-        return id;
+        return PathSegment(
+            id,
+            "Account ID",
+            "Account ID is required. Provide it as a parameter or set a default in the client.");
     }
 
     private protected static string RequireId(string? value, string name)
@@ -51,6 +50,19 @@ public abstract class BaseResource
             throw new ValidationException($"{name} is required");
 
         return value;
+    }
+
+    private protected static string PathSegment(
+        string? value,
+        string name,
+        string? requiredMessage = null)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ValidationException(requiredMessage ?? $"{name} is required");
+        if (value is "." or "..")
+            throw new ValidationException($"{name} is invalid");
+
+        return Uri.EscapeDataString(value);
     }
 
     /// <summary>Query-parameter name carrying a signer's access code on signer-facing endpoints.</summary>
@@ -63,20 +75,20 @@ public abstract class BaseResource
     /// <summary>
     /// Send a request and deserialize the envelope's required <c>data</c> into
     /// <typeparamref name="T"/>. List callers should prefer <see cref="CallListBodyAsync{T}"/>,
-    /// which normalises a missing payload to an empty list.
+    /// which requires the payload to be a JSON array.
     /// </summary>
     private protected async Task<T> CallAsync<T>(
         string path,
         HttpMethod method,
         object? body = null,
-        IDictionary<string, string>? extraHeaders = null,
         CancellationToken cancellationToken = default,
         bool authenticate = true)
     {
         var result = await SendEnvelopeAsync<T>(
-            () => BuildRequest(path, method, body, extraHeaders),
+            () => BuildRequest(path, method, body),
             cancellationToken,
-            authenticate).ConfigureAwait(false);
+            authenticate,
+            requireData: true).ConfigureAwait(false);
 
         return result is null
             ? throw new SerializationException("The API response did not contain the expected data payload.")
@@ -85,7 +97,7 @@ public abstract class BaseResource
 
     /// <summary>
     /// Send a request whose envelope <c>data</c> is a JSON array, returning it as a non-null
-    /// read-only list (an absent or <c>null</c> payload becomes an empty list).
+    /// read-only list. An absent or <c>null</c> payload is a response-contract error.
     /// </summary>
     private protected async Task<IReadOnlyList<T>> CallListBodyAsync<T>(
         string path,
@@ -97,24 +109,25 @@ public abstract class BaseResource
         var result = await SendEnvelopeAsync<List<T>>(
             () => BuildRequest(path, method, body),
             cancellationToken,
-            authenticate).ConfigureAwait(false);
+            authenticate,
+            requireData: true).ConfigureAwait(false);
 
-        return result ?? [];
+        return result;
     }
 
     private protected async Task<T> CallContentAsync<T>(
         string path,
         HttpMethod method,
         HttpContent content,
-        IDictionary<string, string>? extraHeaders = null,
         CancellationToken cancellationToken = default,
         bool authenticate = true)
     {
         ArgumentNullException.ThrowIfNull(content);
         var result = await SendEnvelopeAsync<T>(
-            () => BuildContentRequest(path, method, content, extraHeaders),
+            () => BuildContentRequest(path, method, content),
             cancellationToken,
-            authenticate).ConfigureAwait(false);
+            authenticate,
+            requireData: true).ConfigureAwait(false);
 
         return result is null
             ? throw new SerializationException("The API response did not contain the expected data payload.")
@@ -125,15 +138,15 @@ public abstract class BaseResource
         string path,
         HttpMethod method,
         HttpContent content,
-        IDictionary<string, string>? extraHeaders = null,
         CancellationToken cancellationToken = default,
         bool authenticate = true)
     {
         ArgumentNullException.ThrowIfNull(content);
         return SendEnvelopeAsync<object>(
-            () => BuildContentRequest(path, method, content, extraHeaders),
+            () => BuildContentRequest(path, method, content),
             cancellationToken,
-            authenticate);
+            authenticate,
+            requireData: false);
     }
 
     private protected Task CallVoidAsync(
@@ -146,7 +159,8 @@ public abstract class BaseResource
         return SendEnvelopeAsync<object>(
             () => BuildRequest(path, method, body),
             cancellationToken,
-            authenticate);
+            authenticate,
+            requireData: false);
     }
 
     private protected async Task<byte[]> CallBinaryAsync(
@@ -187,11 +201,14 @@ public abstract class BaseResource
             cancellationToken,
             authenticate).ConfigureAwait(false);
 
-        var data = await ParseEnvelopeAsync<List<T>>(response, cancellationToken).ConfigureAwait(false);
+        var data = await ParseEnvelopeAsync<List<T>>(
+            response,
+            cancellationToken,
+            requireData: true).ConfigureAwait(false);
 
         return new PaginatedResult<T>
         {
-            Data = data ?? [],
+            Data = data,
             Meta = ParsePaginationMeta(response.Headers),
         };
     }
@@ -199,10 +216,11 @@ public abstract class BaseResource
     private async Task<T> SendEnvelopeAsync<T>(
         Func<HttpRequestMessage> requestFactory,
         CancellationToken cancellationToken,
-        bool authenticate)
+        bool authenticate,
+        bool requireData)
     {
         using var response = await SendAsync(requestFactory, cancellationToken, authenticate).ConfigureAwait(false);
-        return await ParseEnvelopeAsync<T>(response, cancellationToken).ConfigureAwait(false);
+        return await ParseEnvelopeAsync<T>(response, cancellationToken, requireData).ConfigureAwait(false);
     }
 
     private async Task<HttpResponseMessage> SendAsync(
@@ -231,60 +249,60 @@ public abstract class BaseResource
     private static HttpRequestMessage BuildRequest(
         string path,
         HttpMethod method,
-        object? body,
-        IDictionary<string, string>? extraHeaders = null)
+        object? body)
     {
-        var request = new HttpRequestMessage(method, NormalizePath(path));
-        if (body is not null)
+        if (body is null)
+            return new HttpRequestMessage(method, NormalizePath(path));
+
+        try
         {
             var json = JsonSerializer.Serialize(body, JsonOptions);
-            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            return new HttpRequestMessage(method, NormalizePath(path))
+            {
+                Content = new StringContent(json, Encoding.UTF8, "application/json"),
+            };
         }
-
-        AddHeaders(request, extraHeaders);
-        return request;
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            throw new SerializationException("Failed to serialize the API request body as JSON.", ex);
+        }
     }
 
     private static HttpRequestMessage BuildContentRequest(
         string path,
         HttpMethod method,
-        HttpContent content,
-        IDictionary<string, string>? extraHeaders)
+        HttpContent content)
     {
-        var request = new HttpRequestMessage(method, NormalizePath(path)) { Content = content };
-        AddHeaders(request, extraHeaders);
-        return request;
-    }
-
-    private static void AddHeaders(HttpRequestMessage request, IDictionary<string, string>? extraHeaders)
-    {
-        if (extraHeaders is null) return;
-
-        foreach (var (key, value) in extraHeaders)
-            request.Headers.TryAddWithoutValidation(key, value);
+        return new HttpRequestMessage(method, NormalizePath(path)) { Content = content };
     }
 
     private static string NormalizePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path)) return path;
-        return Uri.TryCreate(path, UriKind.Absolute, out _) ? path : path.TrimStart('/');
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ValidationException("Request path is required.");
+        if (Uri.TryCreate(path, UriKind.Absolute, out _))
+            throw new ValidationException("Request path must be relative to the configured API base URL.");
+
+        return path.TrimStart('/');
     }
 
     private static async Task<T> ParseEnvelopeAsync<T>(
         HttpResponseMessage response,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireData = false)
     {
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(json))
         {
-            if (response.IsSuccessStatusCode) return default!;
+            if (response.IsSuccessStatusCode)
+                throw new SerializationException("The API returned an empty success response instead of a JSON envelope.");
             throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
         }
 
         try
         {
-            return ParseEnvelope<T>(json, response);
+            return ParseEnvelope<T>(json, response, requireData);
         }
         catch (JsonException ex)
         {
@@ -298,7 +316,7 @@ public abstract class BaseResource
         }
     }
 
-    private static T ParseEnvelope<T>(string json, HttpResponseMessage response)
+    private static T ParseEnvelope<T>(string json, HttpResponseMessage response, bool requireData)
     {
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
@@ -311,34 +329,35 @@ public abstract class BaseResource
             throw new JsonException("Expected a JSON response object.");
         }
 
-        if (root.TryGetProperty("status", out var statusEl) &&
-            statusEl.ValueKind == JsonValueKind.Number &&
-            statusEl.TryGetInt32(out var status))
+        if (!root.TryGetProperty("status", out var statusEl) ||
+            statusEl.ValueKind != JsonValueKind.Number ||
+            !statusEl.TryGetInt32(out var status))
         {
-            var message = ReadMessage(root);
+            if (!response.IsSuccessStatusCode)
+                throw new ApiException(
+                    (int)response.StatusCode,
+                    ReadMessage(root) ?? response.ReasonPhrase,
+                    ReadErrorDetails(root));
 
-            if (status >= 400 || !response.IsSuccessStatusCode)
-            {
-                var errorStatus = status >= 400 ? status : (int)response.StatusCode;
-                throw new ApiException(errorStatus, message, ReadErrorDetails(root));
-            }
+            throw new JsonException("Expected the API success envelope to contain an integer status.");
+        }
 
-            if (root.TryGetProperty("data", out var dataEl))
-            {
-                if (dataEl.ValueKind == JsonValueKind.Null) return default!;
-                return dataEl.Deserialize<T>(JsonOptions)!;
-            }
+        var message = ReadMessage(root);
+        if (status >= 400 || !response.IsSuccessStatusCode)
+        {
+            var errorStatus = status >= 400 ? status : (int)response.StatusCode;
+            throw new ApiException(errorStatus, message, ReadErrorDetails(root));
+        }
+
+        if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind == JsonValueKind.Null)
+        {
+            if (requireData)
+                throw new JsonException("Expected the API success envelope to contain non-null data.");
 
             return default!;
         }
 
-        if (!response.IsSuccessStatusCode)
-            throw new ApiException(
-                (int)response.StatusCode,
-                ReadMessage(root) ?? response.ReasonPhrase,
-                ReadErrorDetails(root));
-
-        return root.Deserialize<T>(JsonOptions)!;
+        return dataEl.Deserialize<T>(JsonOptions)!;
     }
 
     private static string? ReadMessage(JsonElement root)

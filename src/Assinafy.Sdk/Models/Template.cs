@@ -3,6 +3,20 @@ using System.Text.Json.Serialization;
 
 namespace Assinafy.Sdk.Models;
 
+/// <summary>
+/// Changes to apply to a reusable template. Omitted properties leave their current values unchanged.
+/// </summary>
+public sealed class UpdateTemplateRequest
+{
+    /// <summary>The template's new display name, or <see langword="null"/> to leave it unchanged.</summary>
+    [JsonPropertyName("name")]
+    public string? Name { get; init; }
+
+    /// <summary>The new default invitation message, or <see langword="null"/> to leave it unchanged.</summary>
+    [JsonPropertyName("message")]
+    public string? Message { get; init; }
+}
+
 /// <summary>A signer or editor role defined by a template. Supply one signer per role when creating a document from the template.</summary>
 public sealed record TemplateRole
 {

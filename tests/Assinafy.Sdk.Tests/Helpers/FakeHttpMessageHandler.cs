@@ -83,7 +83,9 @@ public sealed class FakeHttpMessageHandler : HttpMessageHandler
         };
     }
 
-    public static HttpClient CreateClient(FakeHttpMessageHandler handler, string baseUrl = "http://test.api/v1")
+    public static HttpClient CreateClient(
+        FakeHttpMessageHandler handler,
+        string baseUrl = "https://api.assinafy.com.br/v1")
     {
         return new HttpClient(handler) { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
     }

@@ -14,6 +14,7 @@ public sealed class UserResource : BaseResource
 
     /// <summary><c>GET /users/self</c> — retrieve the authenticated user's profile.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The authenticated user's profile.</returns>
     /// <remarks>
     /// Supports both the production response, whose envelope data is the user object directly,
     /// and the sandbox's legacy envelope data containing <c>{ user, accounts }</c>.
@@ -49,6 +50,7 @@ public sealed class UserResource : BaseResource
 
     /// <summary><c>GET /users/self/notification-preferences</c> — retrieve all nine email notification preferences.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The authenticated user's notification preferences.</returns>
     public Task<NotificationPreferences> GetNotificationPreferencesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -61,6 +63,7 @@ public sealed class UserResource : BaseResource
     /// <summary><c>PUT /users/self/notification-preferences</c> — merge selected email notification preferences and return the full updated map.</summary>
     /// <param name="request">Preferences to change; null properties are omitted and keep their existing values.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The complete updated notification-preference map.</returns>
     public Task<NotificationPreferences> UpdateNotificationPreferencesAsync(
         UpdateNotificationPreferencesRequest request,
         CancellationToken cancellationToken = default)
@@ -87,6 +90,7 @@ public sealed class UserResource : BaseResource
     /// <summary><c>GET /users/self/stats</c> — retrieve document KPIs summed across all accounts the authenticated user belongs to.</summary>
     /// <param name="parameters">Optional monthly or daily grouping and target month.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document KPI rows for the requested grouping.</returns>
     public async Task<IReadOnlyList<DocumentStatsRow>> GetStatsAsync(
         DocumentStatsParams? parameters = null,
         CancellationToken cancellationToken = default)

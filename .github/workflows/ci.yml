@@ -20,6 +20,7 @@ jobs:
   test:
     name: Test (${{ matrix.tfm }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -27,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -46,7 +47,19 @@ jobs:
         run: dotnet build --configuration Release --no-restore --framework ${{ matrix.tfm }}
 
       - name: Test
-        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release --no-build --framework ${{ matrix.tfm }} --filter "Category!=Live" --logger "trx;LogFileName=test-results-${{ matrix.tfm }}.trx" --collect:"XPlat Code Coverage" --results-directory ./test-results
+        run: >-
+          dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj
+          --configuration Release
+          --no-build
+          --framework ${{ matrix.tfm }}
+          --results-directory ./test-results
+          --
+          --filter-not-trait "Category=Live"
+          --report-xunit-trx
+          --report-xunit-trx-filename "test-results-${{ matrix.tfm }}.trx"
+          --coverlet
+          --coverlet-output-format cobertura
+          --coverlet-file-prefix "${{ matrix.tfm }}"
 
       - name: Upload test results
         if: always()
@@ -59,11 +72,12 @@ jobs:
   pack:
     name: Pack (verify)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: test
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -74,6 +88,25 @@ jobs:
             8.0.424
             9.0.317
             10.0.400
+
+      - name: Verify production API snapshot
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --retry 3 \
+            https://api.assinafy.com.br/v1/docs/openapi.json \
+            --output "$RUNNER_TEMP/openapi.json"
+          snapshot_filter='
+            .paths["/v1/authentication/reset-password"].put.requestBody.content["application/json"].schema.properties.token.example = "example-reset-token"
+            | .paths["/v1/authentication/social-login"].post.requestBody.content["application/json"].schema.properties.token.example = "example-provider-token"
+            | .components.schemas.ApiKey.properties.api_key.example = "example-api-key"
+            | .components.schemas.AuthSession.properties.access_token.example = "example-access-token"
+            | walk(if type == "string" then gsub("@(email|test|kemmer|yahoo)\\.com"; "@example.com") else . end)
+          '
+          jq -S . docs/openapi.json > "$RUNNER_TEMP/openapi.checked-in.json"
+          jq -S "$snapshot_filter" "$RUNNER_TEMP/openapi.json" > "$RUNNER_TEMP/openapi.production.json"
+          cmp "$RUNNER_TEMP/openapi.checked-in.json" "$RUNNER_TEMP/openapi.production.json"
+          snapshot_hash="$(sha256sum docs/openapi.json | cut -d ' ' -f 1)"
+          grep -Fq "$snapshot_hash" docs/API.md
 
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --output ./artifacts

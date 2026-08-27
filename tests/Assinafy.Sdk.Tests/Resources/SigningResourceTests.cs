@@ -51,6 +51,39 @@ public sealed class SigningResourceTests
     }
 
     [Fact]
+    public async Task CertificateSigning_UsesSignerCodeInQueryAndBodyWithoutUserCredentials()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/signers/certificate/start?signer-access-code=access",
+            FakeHttpMessageHandler.ApiOk(new { token = "pki-token" }));
+        handler.AddJsonResponse(HttpMethod.Post, "/signers/certificate/complete?signer-access-code=access",
+            FakeHttpMessageHandler.ApiOk(new { signerName = "Certificate Signer" }));
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
+
+        var started = await resource.StartCertificateAsync("access");
+        var completed = await resource.CompleteCertificateAsync("access", started.Token);
+
+        started.Token.Should().Be("pki-token");
+        completed.SignerName.Should().Be("Certificate Signer");
+        handler.Requests.Should().OnlyContain(request => !request.Headers.Contains("X-Api-Key"));
+        handler.Requests[0].RequestUri!.PathAndQuery.Should().Be(
+            "/v1/signers/certificate/start?signer-access-code=access");
+        handler.Requests[1].RequestUri!.PathAndQuery.Should().Be(
+            "/v1/signers/certificate/complete?signer-access-code=access");
+
+        using var startBody = JsonDocument.Parse(handler.RequestBodies[0]);
+        startBody.RootElement.EnumerateObject().Should().ContainSingle();
+        startBody.RootElement.GetProperty("signer-access-code").GetString().Should().Be("access");
+
+        using var completeBody = JsonDocument.Parse(handler.RequestBodies[1]);
+        completeBody.RootElement.EnumerateObject().Should().HaveCount(2);
+        completeBody.RootElement.GetProperty("signer-access-code").GetString().Should().Be("access");
+        completeBody.RootElement.GetProperty("token").GetString().Should().Be("pki-token");
+    }
+
+    [Fact]
     public async Task Decline_UsesRejectEndpoint()
     {
         var handler = new FakeHttpMessageHandler();
@@ -120,7 +153,7 @@ public sealed class SigningResourceTests
     }
 
     [Fact]
-    public async Task Download_UsesPublicArtifactRouteWithoutAccessCodeOrUserCredentials()
+    public async Task DownloadOverloads_UsePublicArtifactRouteWithoutAccessCodeOrUserCredentials()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddRawResponse(
@@ -131,15 +164,23 @@ public sealed class SigningResourceTests
             FakeHttpMessageHandler.CreateClient(handler),
             request => request.Headers.Add("X-Api-Key", "must-not-leak"));
 
-        var result = await resource.DownloadAsync(
+        var result = await resource.DownloadPublicAsync(
             "signer-1",
             "doc-1",
             artifactName: DocumentArtifactNames.Pades);
+#pragma warning disable CS0618 // Compatibility overload must remain operational.
+        var legacyResult = await resource.DownloadAsync(
+            "signer-1",
+            "doc-1",
+            signerAccessCode: "ignored",
+            artifactName: DocumentArtifactNames.Pades);
+#pragma warning restore CS0618
 
         result.Should().NotBeEmpty();
-        var sent = handler.Requests.Single();
-        sent.RequestUri!.PathAndQuery.Should().Be(
-            "/v1/signers/signer-1/documents/doc-1/download/pades");
-        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
+        legacyResult.Should().Equal(result);
+        handler.Requests.Should().HaveCount(2);
+        handler.Requests.Should().OnlyContain(sent =>
+            sent.RequestUri!.PathAndQuery == "/v1/signers/signer-1/documents/doc-1/download/pades" &&
+            !sent.Headers.Contains("X-Api-Key"));
     }
 }

@@ -1,11 +1,13 @@
 # Assinafy API and SDK reference
 
-This reference is generated from the checked-in official production OpenAPI snapshot and the SDK public resource methods. The OpenAPI snapshot is the canonical full HTTP payload contract; source XML comments document .NET parameters and behavior.
+This reference combines the checked-in official production OpenAPI snapshot with the SDK's public resource methods. The OpenAPI snapshot is the canonical full HTTP payload contract; source XML comments document .NET parameters and behavior.
+
+The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `44da834c27173a3739d491fdacbb48decf9a170bd776a1c4edb4d0d4b108c22f`
+- Snapshot SHA-256: `74f07116869697c5dfe439cfc860ed5203a7b914e99e6838f1959d3485ff5bb9`
 - OpenAPI: `3.0.0`; API info version: `1.0.0`
-- Coverage target: 89 documented production operations across 67 paths and 39 component schemas.
+- API surface: 89 documented production operations across 67 paths and 39 component schemas.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
 
@@ -41,7 +43,7 @@ Save the returned document `id` for the next steps.
 curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/signers" \\
   -H 'X-Api-Key: {api_key}' \\
   -H 'Content-Type: application/json' \\
-  -d '{ "full_name": "John Dove", "email": "john@email.com" }'
+  -d '{ "full_name": "John Dove", "email": "john@example.com" }'
 ```
 
 Save each signer `id`.
@@ -52,7 +54,7 @@ Save each signer `id`.
 curl -X POST "https://api.assinafy.com.br/v1/documents/{document_id}/assignments" \\
   -H 'X-Api-Key: {api_key}' \\
   -H 'Content-Type: application/json' \\
-  -d '{ "method": "virtual", "signerIds": ["{signer_id}"] }'
+  -d '{ "method": "virtual", "signers": [{ "id": "{signer_id}" }] }'
 ```
 
 The `virtual` method requires no input from the signer. To collect input fields, use the `collect` method — see the Assignment section.
@@ -66,6 +68,8 @@ Authentication can be done in three ways:
 - Access token as a URL parameter: `?access-token={access-token}`
 
 The **recommended** method is an API key, which you create from the settings page in the Assinafy app. An access token is obtained through login with email and password; it is a JWT that usually expires in one hour.
+
+Avoid query-string access tokens in server integrations because URLs may be retained in browser history, proxy logs, and monitoring systems. The SDK sends API keys and bearer tokens in request headers.
 
 ### Accounts
 
@@ -83,7 +87,7 @@ Create, list, download, tag and delete documents.
 
 When you create an assignment, each signer can be configured with a **verification method** (how the signer proves their identity before signing) and one or more **notification methods** (how the signer is told a signature is being requested). These are set per signer via `signers[].verification_method` and `signers[].notification_methods` on the **Create assignment** endpoint.
 
-Verification and notification are **coupled** — you may send one, both or neither, and the missing side is inferred. If neither is sent, both default to `Email`.
+For direct assignment creation, verification and notification are independently configurable. An omitted verification method defaults to `Email`; omitted notification methods default to `Email`. The create-from-template route accepts one notification method per signer and infers a missing verification or notification method from the supplied side.
 
 ### Verification methods
 
@@ -115,24 +119,14 @@ The notification method is what delivers the signing invitation to the signer. E
 | `Email` | Signer must have an email address. | 0 credits |
 | `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits |
 
-### Coupling rules
+### Channel rules
 
-Only matching combinations are allowed; an invalid pairing returns `400 Bad Request`.
+Direct assignment creation accepts `Email`, `Whatsapp`, or both notification channels for a signer. Create-from-template accepts one notification channel per signer. Email and WhatsApp recipient requirements still apply, and WhatsApp requires a paid subscription.
 
-| Verification method | Allowed notification methods |
-|---------------------|------------------------------|
-| `Email` | `Email` |
-| `Whatsapp` | `Whatsapp` |
-| `DigitalCertificate` | `Email` or `Whatsapp` |
+### Default behavior
 
-Only one notification method is allowed per signer.
-
-### Default behavior (inference)
-
-- **Neither specified** — both default to `Email`.
-- **Only `verification_method`** — `notification_methods` is inferred from it (e.g. `Whatsapp` verification → `Whatsapp` notification).
-- **Only `notification_methods`** — `verification_method` is inferred from it.
-- **Both specified** — used as-is, subject to the coupling rules above.
+- **Direct assignment:** omitted `verification_method` defaults to `Email`; omitted `notification_methods` defaults to `Email`.
+- **Create from template:** when only one side is supplied, the missing verification or notification method is inferred from it; when neither is supplied, both default to `Email`.
 
 ### Costs
 
@@ -272,9 +266,9 @@ User account endpoints.
 | AuthenticationResource | `DeleteApiKeyAsync` | `Task DeleteApiKeyAsync(CancellationToken cancellationToken = default)` | DELETE /users/api-keys — revoke the user's current API key. |
 | AuthenticationResource | `ChangePasswordAsync` | `Task<EmailResult> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken = default)` | PUT /authentication/change-password — change the user's password while authenticated. |
 | AuthenticationResource | `RequestPasswordResetAsync` | `Task<EmailResult> RequestPasswordResetAsync(RequestPasswordResetRequest request, CancellationToken cancellationToken = default)` | PUT /authentication/request-password-reset — email the user a password reset token. |
-| AuthenticationResource | `ResetPasswordAsync` | `Task<EmailResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)` | PUT /authentication/reset-password — set a new password using the reset token from RequestPasswordResetAsync. |
+| AuthenticationResource | `ResetPasswordAsync` | `Task<EmailResult> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)` | PUT /authentication/reset-password — set a new password; the API accepts an optional token from RequestPasswordResetAsync. |
 | DocumentResource | `ListStatusesAsync` | `Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync(CancellationToken cancellationToken = default)` | GET /documents/statuses — list all possible document status codes and whether each is deletable. |
-| DocumentResource | `UploadAsync` | `Task<DocumentDetails> UploadAsync(Stream fileStream, string fileName, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/documents — upload a PDF to a workspace. This method validates the file extension and a 25MB size cap client-side; the API additionally enforces a 2000-page limit server-side (a smaller-but-longer PDF is rejected by the API rather than locally). |
+| DocumentResource | `UploadAsync` | `Task<DocumentDetails> UploadAsync(Stream fileStream, string fileName, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/documents — upload a PDF to a workspace. The SDK validates the extension and the remaining length of seekable streams against 25MB; the API enforces size for every stream and a 2000-page limit. |
 | DocumentResource | `ListAsync` | `Task<PaginatedResult<DocumentListItem>> ListAsync(IDictionary<string, string?>? queryParams = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/documents — list documents in the workspace with optional filters (status, method, search, sort, page, per-page). |
 | DocumentResource | `GetAsync` | `Task<DocumentDetails> GetAsync(string documentId, CancellationToken cancellationToken = default)` | GET /documents/{document_id} — fetch full document details including assignment and artifacts. |
 | DocumentResource | `DeleteAsync` | `Task DeleteAsync(string documentId, CancellationToken cancellationToken = default)` | DELETE /documents/{documentId} — delete a document. Only certain status codes are deletable (see ListStatusesAsync). |
@@ -313,18 +307,22 @@ User account endpoints.
 | SignerResource | `FindByEmailAsync` | `Task<Signer?> FindByEmailAsync(string email, string? accountId = null, CancellationToken cancellationToken = default)` | Convenience helper: page through ListAsync filtered by the email (a server-side fuzzy search) and return the first exact, case-insensitive email match across all result pages, or null if none exists. |
 | SignerResource | `GetSelfAsync` | `Task<Signer> GetSelfAsync(string signerAccessCode, CancellationToken cancellationToken = default)` | GET /signers/self — signer-facing endpoint: load the signer's own profile using only an access code. |
 | SignerResource | `AcceptTermsAsync` | `Task<Signer> AcceptTermsAsync(string signerAccessCode, CancellationToken cancellationToken = default)` | PUT /signers/accept-terms — record acceptance of the terms. The API returns no data; the returned Signer is a synthetic legacy-compatibility result. |
+| SignerResource | `VerifyAsync` | `Task VerifyAsync(string signerAccessCode, string verificationCode, CancellationToken cancellationToken = default)` | POST /verify — verify an email or WhatsApp one-time code. The API returns no data. |
 | SignerResource | `VerifyEmailAsync` | `Task<VerifyEmailResult> VerifyEmailAsync(string signerAccessCode, string verificationCode, CancellationToken cancellationToken = default)` | POST /verify — verify the emailed OTP. The API returns no data; the returned VerifyEmailResult is a synthetic legacy-compatibility result. |
 | SignerResource | `ConfirmDataAsync` | `Task ConfirmDataAsync(string documentId, string signerAccessCode, ConfirmSignerDataRequest request, CancellationToken cancellationToken = default)` | PUT /documents/{document_id}/signers/confirm-data — signer-facing endpoint: confirm or supply the signer's full name, email, and government ID for a virtual assignment. Virtual assignments require this call to succeed before SigningResource.SignAsync. |
 | SignerResource | `ConfirmDataWithResultAsync` | `Task<Signer> ConfirmDataWithResultAsync(string documentId, string signerAccessCode, ConfirmSignerDataRequest request, CancellationToken cancellationToken = default)` | PUT /documents/{document_id}/signers/confirm-data — confirm signer data and return the complete updated signer payload. |
 | SigningResource | `GetAsync` | `Task<DocumentDetails> GetAsync(string signerAccessCode, bool? hasAcceptedTerms = null, CancellationToken cancellationToken = default)` | GET /sign — signer-facing endpoint: load the document and assignment data for the current signer access code. |
 | SigningResource | `SignAsync` | `Task SignAsync(string documentId, string assignmentId, string signerAccessCode, IReadOnlyList<SignAssignmentValue> values, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/{assignmentId}?signer-access-code={code} — submit a signer's field values. For virtual assignments the signer must call SignerResource.ConfirmDataAsync first; otherwise the API returns 400. The body uses camelCase keys (itemId, fieldId, pageId, value) per the Assinafy docs, which SignAssignmentValue applies automatically. |
+| SigningResource | `StartCertificateAsync` | `Task<CertificateStartResult> StartCertificateAsync(string signerAccessCode, CancellationToken cancellationToken = default)` | Production-only deployed extension: POST /signers/certificate/start?signer-access-code={code} — start an ICP-Brasil certificate-signing operation and return its Web PKI token. This route is absent from the sandbox and published OpenAPI document. |
+| SigningResource | `CompleteCertificateAsync` | `Task<CertificateCompleteResult> CompleteCertificateAsync(string signerAccessCode, string token, CancellationToken cancellationToken = default)` | Production-only deployed extension: POST /signers/certificate/complete?signer-access-code={code} — submit the signed Web PKI token and return the certificate signer name. This route is absent from the sandbox and published OpenAPI document. |
 | SigningResource | `DeclineAsync` | `Task DeclineAsync(string documentId, string assignmentId, string signerAccessCode, string declineReason, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/reject?signer-access-code={code} — signer-facing endpoint: decline an assignment with a reason. |
 | SigningResource | `GetCurrentDocumentAsync` | `Task<DocumentDetails> GetCurrentDocumentAsync(string signerId, string signerAccessCode, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/document?signer-access-code={code} — fetch the signer's current document. |
 | SigningResource | `ListDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents?signer-access-code={code} — list all documents associated with the signer. |
 | SigningResource | `SearchDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/search?signer-access-code={code} — search the signer's documents by name, returning a compact representation. Use ListDocumentsAsync when you need the full document shape or pagination. |
 | SigningResource | `SignMultipleAsync` | `Task SignMultipleAsync(string signerAccessCode, IReadOnlyList<string> documentIds, CancellationToken cancellationToken = default)` | PUT /signers/documents/sign-multiple?signer-access-code={code} — sign multiple virtual-method documents in one request. |
 | SigningResource | `DeclineMultipleAsync` | `Task DeclineMultipleAsync(string signerAccessCode, IReadOnlyList<string> documentIds, string declineReason, CancellationToken cancellationToken = default)` | PUT /signers/documents/decline-multiple?signer-access-code={code} — decline multiple documents at once with a single reason. |
-| SigningResource | `DownloadAsync` | `Task<byte[]> DownloadAsync(string signerId, string documentId, string? signerAccessCode = null, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name} — public download of a signer document artifact. |
+| SigningResource | `DownloadPublicAsync` | `Task<byte[]> DownloadPublicAsync(string signerId, string documentId, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name} — public download of a signer document artifact. |
+| SigningResource | `DownloadAsync` | `Task<byte[]> DownloadAsync(string signerId, string documentId, string? signerAccessCode = null, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | Retained public-download overload; its signer-access-code argument is not sent because this endpoint is public. |
 | TagResource | `ListAsync` | `Task<IReadOnlyList<Tag>> ListAsync(string? search = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/tags — list workspace tags ordered alphabetically, optionally filtered by a case-insensitive search substring. |
 | TagResource | `CreateAsync` | `Task<Tag> CreateAsync(CreateTagRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/tags — create a tag. The API returns 409 Conflict if the name already exists (case-insensitive). |
 | TagResource | `UpdateAsync` | `Task<Tag> UpdateAsync(string tagId, UpdateTagRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/tags/{tag_id} — update a tag's name and/or color. The API returns 409 Conflict if the new name collides with another tag. |
@@ -336,19 +334,279 @@ User account endpoints.
 | TagResource | `RemoveFromDocumentAsync` | `Task RemoveFromDocumentAsync(string documentId, string tagId, string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id} — detach a single tag from a document without deleting the tag itself. |
 | TagResource | `RemoveFromDocumentWithResultAsync` | `Task<DetachTagResult> RemoveFromDocumentWithResultAsync(string documentId, string tagId, string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/documents/{document_id}/tags/{tag_id} — detach a tag and return the API's {"detached":boolean} payload. |
 | TemplateResource | `ListAsync` | `Task<PaginatedResult<TemplateListItem>> ListAsync(IDictionary<string, string?>? queryParams = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/templates — list templates in a workspace with optional search, page, and per-page filters. |
+| TemplateResource | `CreateAsync` | `Task<TemplateDetails> CreateAsync(Stream fileStream, string fileName, string? name = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/templates — create a reusable template from one PDF multipart file part. |
 | TemplateResource | `GetAsync` | `Task<TemplateDetails> GetAsync(string templateId, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/templates/{template_id} — fetch template details including roles, pages, and field placements. |
+| TemplateResource | `UpdateAsync` | `Task<TemplateDetails> UpdateAsync(string templateId, UpdateTemplateRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/templates/{template_id} — update the template name and/or default invitation message. |
+| TemplateResource | `DeleteAsync` | `Task DeleteAsync(string templateId, string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/templates/{template_id} — permanently delete a reusable template. |
+| TemplateResource | `DownloadPageAsync` | `Task<byte[]> DownloadPageAsync(string templateId, string pageId, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/templates/{template_id}/pages/{page_id}/download — download a rendered template page as JPEG bytes. |
 | UserResource | `GetSelfAsync` | `Task<UserProfile> GetSelfAsync(CancellationToken cancellationToken = default)` | GET /users/self — retrieve the authenticated user's profile. |
 | UserResource | `GetNotificationPreferencesAsync` | `Task<NotificationPreferences> GetNotificationPreferencesAsync(CancellationToken cancellationToken = default)` | GET /users/self/notification-preferences — retrieve all nine email notification preferences. |
 | UserResource | `UpdateNotificationPreferencesAsync` | `Task<NotificationPreferences> UpdateNotificationPreferencesAsync(UpdateNotificationPreferencesRequest request, CancellationToken cancellationToken = default)` | PUT /users/self/notification-preferences — merge selected email notification preferences and return the full updated map. |
 | UserResource | `GetStatsAsync` | `Task<IReadOnlyList<DocumentStatsRow>> GetStatsAsync(DocumentStatsParams? parameters = null, CancellationToken cancellationToken = default)` | GET /users/self/stats — retrieve document KPIs summed across all accounts the authenticated user belongs to. |
 | WebhookResource | `UpdateSubscriptionAsync` | `Task<WebhookSubscription> UpdateSubscriptionAsync(UpdateWebhookSubscriptionRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/webhooks/subscriptions — create or replace the workspace's webhook subscription. |
-| WebhookResource | `GetAsync` | `Task<WebhookSubscription?> GetAsync(string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks/subscriptions — fetch the workspace's current webhook subscription. Returns null if there is no subscription. |
+| WebhookResource | `GetAsync` | `Task<WebhookSubscription> GetAsync(string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks/subscriptions — fetch the workspace's current webhook subscription. API errors are propagated. |
 | WebhookResource | `InactivateAsync` | `Task<WebhookSubscription> InactivateAsync(string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/webhooks/inactivate — pause delivery without losing the subscription configuration. The API has no delete endpoint; use this (or UpdateSubscriptionAsync with IsActive = false) to stop deliveries. |
 | WebhookResource | `ListEventTypesAsync` | `Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(CancellationToken cancellationToken = default)` | GET /webhooks/event-types — list all event types supported by the platform. |
 | WebhookResource | `ListDispatchesAsync` | `Task<PaginatedResult<WebhookDispatch>> ListDispatchesAsync(ListDispatchesParams? parameters = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks — list webhook delivery history with optional filters (event, delivered, from, to, page, per-page). |
 | WebhookResource | `RetryDispatchAsync` | `Task<WebhookDispatch> RetryDispatchAsync(string dispatchId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/{dispatch_id}/retry — re-attempt delivery of a previous webhook dispatch. |
 
-Client construction and helpers: `new AssinafyClient(options)`, `new AssinafyClient(options, httpClient)`, `AssinafyClient.Create(...)`, `AssinafyClient.FromConfig(...)`, `UploadAndRequestSignaturesAsync(...)`, and `Dispose()`.
+## C# client and helper contracts
+
+### Client construction and lifetime
+
+`AssinafyClientOptions` accepts `ApiKey` or `Token` (mutually exclusive), an optional default `AccountId`, an HTTPS `BaseUrl` whose path is exactly `/v1`, and a positive `Timeout` (or `Timeout.InfiniteTimeSpan`). `new AssinafyClient(options)` owns its transport and applies `Timeout`; `new AssinafyClient(options, httpClient)` leaves the supplied transport open, leaves its timeout unchanged, and requires its `BaseAddress` to match `BaseUrl`. A supplied API-key transport must have automatic redirects disabled.
+
+`AssinafyClient.Create(apiKey, accountId, configure)` is the API-key shorthand. `AssinafyClient.FromConfig(config)` accepts `api_key`/`apiKey`, `account_id`/`accountId`, `token`/`access_token`/`accessToken`, and `base_url`/`baseUrl`. `services.AddAssinafy(configure)` registers the client and returns `IHttpClientBuilder`. Dispose the client when it owns its transport; dependency-injected clients are disposed by the service provider.
+
+Every constructed client exposes `Authentication`, `Accounts`, `Users`, `Documents`, `Signers`, `Assignments`, `Templates`, `Tags`, `Fields`, `PublicDocuments`, `Signing`, `Signatures`, and `Webhooks`.
+
+### SDK errors
+
+- Malformed credentials and SDK-validated request values throw `ValidationException` before transport; required .NET arguments use `ArgumentNullException` or `ArgumentException`.
+- A request body that cannot be encoded as JSON throws `SerializationException` before transport.
+- HTTP/API-envelope failures throw `ApiException`, with status, message, and structured details when supplied.
+- Transport failures and client-side request timeouts throw `NetworkException`.
+- A successful response with an invalid envelope, missing required data, or incompatible JSON throws `SerializationException`.
+
+### Upload-and-request helper
+
+`UploadAndRequestSignaturesAsync` executes upload, optional readiness polling, signer creation, and assignment creation. Its request object is:
+
+```csharp
+new UploadAndRequestSignaturesOptions
+{
+    FileStream = pdf,                         // required Stream
+    FileName = "contract.pdf",               // required PDF name
+    AccountId = accountId,                    // optional account override
+    WaitForReady = true,                      // default true
+    Method = AssignmentMethods.Virtual,       // virtual or collect
+    Message = "Please sign",                 // optional
+    ExpiresAt = "2026-09-30T23:59:59Z",      // optional ISO-8601
+    CopyReceivers = [copyReceiverSignerId],   // optional existing signer IDs
+    Entries = null,                           // collect entries with known signer IDs
+    EntriesFactory = signerIds =>             // or build entries from new signer IDs
+    [
+        new AssignmentEntry
+        {
+            PageId = "page-id",
+            Fields =
+            [
+                new AssignmentEntryField
+                {
+                    SignerId = signerIds[0],
+                    FieldId = "field-id",
+                },
+            ],
+        },
+    ],
+    Signers =
+    [
+        new UploadAndRequestSignaturesSigner
+        {
+            FullName = "Example Signer",
+            Email = "signer@example.com",
+            WhatsAppPhoneNumber = null,
+            VerificationMethod = SignerChannels.Email,
+            NotificationMethods = [SignerChannels.Email],
+            Step = 1,
+        },
+    ],
+}
+```
+
+The response is `UploadAndRequestSignaturesResult`: `Document` is the uploaded `DocumentDetails`, `SignerIds` contains every created signer ID in request order, and `Assignment` is the created `Assignment`. The API has no transaction across these calls; successful earlier resources remain when a later request fails.
+
+### Local convenience methods
+
+| Method | Input | Result |
+|---|---|---|
+| `Documents.WaitUntilReadyAsync` | document ID, optional maximum wait and poll interval | The latest `DocumentDetails`; throws for terminal failure or timeout. |
+| `Documents.IsFullySignedAsync` | document ID | `bool`, derived from assignment summary or signer completion flags. |
+| `Documents.GetSigningProgressAsync` | document ID | `SigningProgress` with `Signed`, `Total`, `Pending`, and `Percentage`. |
+| `Signers.FindByEmailAsync` | email and optional account ID | First exact case-insensitive `Signer`, or `null`; follows every server page. |
+| `Dispose` | none | Disposes only an SDK-owned `HttpClient`; a supplied client remains usable. |
+
+## Template and digital-certificate payloads
+
+The signer certificate routes use only `signer-access-code` and never receive configured client credentials. They are production-only deployed extensions: the sandbox does not expose them, and they are not included in the published OpenAPI document. A valid production `DigitalCertificate` assignment and browser-signed Web PKI token are required for the complete flow.
+
+### POST /v1/accounts/{accountId}/templates
+
+Authentication: bearer token or `X-Api-Key`.
+
+Request body: required `multipart/form-data` with exactly one `file` part containing a PDF. `TemplateResource.CreateAsync` uses an optional display name as the part filename and adds a `.pdf` suffix when needed; it does not send a second form field.
+
+```http
+Content-Disposition: form-data; name="file"; filename="Sales agreement.pdf"
+Content-Type: application/pdf
+
+<PDF bytes>
+```
+
+Success: `200` with a standard JSON envelope whose `data` is `TemplateDetails`. The create and update responses may omit `default_document_tags`; that property is returned by the GET-by-ID route.
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "resource": "template",
+    "id": "template-id",
+    "name": "Sales agreement.pdf",
+    "document_name": null,
+    "message": "Please review and sign",
+    "status": "ready",
+    "pages": [
+      {
+        "id": "page-id",
+        "number": 1,
+        "height": 1684,
+        "width": 1191,
+        "download_url": "https://example.com/template-page.jpg",
+        "fields": [
+          {
+            "id": "placement-id",
+            "field_id": "field-id",
+            "role_id": "role-id",
+            "label": "Signature",
+            "display_settings": { "x": 100, "y": 200 },
+            "created_at": "2026-08-26T12:00:00Z",
+            "updated_at": null
+          }
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "role-id",
+        "name": "Signer",
+        "assignment_type": "Signer",
+        "created_at": "2026-08-26T12:00:00Z",
+        "updated_at": null
+      }
+    ],
+    "tags": [],
+    "created_at": "2026-08-26T12:00:00Z",
+    "updated_at": null
+  }
+}
+```
+
+Errors: invalid PDF uploads use the standard `400` JSON error envelope, missing or invalid credentials use `401`, and server failures use the standard JSON error envelope. The SDK rejects invalid PDF names, seekable payloads over 25 MB, and successful responses without a template ID before returning a result.
+
+### GET /v1/accounts/{accountId}/templates/{templateId}
+
+Authentication: bearer token or `X-Api-Key`.
+
+Request body: none.
+
+Success: `200` with the full `TemplateDetails` envelope shown above plus `data.default_document_tags`, an array of tags automatically applied to documents created from the template:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "resource": "template",
+    "id": "template-id",
+    "name": "Sales agreement.pdf",
+    "document_name": null,
+    "message": "Please review and sign",
+    "status": "ready",
+    "pages": [],
+    "roles": [],
+    "tags": [],
+    "default_document_tags": [],
+    "created_at": "2026-08-26T12:00:00Z",
+    "updated_at": null
+  }
+}
+```
+
+Errors: missing or invalid credentials use the standard `401` JSON error envelope; an unknown template uses `404`; server failures use the standard JSON error envelope.
+
+### PUT /v1/accounts/{accountId}/templates/{templateId}
+
+Authentication: bearer token or `X-Api-Key`.
+
+Request body: required `application/json` object containing `name`, `message`, or both. `TemplateResource.UpdateAsync` omits properties whose values are `null`.
+
+```json
+{
+  "name": "Sales agreement v2",
+  "message": "Please review and sign"
+}
+```
+
+Success: `200` with the `TemplateDetails` envelope shown under POST. `default_document_tags` is optional on this response.
+
+Errors: invalid properties use the standard `400` JSON error envelope, missing or invalid credentials use `401`, an unknown template uses `404`, and server failures use the standard JSON error envelope.
+
+### DELETE /v1/accounts/{accountId}/templates/{templateId}
+
+Authentication: bearer token or `X-Api-Key`.
+
+Request body: none.
+
+Success: `200` with a standard successful no-data envelope:
+
+```json
+{ "status": 200, "message": "", "data": null }
+```
+
+Errors: missing or invalid credentials use the standard `401` JSON error envelope; an unknown template uses `404`; server failures use the standard JSON error envelope.
+
+### GET /v1/accounts/{accountId}/templates/{templateId}/pages/{pageId}/download
+
+Authentication: bearer token or `X-Api-Key`.
+
+Request body: none.
+
+Success: `200` with raw `image/jpeg` bytes and no JSON envelope.
+
+Errors: missing or invalid credentials use the standard `401` JSON error envelope; an unknown template or page uses `404`; server failures use the standard JSON error envelope instead of image bytes.
+
+### POST /v1/signers/certificate/start
+
+Authentication: signer access code. Configured bearer and API-key credentials are not sent.
+
+Request body: required `application/json`. `SigningResource.StartCertificateAsync` sends the access code in both the query and body:
+
+```http
+POST /v1/signers/certificate/start?signer-access-code=access-code
+Content-Type: application/json
+
+{ "signer-access-code": "access-code" }
+```
+
+Success: `200` with a standard JSON envelope whose `data.token` is the Web PKI operation token:
+
+```json
+{ "status": 200, "message": "", "data": { "token": "web-pki-token" } }
+```
+
+Errors: an invalid or expired signer access code uses the standard `401` JSON error envelope; an invalid signing state or request uses `400`; server failures use the standard JSON error envelope.
+
+### POST /v1/signers/certificate/complete
+
+Authentication: signer access code. Configured bearer and API-key credentials are not sent.
+
+Request body: required `application/json`. `SigningResource.CompleteCertificateAsync` sends the browser-signed token:
+
+```http
+POST /v1/signers/certificate/complete?signer-access-code=access-code
+Content-Type: application/json
+
+{ "signer-access-code": "access-code", "token": "signed-web-pki-token" }
+```
+
+Success: `200` with a standard JSON envelope whose `data.signerName` identifies the certificate signer:
+
+```json
+{ "status": 200, "message": "", "data": { "signerName": "Certificate Signer" } }
+```
+
+Errors: an invalid or expired signer access code uses the standard `401` JSON error envelope; an invalid signed token or signing state uses `400`; server failures use the standard JSON error envelope. For example: `{ "status": 400, "message": "Invalid request", "data": {} }`.
 
 ## Complete production operation matrix
 
@@ -1273,7 +1531,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -1557,7 +1815,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false,
         "verification_method": "Email",
@@ -2045,7 +2303,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false,
         "verification_method": "Email",
@@ -2203,7 +2461,7 @@ Example payload:
   "status": 200,
   "message": "",
   "data": {
-    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "access_token": "example-access-token",
     "user": {
       "id": "bgjazeo5r9v2lq7l36dx48np",
       "name": "John Smith",
@@ -2356,7 +2614,7 @@ Request body: required.
     "token": {
       "description": "Token received by email.",
       "type": "string",
-      "example": "b3ac64d6c55b3ac64d6c55"
+      "example": "example-reset-token"
     },
     "new_password": {
       "type": "string",
@@ -2373,7 +2631,7 @@ Example payload:
 ```json
 {
   "email": "user@example.com",
-  "token": "b3ac64d6c55b3ac64d6c55",
+  "token": "example-reset-token",
   "new_password": "N3w_p4ssw0rd"
 }
 ```
@@ -2619,7 +2877,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false
       },
@@ -2641,7 +2899,7 @@ Example payload:
             "resource": "signer",
             "id": "62d6ee35c7741ca4006b9e11",
             "full_name": "John Signer",
-            "email": "john@email.com",
+            "email": "john@example.com",
             "whatsapp_phone_number": "+5548999990000",
             "has_accepted_terms": false,
             "verification_method": "Email",
@@ -2803,7 +3061,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -2825,7 +3083,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -2983,7 +3241,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false
       },
@@ -3005,7 +3263,7 @@ Example payload:
             "resource": "signer",
             "id": "62d6ee35c7741ca4006b9e11",
             "full_name": "John Signer",
-            "email": "john@email.com",
+            "email": "john@example.com",
             "whatsapp_phone_number": "+5548999990000",
             "has_accepted_terms": false,
             "verification_method": "Email",
@@ -3230,7 +3488,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -3252,7 +3510,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -3495,7 +3753,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -3517,7 +3775,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -5093,7 +5351,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -5115,7 +5373,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -5314,7 +5572,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     }
@@ -5362,7 +5620,7 @@ Request body: required.
     "email": {
       "type": "string",
       "format": "email",
-      "example": "john@email.com"
+      "example": "john@example.com"
     },
     "whatsapp_phone_number": {
       "description": "E.164; normalized on save.",
@@ -5379,7 +5637,7 @@ Example payload:
 ```json
 {
   "full_name": "John Dove",
-  "email": "john@email.com",
+  "email": "john@example.com",
   "whatsapp_phone_number": "+5548999990000"
 }
 ```
@@ -5418,7 +5676,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false
   }
@@ -5492,7 +5750,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false
   }
@@ -5545,7 +5803,7 @@ Request body: required.
     "email": {
       "type": "string",
       "format": "email",
-      "example": "john@email.com"
+      "example": "john@example.com"
     },
     "whatsapp_phone_number": {
       "description": "E.164; normalized on save.",
@@ -5567,7 +5825,7 @@ Example payload:
 ```json
 {
   "full_name": "John Dove",
-  "email": "john@email.com",
+  "email": "john@example.com",
   "whatsapp_phone_number": "+5548999990000",
   "government_id": "39053344705"
 }
@@ -5607,7 +5865,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false
   }
@@ -5753,7 +6011,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false,
     "has_signature": true,
@@ -5836,7 +6094,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -5858,7 +6116,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -6010,7 +6268,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -6032,7 +6290,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -6691,7 +6949,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false
   }
@@ -6920,7 +7178,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false
       },
@@ -6942,7 +7200,7 @@ Example payload:
             "resource": "signer",
             "id": "62d6ee35c7741ca4006b9e11",
             "full_name": "John Signer",
-            "email": "john@email.com",
+            "email": "john@example.com",
             "whatsapp_phone_number": "+5548999990000",
             "has_accepted_terms": false,
             "verification_method": "Email",
@@ -7092,7 +7350,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false
       },
@@ -7114,7 +7372,7 @@ Example payload:
             "resource": "signer",
             "id": "62d6ee35c7741ca4006b9e11",
             "full_name": "John Signer",
-            "email": "john@email.com",
+            "email": "john@example.com",
             "whatsapp_phone_number": "+5548999990000",
             "has_accepted_terms": false,
             "verification_method": "Email",
@@ -7269,7 +7527,7 @@ Request body: required.
     "token": {
       "description": "Access/ID token from the provider.",
       "type": "string",
-      "example": "yOTUvImV4cCI6MTY3OTY1ODY5NS..."
+      "example": "example-provider-token"
     },
     "has_accepted_terms": {
       "type": "boolean",
@@ -7285,7 +7543,7 @@ Example payload:
 ```json
 {
   "provider": "google",
-  "token": "yOTUvImV4cCI6MTY3OTY1ODY5NS...",
+  "token": "example-provider-token",
   "has_accepted_terms": true
 }
 ```
@@ -7321,7 +7579,7 @@ Example payload:
   "status": 200,
   "message": "",
   "data": {
-    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "access_token": "example-access-token",
     "user": {
       "id": "bgjazeo5r9v2lq7l36dx48np",
       "name": "John Smith",
@@ -7498,8 +7756,13 @@ Example payload:
       "documents_uploaded": 42,
       "documents_sent": 37,
       "signature_requests": 61,
-      "signature_requests_email": 55,
-      "signature_requests_whatsapp": 18,
+      "signature_requests_notification_email": 55,
+      "signature_requests_notification_whatsapp": 18,
+      "signature_requests_notification_bypass": 3,
+      "signature_requests_verification_email": 48,
+      "signature_requests_verification_whatsapp": 6,
+      "signature_requests_verification_bypass": 3,
+      "signature_requests_verification_digital_certificate": 4,
       "signature_requests_viewed": 44,
       "signature_requests_completed": 52,
       "documents_certified": 30
@@ -7580,8 +7843,13 @@ Example payload:
       "documents_uploaded": 42,
       "documents_sent": 37,
       "signature_requests": 61,
-      "signature_requests_email": 55,
-      "signature_requests_whatsapp": 18,
+      "signature_requests_notification_email": 55,
+      "signature_requests_notification_whatsapp": 18,
+      "signature_requests_notification_bypass": 3,
+      "signature_requests_verification_email": 48,
+      "signature_requests_verification_whatsapp": 6,
+      "signature_requests_verification_bypass": 3,
+      "signature_requests_verification_digital_certificate": 4,
       "signature_requests_viewed": 44,
       "signature_requests_completed": 52,
       "documents_certified": 30
@@ -8331,7 +8599,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false
     },
@@ -8353,7 +8621,7 @@ Example payload:
           "resource": "signer",
           "id": "62d6ee35c7741ca4006b9e11",
           "full_name": "John Signer",
-          "email": "john@email.com",
+          "email": "john@example.com",
           "whatsapp_phone_number": "+5548999990000",
           "has_accepted_terms": false,
           "verification_method": "Email",
@@ -8699,7 +8967,7 @@ Example payload:
   "status": 200,
   "message": "",
   "data": {
-    "api_key": "mIpe_zdJfKUpMK9Va3XuYgzPXMxz49fIaRCWXseVkpVAX608A9j3i_D67qU5qW3M"
+    "api_key": "example-api-key"
   }
 }
 ```
@@ -8785,7 +9053,7 @@ Example payload:
   "status": 200,
   "message": "",
   "data": {
-    "api_key": "mIpe_zdJfKUpMK9Va3XuYgzPXMxz49fIaRCWXseVkpVAX608A9j3i_D67qU5qW3M"
+    "api_key": "example-api-key"
   }
 }
 ```
@@ -8913,7 +9181,7 @@ Example payload:
     ],
     "is_active": true,
     "url": "http://example.com?test=1",
-    "email": "email@test.com",
+    "email": "email@example.com",
     "updated_at": "2023-05-10T14:58:24Z"
   }
 }
@@ -8981,7 +9249,7 @@ Request body: required.
       "description": "Email that receives important webhook-communication notices.",
       "type": "string",
       "format": "email",
-      "example": "email@test.com"
+      "example": "email@example.com"
     }
   },
   "type": "object"
@@ -8998,7 +9266,7 @@ Example payload:
   ],
   "is_active": true,
   "url": "http://example.com?test=1",
-  "email": "email@test.com"
+  "email": "email@example.com"
 }
 ```
 
@@ -9039,7 +9307,7 @@ Example payload:
     ],
     "is_active": true,
     "url": "http://example.com?test=1",
-    "email": "email@test.com",
+    "email": "email@example.com",
     "updated_at": "2023-05-10T14:58:24Z"
   }
 }
@@ -9114,7 +9382,7 @@ Example payload:
     ],
     "is_active": true,
     "url": "http://example.com?test=1",
-    "email": "email@test.com",
+    "email": "email@example.com",
     "updated_at": "2023-05-10T14:58:24Z"
   }
 }
@@ -9526,7 +9794,7 @@ Full schema:
   "properties": {
     "api_key": {
       "type": "string",
-      "example": "mIpe_zdJfKUpMK9Va3XuYgzPXMxz49fIaRCWXseVkpVAX608A9j3i_D67qU5qW3M",
+      "example": "example-api-key",
       "nullable": true
     }
   },
@@ -9538,7 +9806,7 @@ Example payload:
 
 ```json
 {
-  "api_key": "mIpe_zdJfKUpMK9Va3XuYgzPXMxz49fIaRCWXseVkpVAX608A9j3i_D67qU5qW3M"
+  "api_key": "example-api-key"
 }
 ```
 
@@ -9688,7 +9956,7 @@ Full schema:
     "email": {
       "type": "string",
       "format": "email",
-      "example": "john@email.com",
+      "example": "john@example.com",
       "nullable": true
     },
     "whatsapp_phone_number": {
@@ -9713,7 +9981,7 @@ Example payload:
   "resource": "signer",
   "id": "62d6ee35c7741ca4006b9e11",
   "full_name": "John Signer",
-  "email": "john@email.com",
+  "email": "john@example.com",
   "whatsapp_phone_number": "+5548999990000",
   "has_accepted_terms": false
 }
@@ -9762,7 +10030,7 @@ Example payload:
   "resource": "signer",
   "id": "62d6ee35c7741ca4006b9e11",
   "full_name": "John Signer",
-  "email": "john@email.com",
+  "email": "john@example.com",
   "whatsapp_phone_number": "+5548999990000",
   "has_accepted_terms": false,
   "has_signature": true,
@@ -10053,7 +10321,7 @@ Example payload:
     "resource": "signer",
     "id": "62d6ee35c7741ca4006b9e11",
     "full_name": "John Signer",
-    "email": "john@email.com",
+    "email": "john@example.com",
     "whatsapp_phone_number": "+5548999990000",
     "has_accepted_terms": false
   },
@@ -10075,7 +10343,7 @@ Example payload:
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
         "full_name": "John Signer",
-        "email": "john@email.com",
+        "email": "john@example.com",
         "whatsapp_phone_number": "+5548999990000",
         "has_accepted_terms": false,
         "verification_method": "Email",
@@ -10441,7 +10709,7 @@ Example payload:
   "resource": "signer",
   "id": "62d6ee35c7741ca4006b9e11",
   "full_name": "John Signer",
-  "email": "john@email.com",
+  "email": "john@example.com",
   "whatsapp_phone_number": "+5548999990000",
   "has_accepted_terms": false,
   "verification_method": "Email",
@@ -10706,7 +10974,7 @@ Example payload:
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
       "full_name": "John Signer",
-      "email": "john@email.com",
+      "email": "john@example.com",
       "whatsapp_phone_number": "+5548999990000",
       "has_accepted_terms": false,
       "verification_method": "Email",
@@ -11226,7 +11494,7 @@ Full schema:
     "email": {
       "description": "Contact email for delivery notices.",
       "type": "string",
-      "example": "email@test.com",
+      "example": "email@example.com",
       "nullable": true
     },
     "updated_at": {
@@ -11250,7 +11518,7 @@ Example payload:
   ],
   "is_active": true,
   "url": "http://example.com?test=1",
-  "email": "email@test.com",
+  "email": "email@example.com",
   "updated_at": "2023-05-10T14:58:24Z"
 }
 ```
@@ -11751,7 +12019,7 @@ Full schema:
   "properties": {
     "access_token": {
       "type": "string",
-      "example": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+      "example": "example-access-token"
     },
     "user": {
       "$ref": "#/components/schemas/AuthUser"
@@ -11771,7 +12039,7 @@ Example payload:
 
 ```json
 {
-  "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+  "access_token": "example-access-token",
   "user": {
     "id": "bgjazeo5r9v2lq7l36dx48np",
     "name": "John Smith",
@@ -11803,7 +12071,7 @@ Full schema:
 
 ```json
 {
-  "description": "One period of the document-funnel KPI series. `period` is `YYYY-MM` (monthly) or `YYYY-MM-DD` (daily); series are zero-filled, no gaps.",
+  "description": "One period of the document-funnel KPI series. `period` is `YYYY-MM` (monthly) or `YYYY-MM-DD` (daily); series are zero-filled, no gaps. Signature requests come with two independent breakdowns: the `signature_requests_notification_*` counters split them by the channels the signer was notified on — a signer reached on more than one channel counts once per channel, so these add up to at least `signature_requests` — while the `signature_requests_verification_*` counters split them by how the signer's identity is verified, and since each request has exactly one verification method those four always add up to `signature_requests`.",
   "properties": {
     "period": {
       "description": "`YYYY-MM` (monthly) or `YYYY-MM-DD` (daily).",
@@ -11822,13 +12090,40 @@ Full schema:
       "type": "integer",
       "example": 61
     },
-    "signature_requests_email": {
+    "signature_requests_notification_email": {
+      "description": "Requests notified by e-mail.",
       "type": "integer",
       "example": 55
     },
-    "signature_requests_whatsapp": {
+    "signature_requests_notification_whatsapp": {
+      "description": "Requests notified by WhatsApp.",
       "type": "integer",
       "example": 18
+    },
+    "signature_requests_notification_bypass": {
+      "description": "Requests with no notification sent (`Bypass`).",
+      "type": "integer",
+      "example": 3
+    },
+    "signature_requests_verification_email": {
+      "description": "Requests verified by an e-mail token.",
+      "type": "integer",
+      "example": 48
+    },
+    "signature_requests_verification_whatsapp": {
+      "description": "Requests verified by a WhatsApp token.",
+      "type": "integer",
+      "example": 6
+    },
+    "signature_requests_verification_bypass": {
+      "description": "Requests signed without token verification (`Bypass`).",
+      "type": "integer",
+      "example": 3
+    },
+    "signature_requests_verification_digital_certificate": {
+      "description": "Requests signed with the signer's own ICP-Brasil digital certificate.",
+      "type": "integer",
+      "example": 4
     },
     "signature_requests_viewed": {
       "description": "Signature requests whose document was first viewed during the period.",
@@ -11857,8 +12152,13 @@ Example payload:
   "documents_uploaded": 42,
   "documents_sent": 37,
   "signature_requests": 61,
-  "signature_requests_email": 55,
-  "signature_requests_whatsapp": 18,
+  "signature_requests_notification_email": 55,
+  "signature_requests_notification_whatsapp": 18,
+  "signature_requests_notification_bypass": 3,
+  "signature_requests_verification_email": 48,
+  "signature_requests_verification_whatsapp": 6,
+  "signature_requests_verification_bypass": 3,
+  "signature_requests_verification_digital_certificate": 4,
   "signature_requests_viewed": 44,
   "signature_requests_completed": 52,
   "documents_certified": 30
@@ -11938,15 +12238,3 @@ Example payload:
   "SignerWhatsappFailed": true
 }
 ```
-
-## Verified compatibility extensions and published-contract gaps
-
-- `TemplateResource.GetAsync` calls a live, working single-template route that the published production OpenAPI omits; it is retained because the template schema itself references that endpoint.
-- `AssignmentResource.ListAsync` follows the published current-account request by default. Passing its `accountId` argument explicitly opts into the legacy query extension for deployments that require it.
-- `PublicDocumentResource.GetAsync` and the recipient/channel send-token overload are obsolete compatibility projections. Use `GetDetailsAsync` and the optional-email `SendTokenAsync` overload for the current full response and request contract.
-- `AcceptTermsAsync` and `VerifyEmailAsync` send the documented no-data requests, then return synthetic legacy compatibility objects. `ConfirmDataWithResultAsync` exposes the current signer response while `ConfirmDataAsync` retains its older void surface.
-- Field-validation prose mentions a signer access code, but the declared OpenAPI security and parameters require bearer/API-key authentication and define no signer-code query. Canonical calls follow those declarations; the optional signer-code argument remains an explicit compatibility extension.
-- Nullable expiration reset, extra field filters/properties, and additional list filters remain available for compatibility where deployed servers accept them; the matrix above distinguishes the published production contract.
-- On the snapshot date, sandbox returned 404 for account stats, user stats, and notification-preference routes even though production documents them. Those methods are contract-tested locally and must be live-verified when sandbox reaches parity.
-- Sandbox also rejected the production-documented optional `notification_sender_type` account-create field, so the sandbox lifecycle uses only `name`; the full production payload remains contract-tested.
-- Production documents document-tag arrays as tag IDs, while sandbox live testing showed that it interprets the same array as names and auto-creates missing tags. The SDK sends the documented `{ "tags": string[] }` shape; callers must use the value semantics implemented by their target environment.

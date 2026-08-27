@@ -17,6 +17,7 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="parameters">Optional pagination (<c>page</c>, <c>per-page</c>).</param>
     /// <param name="accountId">Optional legacy account query extension. Leave <see langword="null"/> for the documented current-account request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page of assignments and any pagination metadata returned by the API.</returns>
     public Task<PaginatedResult<Assignment>> ListAsync(
         AssignmentListParams? parameters = null,
         string? accountId = null,
@@ -34,13 +35,14 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="documentId">Document to attach the assignment to.</param>
     /// <param name="request">Assignment configuration: <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>; defaults to <c>virtual</c>), the signers, and optional message, <c>expires_at</c>, copy receivers, and entries.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly created assignment.</returns>
     public Task<Assignment> CreateAsync(
         string documentId,
         CreateAssignmentRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
 
         return CallAsync<Assignment>(
             $"documents/{document}/assignments",
@@ -53,13 +55,14 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="documentId">Document the assignment would target.</param>
     /// <param name="request">Same shape as <see cref="CreateAsync"/>; for estimation, signers may be specified without an <c>id</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The estimated document and credit cost, balance information, and any blocking reason.</returns>
     public Task<AssignmentCostEstimate> EstimateCostAsync(
         string documentId,
         CreateAssignmentRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
 
         return CallAsync<AssignmentCostEstimate>(
             $"documents/{document}/assignments/estimate-cost",
@@ -73,14 +76,15 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="assignmentId">Assignment whose expiration to change.</param>
     /// <param name="expiresAt">New expiration as an ISO-8601 date-time string, or <see langword="null"/> to clear the expiration.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The assignment with its updated expiration.</returns>
     public Task<Assignment> ResetExpirationAsync(
         string documentId,
         string assignmentId,
         string? expiresAt,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
 
         return CallAsync<Assignment>(
             $"documents/{document}/assignments/{assignment}/reset-expiration",
@@ -94,15 +98,16 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="assignmentId">Assignment the signer belongs to.</param>
     /// <param name="signerId">Signer to re-notify.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The notification result, including the document and signer IDs and whether it was sent.</returns>
     public Task<ResendNotificationResult> ResendNotificationAsync(
         string documentId,
         string assignmentId,
         string signerId,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
-        var signer = RequireId(signerId, "Signer ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
+        var signer = PathSegment(signerId, "Signer ID");
 
         return CallAsync<ResendNotificationResult>(
             $"documents/{document}/assignments/{assignment}/signers/{signer}/resend",
@@ -115,15 +120,16 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="assignmentId">Assignment the signer belongs to.</param>
     /// <param name="signerId">Signer whose resend cost to estimate.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The estimated resend cost, balance information, and any blocking reason.</returns>
     public Task<ResendCostEstimate> EstimateResendCostAsync(
         string documentId,
         string assignmentId,
         string signerId,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
-        var signer = RequireId(signerId, "Signer ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
+        var signer = PathSegment(signerId, "Signer ID");
 
         return CallAsync<ResendCostEstimate>(
             $"documents/{document}/assignments/{assignment}/signers/{signer}/estimate-resend-cost",
@@ -135,13 +141,14 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="documentId">Document that owns the assignment.</param>
     /// <param name="assignmentId">Assignment whose WhatsApp notifications to list.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The rendered WhatsApp notifications sent for the assignment.</returns>
     public async Task<IReadOnlyList<WhatsAppNotification>> ListWhatsAppNotificationsAsync(
         string documentId,
         string assignmentId,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
-        var assignment = RequireId(assignmentId, "Assignment ID");
+        var document = PathSegment(documentId, "Document ID");
+        var assignment = PathSegment(assignmentId, "Assignment ID");
 
         return await CallListBodyAsync<WhatsAppNotification>(
             $"documents/{document}/assignments/{assignment}/whatsapp-notifications",

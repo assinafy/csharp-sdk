@@ -10,7 +10,7 @@ using Xunit;
 namespace Assinafy.Sdk.Tests.Resources;
 
 /// <summary>
-/// Tests for the endpoints and model fields added during the v1.3.0 coverage/fidelity audit,
+/// Tests for the endpoints and model fields added in v1.3.0,
 /// plus previously-untested public methods.
 /// </summary>
 public sealed class AuditAdditionsTests
@@ -191,12 +191,12 @@ public sealed class AuditAdditionsTests
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Put, "/authentication/request-password-reset",
-            FakeHttpMessageHandler.ApiOk(new { email = "a@b.com" }));
+            FakeHttpMessageHandler.ApiOk(new { email = "user@example.com" }));
         var resource = new AuthenticationResource(Client(handler));
 
-        var result = await resource.RequestPasswordResetAsync(new RequestPasswordResetRequest { Email = "a@b.com" });
+        var result = await resource.RequestPasswordResetAsync(new RequestPasswordResetRequest { Email = "user@example.com" });
 
-        result.Email.Should().Be("a@b.com");
+        result.Email.Should().Be("user@example.com");
         handler.Requests.Should().Contain(r => r.Method == HttpMethod.Put);
     }
 

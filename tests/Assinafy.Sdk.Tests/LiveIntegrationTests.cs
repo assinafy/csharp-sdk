@@ -1,4 +1,5 @@
 using System.Text;
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 using FluentAssertions;
 using Xunit;
@@ -6,18 +7,22 @@ using Xunit;
 namespace Assinafy.Sdk.Tests;
 
 /// <summary>
-/// End-to-end tests that exercise the Assinafy sandbox. Required configuration is read from
+/// End-to-end tests that exercise the Assinafy sandbox. Configuration is read from
 /// environment variables, and the tests fail before sending a request if the base URL is not
-/// the sandbox. Run with, e.g.:
+/// the sandbox. The two test-email variables are optional and default to reserved example.com
+/// addresses. Run with, e.g.:
 /// <code>
 /// ASSINAFY_API_KEY=... ASSINAFY_ACCOUNT_ID=... ASSINAFY_BASE_URL=https://sandbox.assinafy.com.br/v1 \
 /// ASSINAFY_TEST_EMAIL_PRIMARY=... ASSINAFY_TEST_EMAIL_SECONDARY=... \
-///   dotnet test --filter FullyQualifiedName~LiveIntegrationTests
+///   dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj \
+///     --framework net10.0 -- --filter-trait "Category=Live"
 /// </code>
 /// </summary>
 public sealed class LiveIntegrationTests
 {
     private const string SandboxBaseUrl = "https://sandbox.assinafy.com.br/v1";
+    private static readonly SemaphoreSlim SandboxRequestGate = new(1, 1);
+    private static DateTimeOffset _nextSandboxRequestAt;
 
     private static AssinafyClient CreateClient(string? accountId = null)
     {
@@ -25,18 +30,69 @@ public sealed class LiveIntegrationTests
         if (!string.Equals(baseUrl, SandboxBaseUrl, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"Live tests only run against {SandboxBaseUrl}.");
 
+        var http = new HttpClient(new SandboxThrottleHandler());
         return new AssinafyClient(new AssinafyClientOptions
         {
             ApiKey = RequiredEnvironmentVariable("ASSINAFY_API_KEY"),
             AccountId = accountId ?? RequiredEnvironmentVariable("ASSINAFY_ACCOUNT_ID"),
             BaseUrl = baseUrl,
-        });
+        }, http, ownsHttpClient: true);
     }
 
     private static string RequiredEnvironmentVariable(string name) =>
         Environment.GetEnvironmentVariable(name) is { } value && !string.IsNullOrWhiteSpace(value)
             ? value.Trim()
             : throw new InvalidOperationException($"{name} must be configured to run live tests.");
+
+    private static string TestEmail(string name, string fallback) =>
+        Environment.GetEnvironmentVariable(name) is { } value && !string.IsNullOrWhiteSpace(value)
+            ? value.Trim()
+            : fallback;
+
+    private sealed class SandboxThrottleHandler : DelegatingHandler
+    {
+        private static readonly TimeSpan RequestInterval = TimeSpan.FromSeconds(6);
+
+        public SandboxThrottleHandler()
+            : base(AssinafyClient.CreatePrimaryHandler()) { }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            await SandboxRequestGate.WaitAsync(cancellationToken);
+            try
+            {
+                var delay = _nextSandboxRequestAt - DateTimeOffset.UtcNow;
+                if (delay > TimeSpan.Zero)
+                    await Task.Delay(delay, cancellationToken);
+
+                _nextSandboxRequestAt = DateTimeOffset.UtcNow + RequestInterval;
+            }
+            finally
+            {
+                SandboxRequestGate.Release();
+            }
+
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
+
+    private static async Task RetryRateLimitedCleanupAsync(Func<Task> cleanup)
+    {
+        for (var attempt = 0; ; attempt++)
+        {
+            try
+            {
+                await cleanup();
+                return;
+            }
+            catch (ApiException exception) when (exception.StatusCode == 429 && attempt < 2)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(3));
+            }
+        }
+    }
 
     [Fact]
     [Trait("Category", "Live")]
@@ -64,11 +120,12 @@ public sealed class LiveIntegrationTests
     public async Task UploadWaitGetDelete_RoundTrips()
     {
         var client = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
 
         using (client)
         {
             using var pdf = new MemoryStream(BuildMinimalPdf());
-            var uploaded = await client.Documents.UploadAsync(pdf, "sdk-live-audit.pdf");
+            var uploaded = await client.Documents.UploadAsync(pdf, $"sdk-live-{suffix}.pdf");
             uploaded.Id.Should().NotBeNullOrEmpty();
 
             try
@@ -80,7 +137,7 @@ public sealed class LiveIntegrationTests
                 fetched.Id.Should().Be(uploaded.Id);
 
                 // PATCH /documents/{id} — rename is allowed before any assignment exists.
-                var renamed = await client.Documents.RenameAsync(uploaded.Id, "sdk-live-renamed");
+                var renamed = await client.Documents.RenameAsync(uploaded.Id, $"sdk-live-renamed-{suffix}");
                 renamed.Id.Should().Be(uploaded.Id);
                 renamed.Name.Should().NotBeNullOrEmpty();
 
@@ -88,8 +145,52 @@ public sealed class LiveIntegrationTests
             }
             finally
             {
-                await client.Documents.DeleteAsync(uploaded.Id);
+                await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(uploaded.Id));
             }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task TemplateLifecycle_RoundTrips()
+    {
+        using var client = CreateClient();
+        using var pdf = new MemoryStream(BuildMinimalPdf());
+        var suffix = Guid.NewGuid().ToString("N");
+        TemplateDetails? template = null;
+
+        try
+        {
+            template = await client.Templates.CreateAsync(
+                pdf,
+                $"sdk-live-{suffix}.pdf",
+                $"sdk-live-{suffix}");
+            template.Id.Should().NotBeNullOrWhiteSpace();
+
+            var deadline = DateTimeOffset.UtcNow.AddMinutes(2);
+            while (template.Pages.Count == 0 && DateTimeOffset.UtcNow < deadline)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                template = await client.Templates.GetAsync(template.Id);
+            }
+
+            template.Pages.Should().NotBeEmpty();
+            var pageId = template.Pages[0].Id;
+            template = await client.Templates.UpdateAsync(
+                template.Id,
+                new UpdateTemplateRequest
+                {
+                    Name = $"sdk-live-updated-{suffix}",
+                    Message = "Sandbox lifecycle test",
+                });
+            template.Name.Should().Contain("updated");
+            (await client.Templates.DownloadPageAsync(template.Id, pageId))
+                .Should().NotBeEmpty();
+        }
+        finally
+        {
+            if (template is not null && !string.IsNullOrWhiteSpace(template.Id))
+                await RetryRateLimitedCleanupAsync(() => client.Templates.DeleteAsync(template.Id));
         }
     }
 
@@ -122,9 +223,9 @@ public sealed class LiveIntegrationTests
             search.Should().NotBeNull();
 
             _ = await client.Signers.FindByEmailAsync(
-                RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_PRIMARY"));
+                TestEmail("ASSINAFY_TEST_EMAIL_PRIMARY", "assinafy-sdk-primary@example.com"));
             _ = await client.Signers.FindByEmailAsync(
-                RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_SECONDARY"));
+                TestEmail("ASSINAFY_TEST_EMAIL_SECONDARY", "assinafy-sdk-secondary@example.com"));
         }
     }
 
@@ -132,8 +233,8 @@ public sealed class LiveIntegrationTests
     [Trait("Category", "Live")]
     public async Task DisposableAccountLifecycle_CoversAuthenticatedEndpointsAndCleansUp()
     {
-        var primaryEmail = RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_PRIMARY");
-        var secondaryEmail = RequiredEnvironmentVariable("ASSINAFY_TEST_EMAIL_SECONDARY");
+        var primaryEmail = TestEmail("ASSINAFY_TEST_EMAIL_PRIMARY", "assinafy-sdk-primary@example.com");
+        var secondaryEmail = TestEmail("ASSINAFY_TEST_EMAIL_SECONDARY", "assinafy-sdk-secondary@example.com");
         primaryEmail.Should().NotBeEquivalentTo(secondaryEmail);
 
         using var bootstrap = CreateClient();
@@ -258,7 +359,7 @@ public sealed class LiveIntegrationTests
             [
                 new ValidateFieldValueItem { FieldId = field.Id, Value = "sdk-live" },
             ])).Should().ContainSingle(result => result.Success);
-            await client.Fields.DeleteAsync(field.Id);
+            await RetryRateLimitedCleanupAsync(() => client.Fields.DeleteAsync(field.Id));
 
             var estimate = await client.Assignments.EstimateCostAsync(document.Id, new CreateAssignmentRequest
             {
@@ -280,6 +381,7 @@ public sealed class LiveIntegrationTests
 
             var eventTypes = await client.Webhooks.ListEventTypesAsync();
             var eventType = eventTypes.First(type => !string.IsNullOrWhiteSpace(type.Id));
+            (await client.Webhooks.GetAsync()).Should().NotBeNull();
             var subscription = await client.Webhooks.UpdateSubscriptionAsync(
                 new UpdateWebhookSubscriptionRequest
                 {
@@ -289,19 +391,20 @@ public sealed class LiveIntegrationTests
                     Email = secondaryEmail,
                 });
             subscription.IsActive.Should().BeTrue();
-            (await client.Webhooks.GetAsync())?.Events.Should().Contain(eventType.Id);
+            (await client.Webhooks.GetAsync()).Events.Should().Contain(eventType.Id);
             (await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { PerPage = 5 }))
                 .Should().NotBeNull();
             (await client.Webhooks.InactivateAsync()).IsActive.Should().BeFalse();
 
-            await client.Documents.DeleteAsync(document.Id);
-            await client.Signers.DeleteAsync(primarySigner.Id);
-            await client.Signers.DeleteAsync(secondarySigner.Id);
+            await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
+            await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(primarySigner.Id));
+            await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(secondarySigner.Id));
         }
         finally
         {
             if (account is not null && !string.IsNullOrWhiteSpace(account.Id))
-                await bootstrap.Accounts.DeleteAsync(force: true, accountId: account.Id);
+                await RetryRateLimitedCleanupAsync(
+                    () => bootstrap.Accounts.DeleteAsync(force: true, accountId: account.Id));
         }
     }
 

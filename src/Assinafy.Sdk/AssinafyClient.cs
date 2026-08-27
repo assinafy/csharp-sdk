@@ -17,6 +17,8 @@ public sealed class AssinafyClient : IDisposable
     private readonly HttpClient _http;
     private readonly bool _ownsHttpClient;
 
+    internal bool OwnsHttpClient => _ownsHttpClient;
+
     /// <summary>Authentication and user API-key endpoints.</summary>
     public AuthenticationResource Authentication { get; }
 
@@ -35,7 +37,7 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Signature assignment creation, cost estimation, resend, and expiration.</summary>
     public AssignmentResource Assignments { get; }
 
-    /// <summary>Template listing and detail lookup.</summary>
+    /// <summary>Template upload, listing, update, deletion, details, and page downloads.</summary>
     public TemplateResource Templates { get; }
 
     /// <summary>Workspace tag management and document tag attachment.</summary>
@@ -47,7 +49,7 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Public document lookup and signer token delivery.</summary>
     public PublicDocumentResource PublicDocuments { get; }
 
-    /// <summary>Signer-facing signing flow: get assignment, sign, decline.</summary>
+    /// <summary>Signer-facing document access, signing, declining, certificate signing, and public downloads.</summary>
     public SigningResource Signing { get; }
 
     /// <summary>Signer signature/initial image upload and download.</summary>
@@ -57,8 +59,9 @@ public sealed class AssinafyClient : IDisposable
     public WebhookResource Webhooks { get; }
 
     /// <summary>Create a client with an internally owned <see cref="HttpClient"/>.</summary>
+    /// <param name="options">Authentication, account, base URL, and timeout configuration.</param>
     public AssinafyClient(AssinafyClientOptions options)
-        : this(options, new HttpClient(), ownsHttpClient: true) { }
+        : this(options, new HttpClient(CreatePrimaryHandler()), ownsHttpClient: true) { }
 
     /// <summary>
     /// Create a client backed by a caller-supplied <see cref="HttpClient"/>.
@@ -66,40 +69,52 @@ public sealed class AssinafyClient : IDisposable
     /// this constructor will not dispose it. Preferred for ASP.NET Core via
     /// <see cref="AssinafyServiceCollectionExtensions.AddAssinafy"/>.
     /// Authentication is attached per request, so the supplied client's default
-    /// headers are not mutated with credentials and the client stays safe to reuse;
-    /// only <c>Accept</c>, <c>User-Agent</c>, and an unset <c>BaseAddress</c> are configured.
+    /// headers are not mutated with credentials. Its <see cref="HttpClient.BaseAddress"/>
+    /// must match <see cref="AssinafyClientOptions.BaseUrl"/>. When using an API key,
+    /// configure the supplied primary handler with automatic redirects disabled;
+    /// .NET otherwise forwards custom headers such as <c>X-Api-Key</c> to redirect targets.
     /// </summary>
+    /// <param name="options">Authentication, account, and base URL configuration. Its timeout is ignored for a supplied client.</param>
+    /// <param name="http">Caller-owned HTTP client whose existing base address, if set, matches <paramref name="options"/>.</param>
     public AssinafyClient(AssinafyClientOptions options, HttpClient http)
         : this(options, http ?? throw new ArgumentNullException(nameof(http)), ownsHttpClient: false) { }
 
-    private AssinafyClient(AssinafyClientOptions options, HttpClient http, bool ownsHttpClient)
+    internal AssinafyClient(AssinafyClientOptions options, HttpClient http, bool ownsHttpClient)
     {
-        ArgumentNullException.ThrowIfNull(options);
-
-        if (!string.IsNullOrWhiteSpace(options.ApiKey) && !string.IsNullOrWhiteSpace(options.Token))
-            throw new ValidationException(
-                "ApiKey and Token are mutually exclusive; provide exactly one (or neither for public-only access).");
-
-        _http = http;
+        _http = http ?? throw new ArgumentNullException(nameof(http));
         _ownsHttpClient = ownsHttpClient;
 
-        ConfigureHttpClient(_http, options, applyTimeout: ownsHttpClient);
+        try
+        {
+            ArgumentNullException.ThrowIfNull(options);
 
-        var authenticate = BuildAuthenticator(options);
+            if (!string.IsNullOrWhiteSpace(options.ApiKey) && !string.IsNullOrWhiteSpace(options.Token))
+                throw new ValidationException(
+                    "ApiKey and Token are mutually exclusive; provide exactly one (or neither for public-only access).");
 
-        Authentication = new AuthenticationResource(_http, authenticate);
-        Accounts = new AccountResource(_http, options.AccountId, authenticate);
-        Users = new UserResource(_http, authenticate);
-        Documents = new DocumentResource(_http, options.AccountId, authenticate);
-        Signers = new SignerResource(_http, options.AccountId, authenticate);
-        Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
-        Templates = new TemplateResource(_http, options.AccountId, authenticate);
-        Tags = new TagResource(_http, options.AccountId, authenticate);
-        Fields = new FieldResource(_http, options.AccountId, authenticate);
-        PublicDocuments = new PublicDocumentResource(_http, authenticate);
-        Signing = new SigningResource(_http, authenticate);
-        Signatures = new SignatureResource(_http, authenticate);
-        Webhooks = new WebhookResource(_http, options.AccountId, authenticate);
+            var authenticate = BuildAuthenticator(options);
+            ConfigureHttpClient(_http, options, applyTimeout: ownsHttpClient);
+
+            Authentication = new AuthenticationResource(_http, authenticate);
+            Accounts = new AccountResource(_http, options.AccountId, authenticate);
+            Users = new UserResource(_http, authenticate);
+            Documents = new DocumentResource(_http, options.AccountId, authenticate);
+            Signers = new SignerResource(_http, options.AccountId, authenticate);
+            Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
+            Templates = new TemplateResource(_http, options.AccountId, authenticate);
+            Tags = new TagResource(_http, options.AccountId, authenticate);
+            Fields = new FieldResource(_http, options.AccountId, authenticate);
+            PublicDocuments = new PublicDocumentResource(_http, authenticate);
+            Signing = new SigningResource(_http, authenticate);
+            Signatures = new SignatureResource(_http, authenticate);
+            Webhooks = new WebhookResource(_http, options.AccountId, authenticate);
+        }
+        catch
+        {
+            if (_ownsHttpClient)
+                _http.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -112,13 +127,35 @@ public sealed class AssinafyClient : IDisposable
         if (!string.IsNullOrWhiteSpace(options.ApiKey))
         {
             var apiKey = options.ApiKey;
-            return request => request.Headers.TryAddWithoutValidation("X-Api-Key", apiKey);
+            if (apiKey.Any(char.IsControl))
+                throw new ValidationException("ApiKey must not contain control characters.");
+
+            return request => request.Headers.Add("X-Api-Key", apiKey);
         }
 
         if (!string.IsNullOrWhiteSpace(options.Token))
         {
             var token = options.Token;
-            return request => request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var paddingIndex = token.IndexOf('=');
+            var tokenBody = paddingIndex < 0 ? token : token[..paddingIndex];
+            if (tokenBody.Length == 0 ||
+                tokenBody.Any(character =>
+                    !char.IsAsciiLetterOrDigit(character) &&
+                    character is not ('-' or '.' or '_' or '~' or '+' or '/')) ||
+                paddingIndex >= 0 && token.Skip(paddingIndex).Any(character => character != '='))
+                throw new ValidationException("Token is not a valid Bearer credential.");
+
+            AuthenticationHeaderValue authorization;
+            try
+            {
+                authorization = new AuthenticationHeaderValue("Bearer", token);
+            }
+            catch (FormatException ex)
+            {
+                throw new ValidationException("Token is not a valid Bearer credential.", null, ex);
+            }
+
+            return request => request.Headers.Authorization = authorization;
         }
 
         return null;
@@ -126,17 +163,24 @@ public sealed class AssinafyClient : IDisposable
 
     private static void ConfigureHttpClient(HttpClient http, AssinafyClientOptions options, bool applyTimeout)
     {
-        if (options.Timeout <= TimeSpan.Zero)
-            throw new ValidationException("Timeout must be greater than zero.");
-
-        var baseUrl = (string.IsNullOrWhiteSpace(options.BaseUrl)
+        var configuredBaseUrl = (string.IsNullOrWhiteSpace(options.BaseUrl)
             ? AssinafyClientOptions.DefaultBaseUrl
-            : options.BaseUrl).TrimEnd('/') + "/";
+            : options.BaseUrl).Trim();
+        var baseAddress = ValidateBaseAddress(configuredBaseUrl);
 
-        http.BaseAddress ??= new Uri(baseUrl, UriKind.Absolute);
+        if (http.BaseAddress is not null && http.BaseAddress != baseAddress)
+            throw new ValidationException(
+                "The supplied HttpClient BaseAddress must match AssinafyClientOptions.BaseUrl.");
+
+        http.BaseAddress ??= baseAddress;
 
         if (applyTimeout)
+        {
+            if (options.Timeout <= TimeSpan.Zero && options.Timeout != Timeout.InfiniteTimeSpan)
+                throw new ValidationException("Timeout must be greater than zero or infinite.");
+
             http.Timeout = options.Timeout;
+        }
 
         var headers = http.DefaultRequestHeaders;
         if (!headers.Accept.Any(a => string.Equals(a.MediaType, "application/json", StringComparison.OrdinalIgnoreCase)))
@@ -146,12 +190,38 @@ public sealed class AssinafyClient : IDisposable
             headers.UserAgent.Add(new ProductInfoHeaderValue("assinafy-csharp-sdk", SdkVersion));
     }
 
+    internal static SocketsHttpHandler CreatePrimaryHandler() => new()
+    {
+        AllowAutoRedirect = false,
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+    };
+
+    private static Uri ValidateBaseAddress(string value)
+    {
+        if (!Uri.TryCreate(value.TrimEnd('/') + "/", UriKind.Absolute, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            !string.IsNullOrEmpty(uri.Query) ||
+            !string.IsNullOrEmpty(uri.Fragment) ||
+            uri.AbsolutePath != "/v1/")
+            throw new ValidationException(
+                "BaseUrl must be an absolute HTTPS URL whose path is exactly /v1 and has no user info, query, or fragment.");
+
+        return uri;
+    }
+
     /// <summary>Convenience factory that creates an API-key client and optionally tweaks options.</summary>
+    /// <param name="apiKey">API key sent in the <c>X-Api-Key</c> header.</param>
+    /// <param name="accountId">Default workspace account ID for account-scoped resources.</param>
+    /// <param name="configure">Optional callback that can change the generated client options.</param>
+    /// <returns>A configured Assinafy client.</returns>
     public static AssinafyClient Create(
         string apiKey,
         string accountId,
         Action<AssinafyClientOptions>? configure = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+        ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
         var options = new AssinafyClientOptions { ApiKey = apiKey, AccountId = accountId };
         configure?.Invoke(options);
         return new AssinafyClient(options);
@@ -163,6 +233,8 @@ public sealed class AssinafyClient : IDisposable
     /// <c>accountId</c>) variants, plus <c>token</c>/<c>access_token</c>/<c>accessToken</c>
     /// when no API key is provided, and an optional <c>base_url</c>/<c>baseUrl</c>.
     /// </summary>
+    /// <param name="config">Configuration keys and values used to construct the client options.</param>
+    /// <returns>A client configured from the supplied key-value settings.</returns>
     public static AssinafyClient FromConfig(IDictionary<string, string?> config)
     {
         ArgumentNullException.ThrowIfNull(config);
@@ -208,7 +280,12 @@ public sealed class AssinafyClient : IDisposable
     /// <remarks>
     /// The API has no transaction spanning these calls. If a later request fails, earlier documents
     /// and signers remain available to inspect or delete; the SDK does not destroy them automatically.
+    /// For collect assignments whose entries reference signers created by this helper, use
+    /// <see cref="UploadAndRequestSignaturesOptions.EntriesFactory"/>; it runs after all signers are created.
     /// </remarks>
+    /// <param name="options">PDF, signer, assignment, and optional account configuration for the operation.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The created document, assignment, and signer identifiers.</returns>
     public async Task<UploadAndRequestSignaturesResult> UploadAndRequestSignaturesAsync(
         UploadAndRequestSignaturesOptions options,
         CancellationToken cancellationToken = default)
@@ -220,8 +297,10 @@ public sealed class AssinafyClient : IDisposable
             throw new ValidationException("At least one signer is required.");
         if (options.Signers.Any(signer => signer is null || string.IsNullOrWhiteSpace(signer.FullName)))
             throw new ValidationException("Every signer must have a full name.");
+        if (options.Entries is not null && options.EntriesFactory is not null)
+            throw new ValidationException("Specify either Entries or EntriesFactory, not both.");
         if (string.Equals(options.Method, AssignmentMethods.Collect, StringComparison.OrdinalIgnoreCase) &&
-            options.Entries is not { Count: > 0 })
+            options.Entries is not { Count: > 0 } && options.EntriesFactory is null)
             throw new ValidationException("Collect assignments require field entries.");
 
         var document = await Documents.UploadAsync(
@@ -261,16 +340,24 @@ public sealed class AssinafyClient : IDisposable
             });
         }
 
+        IReadOnlyList<AssignmentEntry>? entries = options.Entries;
+        if (options.EntriesFactory is not null)
+        {
+            entries = options.EntriesFactory(signerIds);
+            if (entries is not { Count: > 0 })
+                throw new ValidationException("EntriesFactory must return at least one field entry.");
+        }
+
         var assignment = await Assignments.CreateAsync(
             document.Id,
             new CreateAssignmentRequest
             {
-                Method = options.Method ?? "virtual",
+                Method = options.Method ?? AssignmentMethods.Virtual,
                 Signers = signerRefs,
                 Message = options.Message,
                 ExpiresAt = options.ExpiresAt,
                 CopyReceivers = options.CopyReceivers,
-                Entries = options.Entries,
+                Entries = entries,
             },
             cancellationToken).ConfigureAwait(false);
 

@@ -16,6 +16,7 @@ public sealed class TagResource : BaseResource
     /// <param name="search">Optional case-insensitive substring to filter tag names.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The workspace tags matching the optional search.</returns>
     public async Task<IReadOnlyList<Tag>> ListAsync(
         string? search = null,
         string? accountId = null,
@@ -38,6 +39,7 @@ public sealed class TagResource : BaseResource
     /// <param name="request">Tag name and optional hex color to create.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly created tag.</returns>
     public Task<Tag> CreateAsync(
         CreateTagRequest request,
         string? accountId = null,
@@ -59,6 +61,7 @@ public sealed class TagResource : BaseResource
     /// <param name="request">New name and/or color; unset properties leave the existing value unchanged.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated tag.</returns>
     public Task<Tag> UpdateAsync(
         string tagId,
         UpdateTagRequest request,
@@ -70,7 +73,7 @@ public sealed class TagResource : BaseResource
             throw new ValidationException("Color and ClearColor cannot both be set.");
 
         var id = AccountId(accountId);
-        var tag = RequireId(tagId, "Tag ID");
+        var tag = PathSegment(tagId, "Tag ID");
 
         var body = new Dictionary<string, object?>();
         if (request.Name is not null) body["name"] = request.Name;
@@ -93,6 +96,7 @@ public sealed class TagResource : BaseResource
     /// <param name="force">When <see langword="true"/>, detach the tag from every document and template before deleting; when <see langword="false"/> the API returns <c>409 Conflict</c> if the tag is still attached.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the tag has been deleted.</returns>
     public Task DeleteAsync(
         string tagId,
         bool force = false,
@@ -100,7 +104,7 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var tag = RequireId(tagId, "Tag ID");
+        var tag = PathSegment(tagId, "Tag ID");
 
         var path = AppendQueryString(
             $"accounts/{id}/tags/{tag}",
@@ -122,7 +126,7 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var tag = RequireId(tagId, "Tag ID");
+        var tag = PathSegment(tagId, "Tag ID");
         var path = AppendQueryString(
             $"accounts/{id}/tags/{tag}",
             force ? new Dictionary<string, string?> { ["force"] = "true" } : null);
@@ -133,13 +137,14 @@ public sealed class TagResource : BaseResource
     /// <param name="documentId">Document whose attached tags to list.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The tags currently attached to the document.</returns>
     public async Task<IReadOnlyList<Tag>> ListForDocumentAsync(
         string documentId,
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
 
         return await CallListBodyAsync<Tag>(
             $"accounts/{id}/documents/{document}/tags",
@@ -152,6 +157,7 @@ public sealed class TagResource : BaseResource
     /// <param name="tags">Tag IDs to attach. Create missing tags first with <see cref="CreateAsync"/>.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document's attached tags after the additions.</returns>
     public Task<IReadOnlyList<Tag>> AddToDocumentAsync(
         string documentId,
         IReadOnlyList<string> tags,
@@ -166,6 +172,7 @@ public sealed class TagResource : BaseResource
     /// <param name="tags">Exact set of tag IDs the document should have; pass an empty list to clear all.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document's complete replacement set of tags.</returns>
     public Task<IReadOnlyList<Tag>> SetForDocumentAsync(
         string documentId,
         IReadOnlyList<string> tags,
@@ -183,6 +190,7 @@ public sealed class TagResource : BaseResource
     /// <param name="tagId">Tag ID to detach.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the tag has been detached.</returns>
     public Task RemoveFromDocumentAsync(
         string documentId,
         string tagId,
@@ -190,8 +198,8 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var document = RequireId(documentId, "Document ID");
-        var tag = RequireId(tagId, "Tag ID");
+        var document = PathSegment(documentId, "Document ID");
+        var tag = PathSegment(tagId, "Tag ID");
 
         return CallVoidAsync(
             $"accounts/{id}/documents/{document}/tags/{tag}",
@@ -212,8 +220,8 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var id = AccountId(accountId);
-        var document = RequireId(documentId, "Document ID");
-        var tag = RequireId(tagId, "Tag ID");
+        var document = PathSegment(documentId, "Document ID");
+        var tag = PathSegment(tagId, "Tag ID");
         return CallAsync<DetachTagResult>(
             $"accounts/{id}/documents/{document}/tags/{tag}",
             HttpMethod.Delete,
@@ -228,7 +236,7 @@ public sealed class TagResource : BaseResource
         CancellationToken cancellationToken)
     {
         var id = AccountId(accountId);
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         ArgumentNullException.ThrowIfNull(tags);
 
         return await CallListBodyAsync<Tag>(
