@@ -23,14 +23,26 @@ concurrency:
 jobs:
   publish:
     name: Pack & publish
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: release
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
+
+      - name: Verify release commit is on main
+        shell: bash
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Release commit must be reachable from main"
+            exit 1
+          fi
 
       - name: Setup .NET SDKs
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -54,6 +66,11 @@ jobs:
             echo "Invalid version: $VERSION" >&2
             exit 1
           fi
+          PROJECT_VERSION="$(dotnet msbuild src/Assinafy.Sdk/Assinafy.Sdk.csproj -nologo -getProperty:Version)"
+          if [ "$VERSION" != "$PROJECT_VERSION" ]; then
+            echo "Version $VERSION does not match project version $PROJECT_VERSION" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Restore
@@ -63,13 +80,18 @@ jobs:
         run: dotnet build src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
       - name: Test
-        run: dotnet test tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj --configuration Release --filter "Category!=Live" -p:Version=${{ steps.version.outputs.version }}
+        run: >-
+          dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj
+          --configuration Release
+          -p:Version=${{ steps.version.outputs.version }}
+          --
+          --filter-not-trait "Category=Live"
 
       - name: Pack
         run: dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj --configuration Release --no-build --output ./artifacts -p:Version=${{ steps.version.outputs.version }}
 
       - name: Attest build provenance
-        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ./artifacts/*.nupkg
 
@@ -84,7 +106,7 @@ jobs:
 
       - name: NuGet.org login
         id: nuget_login
-        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         with:
           user: ${{ vars.NUGET_USER }}
 
@@ -93,13 +115,10 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget_login.outputs.NUGET_API_KEY }}
         run: dotnet nuget push "./artifacts/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
 
-      - name: Add GitHub Packages source
+      - name: Push to GitHub Packages
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: dotnet nuget add source --username ${{ github.repository_owner }} --password "$GH_TOKEN" --store-password-in-clear-text --name github "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json"
-
-      - name: Push to GitHub Packages
-        run: dotnet nuget push "./artifacts/*.nupkg" --source github --skip-duplicate
+        run: dotnet nuget push "./artifacts/*.nupkg" --api-key "$GH_TOKEN" --source "https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json" --skip-duplicate
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -2,6 +2,22 @@ using System.Text.Json.Serialization;
 
 namespace Assinafy.Sdk.Models;
 
+/// <summary>Result of starting an ICP-Brasil digital-certificate signing session.</summary>
+public sealed record CertificateStartResult
+{
+    /// <summary>Web PKI signing token to sign and pass to the completion endpoint.</summary>
+    [JsonPropertyName("token")]
+    public string Token { get; init; } = string.Empty;
+}
+
+/// <summary>Result of completing an ICP-Brasil digital-certificate signature.</summary>
+public sealed record CertificateCompleteResult
+{
+    /// <summary>Name read from the certificate used to sign.</summary>
+    [JsonPropertyName("signerName")]
+    public string SignerName { get; init; } = string.Empty;
+}
+
 /// <summary>
 /// One field value submitted by a signer when signing an assignment.
 /// Per the Assinafy docs the Sign endpoint expects camelCase keys

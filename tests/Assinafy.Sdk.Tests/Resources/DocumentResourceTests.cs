@@ -55,6 +55,54 @@ public sealed class DocumentResourceTests
     }
 
     [Fact]
+    public async Task Upload_ValidatesOnlyBytesRemainingInSeekableStream()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/documents",
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                id = "doc-1",
+                name = "contract.pdf",
+                status = "uploaded",
+                created_at = "2026-01-01",
+                is_closed = false,
+                pages = Array.Empty<object>(),
+            }));
+
+        var resource = CreateResource(handler);
+        using var stream = new MemoryStream(new byte[25 * 1024 * 1024 + 1]);
+        stream.Position = stream.Length - 1;
+
+        var result = await resource.UploadAsync(stream, "contract.pdf");
+
+        result.Id.Should().Be("doc-1");
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Upload_ThrowsSerializationExceptionWhenResponseHasNoDocumentId()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/documents",
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                id = "",
+                name = "contract.pdf",
+                status = "uploaded",
+                created_at = "2026-01-01",
+                is_closed = false,
+                pages = Array.Empty<object>(),
+            }));
+
+        var resource = CreateResource(handler);
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("pdf"));
+
+        await ((Func<Task>)(() => resource.UploadAsync(stream, "contract.pdf")))
+            .Should().ThrowAsync<SerializationException>()
+            .WithMessage("*no document ID*");
+    }
+
+    [Fact]
     public async Task WaitUntilReady_RejectsNonPositiveTimingValues()
     {
         var resource = CreateResource(new FakeHttpMessageHandler());
@@ -64,6 +112,45 @@ public sealed class DocumentResourceTests
         await ((Func<Task>)(() => resource.WaitUntilReadyAsync(
                 "doc-1", TimeSpan.FromSeconds(1), TimeSpan.Zero)))
             .Should().ThrowAsync<ValidationException>();
+    }
+
+    [Fact]
+    public async Task WaitUntilReady_PreservesLastTransportFailureOnTimeout()
+    {
+        using var http = new HttpClient(new AlwaysFailingHandler())
+        {
+            BaseAddress = new Uri("https://api.assinafy.com.br/v1/"),
+        };
+        var resource = new DocumentResource(http, "acc");
+
+        var exception = (await ((Func<Task>)(() => resource.WaitUntilReadyAsync(
+                "doc-1",
+                TimeSpan.FromMilliseconds(25),
+                TimeSpan.FromMilliseconds(1))))
+            .Should().ThrowAsync<ValidationException>()).Which;
+
+        exception.InnerException.Should().BeOfType<NetworkException>();
+    }
+
+    [Fact]
+    public async Task WaitUntilReady_TreatsRateLimitsAsTransient()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(
+            HttpMethod.Get,
+            "/documents/doc-1",
+            new { status = 429, message = "Rate limited", data = (object?)null },
+            System.Net.HttpStatusCode.TooManyRequests);
+        var resource = CreateResource(handler);
+
+        var exception = (await ((Func<Task>)(() => resource.WaitUntilReadyAsync(
+                "doc-1",
+                TimeSpan.FromMilliseconds(25),
+                TimeSpan.FromMilliseconds(1))))
+            .Should().ThrowAsync<ValidationException>()).Which;
+
+        exception.InnerException.Should().BeOfType<ApiException>()
+            .Which.StatusCode.Should().Be(429);
     }
 
     [Fact]
@@ -223,5 +310,13 @@ public sealed class DocumentResourceTests
         handler.Requests.Should().Contain(r =>
             r.RequestUri!.PathAndQuery.Contains("/documents/doc-1") &&
             r.Method == HttpMethod.Delete);
+    }
+
+    private sealed class AlwaysFailingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            throw new HttpRequestException("simulated transport failure");
     }
 }

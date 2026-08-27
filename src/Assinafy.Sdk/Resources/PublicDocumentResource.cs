@@ -11,12 +11,13 @@ public sealed class PublicDocumentResource : BaseResource
     /// <summary>Legacy <c>GET /public/documents/{document_id}</c> projection retained for compatibility. Use <see cref="GetDetailsAsync"/> for the complete documented <see cref="DocumentDetails"/> payload.</summary>
     /// <param name="documentId">Document whose public metadata to fetch.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The legacy public-document projection.</returns>
     [Obsolete("Use GetDetailsAsync, which returns the complete Document payload documented by the current API.")]
     public Task<PublicDocumentInfo> GetAsync(
         string documentId,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         return CallAsync<PublicDocumentInfo>(
             $"public/documents/{document}",
             HttpMethod.Get,
@@ -32,7 +33,7 @@ public sealed class PublicDocumentResource : BaseResource
         string documentId,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         return CallAsync<DocumentDetails>(
             $"public/documents/{document}",
             HttpMethod.Get,
@@ -44,12 +45,13 @@ public sealed class PublicDocumentResource : BaseResource
     /// <param name="documentId">Document whose signing token to send.</param>
     /// <param name="email">Optional destination email. When omitted, the API uses the document's configured recipient.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the token-delivery request has been accepted.</returns>
     public Task SendTokenAsync(
         string documentId,
         string? email = null,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         if (email is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(email);
 
@@ -66,6 +68,7 @@ public sealed class PublicDocumentResource : BaseResource
     /// <param name="documentId">Document whose signing token to send.</param>
     /// <param name="request">Recipient address and delivery channel (<see cref="SignerChannels"/>: <c>Email</c> or <c>Whatsapp</c>; WhatsApp is paid-only).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A compatibility result containing the requested channel and recipient.</returns>
     [Obsolete("Use SendTokenAsync(documentId, email, cancellationToken). The current API returns no data and does not accept a channel.")]
     public async Task<SendDocumentTokenResult> SendTokenAsync(
         string documentId,
@@ -83,6 +86,7 @@ public sealed class PublicDocumentResource : BaseResource
         }
         else
         {
+            document = PathSegment(document, "Document ID");
             await CallVoidAsync(
                 $"public/documents/{document}/send-token",
                 HttpMethod.Put,

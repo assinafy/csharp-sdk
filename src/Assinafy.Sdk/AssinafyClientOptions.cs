@@ -20,9 +20,12 @@ public sealed class AssinafyClientOptions
     /// <summary>Default workspace account ID, used by account-scoped resources when no override is passed.</summary>
     public string? AccountId { get; set; }
 
-    /// <summary>Base URL for the API. Defaults to <see cref="DefaultBaseUrl"/>.</summary>
+    /// <summary>
+    /// Absolute HTTPS base URL for the API, with a path of exactly <c>/v1</c> and no
+    /// user info, query, or fragment. Defaults to <see cref="DefaultBaseUrl"/>.
+    /// </summary>
     public string BaseUrl { get; set; } = DefaultBaseUrl;
 
-    /// <summary>Per-request timeout for the internally owned <see cref="HttpClient"/>. Ignored when a pre-configured <see cref="HttpClient"/> is supplied.</summary>
+    /// <summary>Per-request timeout for the internally owned <see cref="HttpClient"/>. Use <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> to disable it. Ignored when a pre-configured <see cref="HttpClient"/> is supplied.</summary>
     public TimeSpan Timeout { get; set; } = TimeSpan.FromSeconds(30);
 }

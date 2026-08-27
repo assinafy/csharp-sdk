@@ -12,8 +12,23 @@ public sealed class ValidationException : AssinafyException
     public IReadOnlyDictionary<string, object?>? Details { get; }
 
     /// <summary>Creates a new <see cref="ValidationException"/> with the given message and optional field-level details.</summary>
+    /// <param name="message">Message describing the validation failure.</param>
+    /// <param name="details">Optional field-level validation details.</param>
     public ValidationException(string message, IReadOnlyDictionary<string, object?>? details = null)
         : base(message)
+    {
+        Details = details;
+    }
+
+    /// <summary>Creates a new <see cref="ValidationException"/> with details and the underlying exception that caused it.</summary>
+    /// <param name="message">Message describing the validation failure.</param>
+    /// <param name="details">Optional field-level validation details.</param>
+    /// <param name="inner">Underlying exception that caused the validation failure.</param>
+    public ValidationException(
+        string message,
+        IReadOnlyDictionary<string, object?>? details,
+        Exception inner)
+        : base(message, inner)
     {
         Details = details;
     }

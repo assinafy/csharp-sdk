@@ -16,6 +16,7 @@ public sealed class SignatureResource : BaseResource
     /// <param name="type">Which image to upload; one of the <see cref="SignatureImageTypes"/> values (<c>signature</c> or <c>initial</c>). Defaults to <c>signature</c>.</param>
     /// <param name="contentType">MIME type of the image data. The current API documents <c>image/png</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the image has been uploaded.</returns>
     public Task UploadAsync(
         Stream imageStream,
         string signerAccessCode,
@@ -37,6 +38,7 @@ public sealed class SignatureResource : BaseResource
     /// <param name="type">Which image to upload; <c>signature</c> or <c>initial</c>.</param>
     /// <param name="contentType">MIME type of the image data. The current API documents <c>image/png</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the image has been uploaded.</returns>
     public Task UploadAsync(
         Stream imageStream,
         string signerAccessCode,
@@ -86,13 +88,14 @@ public sealed class SignatureResource : BaseResource
     /// <param name="signerAccessCode">The signer's access code authorizing the download.</param>
     /// <param name="type">Which image to download; one of the <see cref="SignatureImageTypes"/> values (<c>signature</c> or <c>initial</c>). Defaults to <c>signature</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The raw image bytes.</returns>
     public Task<byte[]> DownloadAsync(
         string signerAccessCode,
         string type = SignatureImageTypes.Signature,
         CancellationToken cancellationToken = default)
     {
         var code = RequireId(signerAccessCode, "Signer access code");
-        var imageType = RequireId(type, "Signature image type");
+        var imageType = PathSegment(type, "Signature image type");
 
         var path = AppendQueryString($"signature/{imageType}", AccessCodeQuery(code));
 

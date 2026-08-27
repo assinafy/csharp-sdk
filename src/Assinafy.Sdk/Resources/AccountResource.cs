@@ -16,6 +16,7 @@ public sealed class AccountResource : BaseResource
 
     /// <summary><c>GET /accounts</c> — list the workspace accounts the authenticated user belongs to.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The accounts available to the authenticated user.</returns>
     public async Task<IReadOnlyList<Account>> ListAsync(CancellationToken cancellationToken = default)
     {
         return await CallListBodyAsync<Account>(
@@ -27,6 +28,7 @@ public sealed class AccountResource : BaseResource
     /// <summary><c>POST /accounts</c> — create a new workspace account owned by the authenticated user.</summary>
     /// <param name="request">New account details; <c>Name</c> is required.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The newly created account.</returns>
     public Task<Account> CreateAsync(
         CreateAccountRequest request,
         CancellationToken cancellationToken = default)
@@ -44,6 +46,7 @@ public sealed class AccountResource : BaseResource
     /// <summary><c>GET /accounts/{account_id}</c> — retrieve a workspace account the user belongs to.</summary>
     /// <param name="accountId">Account to retrieve; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested account.</returns>
     public Task<Account> GetAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -59,6 +62,7 @@ public sealed class AccountResource : BaseResource
     /// <param name="request">Fields to update; only non-null properties are sent, leaving the rest unchanged.</param>
     /// <param name="accountId">Account to update; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated account.</returns>
     public Task<Account> UpdateAsync(
         UpdateAccountRequest request,
         string? accountId = null,
@@ -82,6 +86,7 @@ public sealed class AccountResource : BaseResource
     /// <param name="force">When <see langword="true"/>, cancels any active paid subscription and deletes immediately; when <see langword="false"/> (default) the delete is refused with <c>400</c> if a paid subscription is active.</param>
     /// <param name="accountId">Account to delete; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the account has been deleted.</returns>
     public Task DeleteAsync(
         bool force = false,
         string? accountId = null,
@@ -98,6 +103,7 @@ public sealed class AccountResource : BaseResource
     /// <summary><c>GET /accounts/{account_id}/theme</c> — retrieve the account's branding theme (name, colors, and logo URL).</summary>
     /// <param name="accountId">Account whose theme to retrieve; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The account's public branding theme.</returns>
     public Task<AccountTheme> GetThemeAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)
@@ -113,6 +119,7 @@ public sealed class AccountResource : BaseResource
     /// <param name="parameters">Optional monthly or daily grouping and target month.</param>
     /// <param name="accountId">Account whose KPIs to retrieve; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document KPI rows for the requested periods.</returns>
     public async Task<IReadOnlyList<DocumentStatsRow>> GetStatsAsync(
         DocumentStatsParams? parameters = null,
         string? accountId = null,
@@ -144,6 +151,7 @@ public sealed class AccountResource : BaseResource
     /// <param name="contentType">MIME type of the image (default <c>image/png</c>).</param>
     /// <param name="accountId">Account whose logo to set; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the logo has been uploaded.</returns>
     public Task UploadLogoAsync(
         Stream imageStream,
         string fileName,
@@ -171,6 +179,7 @@ public sealed class AccountResource : BaseResource
     /// <summary><c>DELETE /accounts/{account_id}/logo</c> — remove the account logo image.</summary>
     /// <param name="accountId">Account whose logo to remove; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the logo has been removed.</returns>
     public Task DeleteLogoAsync(
         string? accountId = null,
         CancellationToken cancellationToken = default)

@@ -56,6 +56,9 @@ public sealed class DocumentStatsParams
 /// </summary>
 public sealed record DocumentStatsRow
 {
+    private int _signatureRequestsNotificationEmail;
+    private int _signatureRequestsNotificationWhatsapp;
+
     /// <summary>Period represented by this row: <c>YYYY-MM</c> or <c>YYYY-MM-DD</c>.</summary>
     [JsonPropertyName("period")]
     public string Period { get; init; } = string.Empty;
@@ -72,13 +75,61 @@ public sealed record DocumentStatsRow
     [JsonPropertyName("signature_requests")]
     public int SignatureRequests { get; init; }
 
-    /// <summary>Signature requests sent by email during the period.</summary>
-    [JsonPropertyName("signature_requests_email")]
-    public int SignatureRequestsEmail { get; init; }
+    /// <summary>Signature requests notified by email during the period.</summary>
+    [JsonPropertyName("signature_requests_notification_email")]
+    public int SignatureRequestsNotificationEmail
+    {
+        get => _signatureRequestsNotificationEmail;
+        init => _signatureRequestsNotificationEmail = value;
+    }
 
-    /// <summary>Signature requests sent by WhatsApp during the period.</summary>
+    /// <summary>Signature requests notified by WhatsApp during the period.</summary>
+    [JsonPropertyName("signature_requests_notification_whatsapp")]
+    public int SignatureRequestsNotificationWhatsapp
+    {
+        get => _signatureRequestsNotificationWhatsapp;
+        init => _signatureRequestsNotificationWhatsapp = value;
+    }
+
+    /// <summary>Signature requests for which no notification was sent during the period.</summary>
+    [JsonPropertyName("signature_requests_notification_bypass")]
+    public int SignatureRequestsNotificationBypass { get; init; }
+
+    /// <summary>Signature requests verified by an email token during the period.</summary>
+    [JsonPropertyName("signature_requests_verification_email")]
+    public int SignatureRequestsVerificationEmail { get; init; }
+
+    /// <summary>Signature requests verified by a WhatsApp token during the period.</summary>
+    [JsonPropertyName("signature_requests_verification_whatsapp")]
+    public int SignatureRequestsVerificationWhatsapp { get; init; }
+
+    /// <summary>Signature requests signed without token verification during the period.</summary>
+    [JsonPropertyName("signature_requests_verification_bypass")]
+    public int SignatureRequestsVerificationBypass { get; init; }
+
+    /// <summary>Signature requests signed with an ICP-Brasil digital certificate during the period.</summary>
+    [JsonPropertyName("signature_requests_verification_digital_certificate")]
+    public int SignatureRequestsVerificationDigitalCertificate { get; init; }
+
+    /// <summary>
+    /// Compatibility alias for <see cref="SignatureRequestsNotificationEmail"/> used by older API responses.
+    /// </summary>
+    [JsonPropertyName("signature_requests_email")]
+    public int SignatureRequestsEmail
+    {
+        get => _signatureRequestsNotificationEmail;
+        init => _signatureRequestsNotificationEmail = value;
+    }
+
+    /// <summary>
+    /// Compatibility alias for <see cref="SignatureRequestsNotificationWhatsapp"/> used by older API responses.
+    /// </summary>
     [JsonPropertyName("signature_requests_whatsapp")]
-    public int SignatureRequestsWhatsapp { get; init; }
+    public int SignatureRequestsWhatsapp
+    {
+        get => _signatureRequestsNotificationWhatsapp;
+        init => _signatureRequestsNotificationWhatsapp = value;
+    }
 
     /// <summary>Signature requests whose document was first viewed during the period.</summary>
     [JsonPropertyName("signature_requests_viewed")]

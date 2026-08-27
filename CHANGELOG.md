@@ -1,10 +1,49 @@
 # Changelog
 
-## 1.3.0
+## 1.3.2
 
-A full file-by-file audit against the live OpenAPI spec (`https://api.assinafy.com.br/v1/docs/openapi.json`,
-86 documented operations) and the sandbox API. Coverage went from ~75% to the entire documented
-JSON surface; the only omitted endpoints are the two browser-facing OAuth redirects.
+### Added
+
+- Template creation, update, deletion, and rendered-page downloads.
+- Production ICP-Brasil certificate signing with `Signing.StartCertificateAsync` and
+  `Signing.CompleteCertificateAsync`.
+- `Signing.DownloadPublicAsync`, channel-neutral signer verification, and
+  `EntriesFactory` support for collect assignments that use newly created signer IDs.
+
+### Fixed
+
+- Automatic redirects are disabled for SDK-owned transports, and base URLs are restricted to
+  absolute HTTPS `/v1` endpoints so credentials cannot be forwarded to another host.
+- Every user-controlled route segment is escaped and traversal values are rejected.
+- Successful JSON responses now require a valid API envelope and the expected non-null payload.
+- Document statistics preserve every current notification and verification counter while keeping
+  the earlier email and WhatsApp property names as compatibility aliases.
+- Upload limits use the stream's remaining bytes; unreadable or invalidly positioned streams and
+  upload responses without IDs fail explicitly; signer email validation rejects whitespace-only values.
+- Malformed credentials and request bodies that cannot be serialized are rejected before transport
+  through the SDK exception hierarchy.
+- `FindByEmailAsync` follows pagination even when response metadata is absent. `WaitUntilReadyAsync`
+  retries transient `404`, `429`, and server errors and preserves the last failure on timeout.
+- Webhook lookup propagates API errors.
+
+### Build and documentation
+
+- Builds and tests target `net8.0`, `net9.0`, and the current .NET 10 LTS SDK.
+- Tests run on xUnit v3 with Microsoft.Testing.Platform and native Coverlet coverage collection.
+- GitHub Actions use least-privilege permissions, immutable action revisions, environment-scoped
+  secrets, short-lived NuGet credentials, provenance attestation, and package validation.
+- The README, XML comments, SDK method reference, payload examples, and production OpenAPI
+  snapshot cover the complete public surface.
+
+## 1.3.1
+
+- Added `net10.0`, the `Users` resource, account/user document statistics, notification
+  preferences, typed field display settings, and stricter request/response models.
+- Added package compatibility validation, deterministic documentation builds, the complete HTTP
+  API reference, and the checked-in production OpenAPI snapshot.
+- Expanded the sandbox lifecycle suite and the multi-target CI/package workflows.
+
+## 1.3.0
 
 ### Added — endpoint coverage
 
@@ -33,7 +72,8 @@ JSON surface; the only omitted endpoints are the two browser-facing OAuth redire
 
 - Non-JSON or malformed response bodies no longer escape as a raw `System.Text.Json.JsonException`.
   A new **`SerializationException`** (deriving from `AssinafyException`) wraps unparseable 2xx bodies;
-  unsuccessful responses surface as `ApiException`, so `catch (AssinafyException)` covers every failure.
+  unsuccessful responses surface as `ApiException`, so `catch (AssinafyException)` covers all
+  SDK-specific API, transport, serialization, and validation failures.
 - **DI:** `AssinafyClientOptions.Timeout` is now honored on the `AddAssinafy` path (it was previously
   ignored because the factory-created `HttpClient` kept the 100s default).
 - Added enum-value constant classes (`AssignmentMethods`, `SignerChannels`, `AccountNotificationSenderTypes`)
@@ -54,18 +94,13 @@ JSON surface; the only omitted endpoints are the two browser-facing OAuth redire
 
 ## 1.2.1
 
-All changes were verified end-to-end against the live API
-(`https://sandbox.assinafy.com.br/v1`) during a full file-by-file audit.
-
 ### Removed / changed (read before upgrading)
 
 - **Removed `Webhooks.DeleteAsync`.** `DELETE /webhooks/subscriptions` is not part of
-  the API and returns `404 "Página não encontrada."` on the live service, so the method
-  could never succeed. Use `Webhooks.InactivateAsync()` (or `UpdateSubscriptionAsync`
+  the API. Use `Webhooks.InactivateAsync()` (or `UpdateSubscriptionAsync`
   with `IsActive = false`) to stop deliveries.
 - **Removed `Assignment.Expiration`.** The API only ever returns/accepts `expires_at`
-  (proven live: a create body using `expiration` is silently ignored). Read
-  `Assignment.ExpiresAt` instead.
+  and ignores `expiration`. Read `Assignment.ExpiresAt` instead.
 - **`AssignmentEntryField.DisplaySettings` is now `object?`** (was `JsonElement?`) so
   callers can pass an anonymous object such as `new { x = 100, y = 200 }`. Assigning a
   `JsonElement` still compiles; only reading the property directly into a `JsonElement`
@@ -91,8 +126,8 @@ All changes were verified end-to-end against the live API
 - **Robustness:** `FindByEmailAsync` pages through all result pages (it previously
   scanned only the first 100 and could miss an exact match); `SignMultipleAsync` /
   `DeclineMultipleAsync` reject an empty document list; `WaitUntilReadyAsync`
-  tolerates a brief `404` immediately after creation; `ResetPasswordAsync` now
-  requires its reset token; `UpdateSubscriptionAsync` guards a null `events`;
+  tolerates a brief `404` immediately after creation; `ResetPasswordAsync` accepts the
+  API's optional reset token; `UpdateSubscriptionAsync` guards a null `events`;
   numeric values coerced to string preserve their exact token text.
 - **Cleanup (DRY / KISS):** removed the dead `Assignment.Expiration` property
   (the API only uses `expires_at`) and the redundant `signer_ids` request field;
@@ -108,9 +143,7 @@ All changes were verified end-to-end against the live API
 
 ## 1.1.0
 
-- **New: Tags.** Added `client.Tags` (`TagResource`) covering the full
-  documented tag surface, all verified live against
-  `https://api.assinafy.com.br/v1`:
+- **New: Tags.** Added `client.Tags` (`TagResource`) covering the complete tag surface:
   - Workspace tags: `ListAsync` (with `search`), `CreateAsync`,
     `UpdateAsync`, `DeleteAsync` (with `force`).
   - Document tags: `AddToDocumentAsync` (append), `SetForDocumentAsync`
@@ -123,9 +156,7 @@ All changes were verified end-to-end against the live API
     and `message` fields.
   - `AssignmentSigner` now includes `step` (signing order), `notified`, and
     `notification_history`.
-- Added regression tests for the tag resource (now 73 tests total) and
-  re-verified the full surface end-to-end against the production API,
-  including CPF field validation.
+- Added regression tests for the tag resource and CPF field validation.
 
 ## 1.0.1
 
@@ -145,9 +176,6 @@ All changes were verified end-to-end against the live API
   `GET /documents/{id}/assignments`) are not part of the documented API
   and return `404` on the live service.
 - Added regression tests covering the snake_case/camelCase fixes above.
-- Verified the SDK end-to-end against `https://api.assinafy.com.br/v1`
-  across documents, signers, fields, templates, webhooks, and
-  authentication.
 
 ## 1.0.0
 

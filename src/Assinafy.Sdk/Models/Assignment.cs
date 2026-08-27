@@ -204,16 +204,18 @@ public sealed class SignerRef
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If a notification-capable channel is set without <see cref="NotificationMethods"/>, it is also used for notification.</summary>
+    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. Defaults to <c>Email</c> when omitted.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>The single channel used to notify the signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
+    /// <summary>Channels used to notify the signer; direct assignment creation accepts <c>Email</c>, <c>Whatsapp</c>, or both. Defaults to <c>Email</c> when omitted.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
     public int? Step { get; set; }
 
-    /// <summary>Creates a <see cref="SignerRef"/> from a bare signer ID, applying default verification/notification settings.</summary>
+    /// <summary>Creates a <see cref="SignerRef"/> from a bare signer ID, leaving verification and notification settings to the API defaults.</summary>
+    /// <param name="id">ID of the existing signer.</param>
+    /// <returns>A signer reference containing <paramref name="id"/>.</returns>
     public static implicit operator SignerRef(string id) => new() { Id = id };
 }
 
@@ -509,10 +511,10 @@ public sealed class TemplateSigner
     /// </summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If a notification-capable channel is set without <see cref="NotificationMethods"/>, it is also used for notification.</summary>
+    /// <summary>How the signer's identity is verified before signing: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>The single channel used to notify the signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, it also determines the verification channel.</summary>
+    /// <summary>The notification channel for the template signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, the API infers the verification method.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>

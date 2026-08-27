@@ -21,6 +21,7 @@ public sealed class AssinafyServiceCollectionExtensionsTests
         var client2 = provider.GetRequiredService<AssinafyClient>();
 
         client1.Should().BeSameAs(client2);
+        client1.OwnsHttpClient.Should().BeTrue();
         client1.Documents.Should().NotBeNull();
         client1.Signers.Should().NotBeNull();
     }

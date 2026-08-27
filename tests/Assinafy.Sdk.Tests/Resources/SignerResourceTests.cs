@@ -19,7 +19,7 @@ public sealed class SignerResourceTests
         var handler = new FakeHttpMessageHandler();
         var resource = CreateResource(handler, accountId: null);
 
-        var act = () => resource.CreateAsync(new CreateSignerRequest { FullName = "Test", Email = "test@test.com" });
+        var act = () => resource.CreateAsync(new CreateSignerRequest { FullName = "Test", Email = "test@example.com" });
 
         await act.Should().ThrowAsync<ValidationException>();
     }
@@ -36,6 +36,28 @@ public sealed class SignerResourceTests
     }
 
     [Fact]
+    public async Task WriteMethods_RejectWhitespaceEmailBeforeTransport()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+
+        await ((Func<Task>)(() => resource.CreateAsync(
+                new CreateSignerRequest { FullName = "Test", Email = " " })))
+            .Should().ThrowAsync<ValidationException>().WithMessage("*email*");
+        await ((Func<Task>)(() => resource.UpdateAsync(
+                "signer-1",
+                new UpdateSignerRequest { Email = " " })))
+            .Should().ThrowAsync<ValidationException>().WithMessage("*email*");
+        await ((Func<Task>)(() => resource.ConfirmDataAsync(
+                "doc-1",
+                "access",
+                new ConfirmSignerDataRequest { Email = " " })))
+            .Should().ThrowAsync<ValidationException>().WithMessage("*email*");
+
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Create_PostsDocumentedSignerShape()
     {
         var handler = new FakeHttpMessageHandler();
@@ -44,7 +66,7 @@ public sealed class SignerResourceTests
             {
                 id = "123",
                 full_name = "Test",
-                email = "test@test.com",
+                email = "test@example.com",
                 whatsapp_phone_number = "+5548999990000",
             }));
 
@@ -53,7 +75,7 @@ public sealed class SignerResourceTests
             new CreateSignerRequest
             {
                 FullName = "Test",
-                Email = "test@test.com",
+                Email = "test@example.com",
                 WhatsAppPhoneNumber = "+5548999990000",
             },
             accountId: "custom-account");
@@ -172,6 +194,25 @@ public sealed class SignerResourceTests
 
         result.HasSignature.Should().BeTrue();
         handler.Requests.Should().Contain(r => r.RequestUri!.PathAndQuery.Contains("/signers/self"));
+    }
+
+    [Fact]
+    public async Task Verify_UsesGenericOtpPayloadWithoutAccountCredentials()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/verify?signer-access-code=access",
+            new { status = 200, message = "Verified" });
+        var resource = new SignerResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            "test-account",
+            request => request.Headers.Add("X-Api-Key", "must-not-leak"));
+
+        await resource.VerifyAsync("access", "123456");
+
+        var sent = handler.Requests.Should().ContainSingle().Subject;
+        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
+        using var body = JsonDocument.Parse(handler.RequestBodies.Single());
+        body.RootElement.GetProperty("verification-code").GetString().Should().Be("123456");
     }
 
     [Fact]

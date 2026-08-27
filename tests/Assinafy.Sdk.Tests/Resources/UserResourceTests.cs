@@ -44,8 +44,13 @@ public sealed class UserResourceTests
         documents_uploaded = 42,
         documents_sent = 37,
         signature_requests = 61,
-        signature_requests_email = 55,
-        signature_requests_whatsapp = 18,
+        signature_requests_notification_email = 55,
+        signature_requests_notification_whatsapp = 18,
+        signature_requests_notification_bypass = 3,
+        signature_requests_verification_email = 48,
+        signature_requests_verification_whatsapp = 6,
+        signature_requests_verification_bypass = 3,
+        signature_requests_verification_digital_certificate = 4,
         signature_requests_viewed = 44,
         signature_requests_completed = 52,
         documents_certified = 30,
@@ -137,6 +142,13 @@ public sealed class UserResourceTests
         row.DocumentsUploaded.Should().Be(42);
         row.DocumentsSent.Should().Be(37);
         row.SignatureRequests.Should().Be(61);
+        row.SignatureRequestsNotificationEmail.Should().Be(55);
+        row.SignatureRequestsNotificationWhatsapp.Should().Be(18);
+        row.SignatureRequestsNotificationBypass.Should().Be(3);
+        row.SignatureRequestsVerificationEmail.Should().Be(48);
+        row.SignatureRequestsVerificationWhatsapp.Should().Be(6);
+        row.SignatureRequestsVerificationBypass.Should().Be(3);
+        row.SignatureRequestsVerificationDigitalCertificate.Should().Be(4);
         row.SignatureRequestsEmail.Should().Be(55);
         row.SignatureRequestsWhatsapp.Should().Be(18);
         row.SignatureRequestsViewed.Should().Be(44);

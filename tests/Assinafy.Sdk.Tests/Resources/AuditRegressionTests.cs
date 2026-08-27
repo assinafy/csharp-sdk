@@ -9,9 +9,8 @@ using Xunit;
 namespace Assinafy.Sdk.Tests.Resources;
 
 /// <summary>
-/// Regression coverage added during the 1.2.0 audit: guards the removed/changed behaviour
-/// (signer_ids removal, step support, webhook delete removal, signing-progress fallback) and
-/// fills coverage gaps (resend URLs, api-keys CRUD, error paths, bulk-op guards).
+/// Regression coverage for 1.2.0 behavior: signer ID payloads, signing steps, webhooks,
+/// signing progress, resend URLs, API-key CRUD, error paths, and bulk-operation guards.
 /// </summary>
 public sealed class AuditRegressionTests
 {
@@ -291,14 +290,14 @@ public sealed class AuditRegressionTests
             ["x-pagination-page-count"] = "2",
         };
         handler.AddJsonResponse(HttpMethod.Get, "&page=2",
-            FakeHttpMessageHandler.ApiOk(new[] { new { id = "s2", full_name = "Target", email = "target@x.com" } }),
+            FakeHttpMessageHandler.ApiOk(new[] { new { id = "s2", full_name = "Target", email = "target@example.com" } }),
             headers: page2Headers);
         handler.AddJsonResponse(HttpMethod.Get, "&page=1",
-            FakeHttpMessageHandler.ApiOk(new[] { new { id = "s1", full_name = "Other", email = "other@x.com" } }),
+            FakeHttpMessageHandler.ApiOk(new[] { new { id = "s1", full_name = "Other", email = "other@example.com" } }),
             headers: page1Headers);
 
         var resource = new SignerResource(Client(handler), "acc");
-        var found = await resource.FindByEmailAsync("target@x.com");
+        var found = await resource.FindByEmailAsync("target@example.com");
 
         found.Should().NotBeNull();
         found!.Id.Should().Be("s2");

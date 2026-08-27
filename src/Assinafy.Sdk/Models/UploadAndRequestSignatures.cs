@@ -15,10 +15,10 @@ public sealed class UploadAndRequestSignaturesSigner
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 
-    /// <summary>Optional per-signer verification method (e.g. <c>Email</c> or <c>Whatsapp</c>).</summary>
+    /// <summary>Optional per-signer verification method: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>Optional per-signer notification channels (e.g. <c>["Email"]</c> or <c>["Whatsapp"]</c>).</summary>
+    /// <summary>Optional notification channels: <c>Email</c>, <c>Whatsapp</c>, or both.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Optional signing-order step for this signer (see <see cref="SignerRef.Step"/>).</summary>
@@ -57,6 +57,13 @@ public sealed class UploadAndRequestSignaturesOptions
 
     /// <summary>Field placements required when <see cref="Method"/> is <see cref="AssignmentMethods.Collect"/>.</summary>
     public IReadOnlyList<AssignmentEntry>? Entries { get; set; }
+
+    /// <summary>
+    /// Creates field placements from the newly created signer IDs, in the same order as
+    /// <see cref="Signers"/>. Use this instead of <see cref="Entries"/> when collect entries
+    /// must reference those IDs; the callback must return at least one entry.
+    /// </summary>
+    public Func<IReadOnlyList<string>, IReadOnlyList<AssignmentEntry>>? EntriesFactory { get; set; }
 
     /// <summary>Optional workspace account ID for this call; overrides the client's default account.</summary>
     public string? AccountId { get; set; }
