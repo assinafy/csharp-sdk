@@ -1,73 +1,55 @@
-# Assinafy .NET SDK
+# SDK .NET da Assinafy
 
-A typed .NET client for the [Assinafy](https://api.assinafy.com.br/v1/docs) electronic-signature
-API. It covers the complete documented HTTP surface — documents, templates, signers, assignments,
-the signer-facing signing flow, signature images, tags, fields, webhooks, accounts, and users — as
-strongly-typed resources on a single `AssinafyClient`, with one exception hierarchy, envelope
-handling, and pagination already taken care of.
+*Português · [Read in English](README.en.md)*
 
-Targets `net8.0`, `net9.0`, and `net10.0`.
+Cliente .NET tipado para a API de assinatura eletrônica da
+[Assinafy](https://api.assinafy.com.br/v1/docs) — plataforma brasileira de assinatura de documentos.
+Cobre toda a superfície HTTP documentada — documentos, templates, signatários, assignments, o fluxo
+de assinatura do signatário, imagens de assinatura, tags, campos, webhooks, contas e usuários — como
+recursos fortemente tipados em um único `AssinafyClient`, com uma hierarquia de exceções, tratamento
+de envelope e paginação já resolvidos.
 
-## Contents
+Compatível com `net8.0`, `net9.0` e `net10.0`.
 
-1. [Installation](#installation)
-2. [Credentials and environments](#credentials-and-environments)
-3. [Creating a client](#creating-a-client)
-4. [Dependency injection](#dependency-injection)
-5. [How requests and responses work](#how-requests-and-responses-work)
-6. [Error handling](#error-handling)
-7. [The signature lifecycle](#the-signature-lifecycle)
-8. [Documents](#documents)
-9. [Templates](#templates)
-10. [Signers](#signers)
-11. [Assignments](#assignments)
-12. [The signer-facing flow](#the-signer-facing-flow)
-13. [Signature images](#signature-images)
-14. [Public documents](#public-documents)
-15. [Tags](#tags)
-16. [Fields](#fields)
-17. [Webhooks](#webhooks)
-18. [Accounts and users](#accounts-and-users)
-19. [Reference tables](#reference-tables)
-20. [Testing](#testing)
-21. [Support matrix and versioning](#support-matrix-and-versioning)
-22. [Further reading](#further-reading)
+> **Referência completa em inglês.** Este documento cobre instalação, autenticação e os fluxos
+> principais. O manual de referência por recurso está em **[README.en.md](README.en.md)**.
 
-## Installation
+## Instalação
 
 ```bash
 dotnet add package Assinafy.Sdk --version 2.0.0
 ```
 
-Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
-.NET SDKs 8.0.424, 9.0.317, and 10.0.400; [`global.json`](global.json) selects .NET 10 for
-repository commands.
+Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
+precisa dos SDKs .NET 8.0.424, 9.0.317 e 10.0.400; o [`global.json`](global.json) seleciona o .NET 10
+para os comandos do repositório.
 
-## Credentials and environments
+## Credenciais e ambientes
 
-Assinafy accepts either credential:
+A Assinafy aceita qualquer uma das duas credenciais:
 
-| Credential | Sent as | Obtained from | Use for |
+| Credencial | Enviada como | Obtida de | Usar para |
 |---|---|---|---|
-| API key | `X-Api-Key` header | `Authentication.CreateApiKeyAsync` (or the web app) | Server-to-server integrations |
-| Access token | `Authorization: Bearer …` | `Authentication.LoginAsync` / `SocialLoginAsync` | Acting as a signed-in user |
+| Chave de API | Header `X-Api-Key` | `Authentication.CreateApiKeyAsync` (ou o app web) | Integrações servidor-a-servidor |
+| Token de acesso | `Authorization: Bearer …` | `Authentication.LoginAsync` / `SocialLoginAsync` | Agir como um usuário logado |
 
-The two are mutually exclusive; supplying both throws a `ValidationException`. Create a *separate*
-user for an API-key integration so it can be granted only the access it needs, and never commit the
-key.
+As duas são mutuamente exclusivas — informar ambas lança `ValidationException`. Crie um usuário
+**separado** para a integração por chave de API, para que ele receba apenas o acesso necessário, e
+nunca comite a chave.
 
-Develop against the sandbox, then switch a single option to go live:
+Desenvolva contra o sandbox e troque uma única opção para ir a produção:
 
-| Environment | API base URL | Web app |
+| Ambiente | URL base da API | App web |
 |---|---|---|
 | Sandbox | `https://sandbox.assinafy.com.br/v1` | `https://app-sandbox.assinafy.com.br` |
-| Production (default) | `https://api.assinafy.com.br/v1` | `https://app.assinafy.com.br` |
+| Produção (padrão) | `https://api.assinafy.com.br/v1` | `https://app.assinafy.com.br` |
 
-Most endpoints are scoped to a workspace **account**. Set `AccountId` once on the client and every
-account-scoped method uses it; each of those methods also takes an optional `accountId` override.
-`Accounts.ListAsync()` discovers the IDs available to the current credential.
+A maioria dos endpoints tem escopo de uma **conta** (workspace). Defina `AccountId` uma vez no
+cliente e todo método com escopo de conta o utiliza; cada um desses métodos também aceita um
+`accountId` opcional para sobrescrever. `Accounts.ListAsync()` descobre os IDs disponíveis para a
+credencial atual.
 
-## Creating a client
+## Criando um cliente
 
 ```csharp
 using Assinafy.Sdk;
@@ -77,12 +59,12 @@ using var client = new AssinafyClient(new AssinafyClientOptions
 {
     ApiKey = Environment.GetEnvironmentVariable("ASSINAFY_API_KEY"),
     AccountId = Environment.GetEnvironmentVariable("ASSINAFY_ACCOUNT_ID"),
-    BaseUrl = "https://sandbox.assinafy.com.br/v1",   // omit for production
-    Timeout = TimeSpan.FromSeconds(30),               // default
+    BaseUrl = "https://sandbox.assinafy.com.br/v1",   // omita para produção
+    Timeout = TimeSpan.FromSeconds(30),               // padrão
 });
 ```
 
-Two shorthands exist for common cases:
+Existem dois atalhos para os casos comuns:
 
 ```csharp
 using var fromArgs = AssinafyClient.Create(apiKey, accountId);
@@ -94,19 +76,20 @@ using var fromSettings = AssinafyClient.FromConfig(new Dictionary<string, string
 });
 ```
 
-`FromConfig` accepts snake_case or camelCase keys (`api_key`/`apiKey`, `account_id`/`accountId`,
+`FromConfig` aceita chaves em snake_case ou camelCase (`api_key`/`apiKey`, `account_id`/`accountId`,
 `token`/`access_token`/`accessToken`, `base_url`/`baseUrl`).
 
-**Lifetime.** `AssinafyClient` is thread-safe and holds a pooled `HttpClient`. Create one per
-application and reuse it; creating one per request exhausts sockets. Dispose it only when it owns
-its transport — the constructors above do; the `HttpClient` overload does not, leaving that client's
-lifetime to you.
+**Tempo de vida.** `AssinafyClient` é thread-safe e mantém um `HttpClient` com pool. Crie um por
+aplicação e reutilize — criar um por requisição esgota os sockets. Faça `Dispose` apenas quando ele
+for dono do próprio transporte: os construtores acima são, a sobrecarga com `HttpClient` não, deixando
+o tempo de vida daquele cliente com você.
 
-**Transport hardening.** `BaseUrl` must be an absolute HTTPS URL whose path is exactly `/v1`; user
-info, extra path segments, query strings, and fragments are rejected. An SDK-owned transport
-disables automatic redirects, because .NET forwards custom headers such as `X-Api-Key` to a
-redirect target. If you supply your own `HttpClient`, its `BaseAddress` must match `BaseUrl` and
-**you** must disable redirects on its primary handler:
+**Endurecimento do transporte.** `BaseUrl` precisa ser uma URL HTTPS absoluta cujo caminho seja
+exatamente `/v1`; informação de usuário, segmentos extras, query string e fragmento são rejeitados. O
+transporte próprio do SDK desativa redirecionamentos automáticos, porque o .NET repassa headers
+customizados como `X-Api-Key` para o destino do redirecionamento. Se você fornecer seu próprio
+`HttpClient`, o `BaseAddress` dele precisa bater com `BaseUrl` e **você** precisa desativar os
+redirecionamentos no handler primário:
 
 ```csharp
 using var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
@@ -124,807 +107,77 @@ using var client = new AssinafyClient(
     http);
 ```
 
-`AssinafyClient.CreatePrimaryHandler()` returns exactly the handler the SDK uses for its own
-transport — redirects disabled, five-minute pooled connection lifetime — so
-`new HttpClient(AssinafyClient.CreatePrimaryHandler())` is the one-line version of the above.
+`AssinafyClient.CreatePrimaryHandler()` devolve exatamente o handler que o SDK usa no próprio
+transporte — redirecionamentos desativados, tempo de vida de conexão de cinco minutos — então
+`new HttpClient(AssinafyClient.CreatePrimaryHandler())` é a versão de uma linha do trecho acima.
 
-Credentials are attached per request, so a supplied `HttpClient`'s default headers are never
-mutated and the instance stays safe to share. Its `Timeout` is left untouched — set it yourself.
+As credenciais são anexadas por requisição, de modo que os headers padrão de um `HttpClient`
+fornecido nunca são alterados e a instância continua segura para compartilhar. O `Timeout` dele fica
+intocado — defina você mesmo.
 
-## Dependency injection
+## Métodos de verificação do signatário
 
-The package has **no NuGet dependencies** and ships no container adapter, so it never drags a
-`Microsoft.Extensions.*` version into your application. Register it with the DI stack you already
-have — the `HttpClient` constructor is the extension point:
+Definidos por signatário ao criar o assignment. O método de verificação e o de notificação são
+**acoplados**: envie um, os dois ou nenhum — o lado que faltar é inferido. Sem nenhum dos dois, ambos
+assumem `Email`.
 
-```csharp
-builder.Services
-    .AddHttpClient("Assinafy", http =>
-    {
-        http.BaseAddress = new Uri("https://api.assinafy.com.br/v1/");   // note the trailing slash
-        http.Timeout = TimeSpan.FromSeconds(30);
-    })
-    .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
-    .SetHandlerLifetime(Timeout.InfiniteTimeSpan);
+| Método | Como funciona | Custo por signatário |
+| --- | --- | --- |
+| `Email` *(padrão)* | Código de uso único (OTP) por e-mail, exigido antes de assinar | Gratuito |
+| `Whatsapp` | Código de uso único (OTP) por WhatsApp | Verificação gratuita; notificação 0,45 crédito, só em planos pagos |
+| `DigitalCertificate` | O signatário assina com o **próprio certificado ICP-Brasil (A1/A3)**, pela extensão de navegador Web PKI, gerando uma assinatura **PAdES qualificada** | 2 créditos |
 
-builder.Services.AddSingleton(serviceProvider => new AssinafyClient(
-    new AssinafyClientOptions
-    {
-        ApiKey = builder.Configuration["Assinafy:ApiKey"],
-        AccountId = builder.Configuration["Assinafy:AccountId"],
-        BaseUrl = "https://api.assinafy.com.br/v1",
-    },
-    serviceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("Assinafy")));
-```
+Combinações permitidas: `Email` → notifica por `Email`; `Whatsapp` → notifica por `Whatsapp`;
+`DigitalCertificate` → notifica por `Email` **ou** `Whatsapp`. Apenas um método de notificação por
+signatário.
 
-Then inject `AssinafyClient` anywhere. Four details matter:
+## Assinatura por certificado digital ICP-Brasil
 
-- **`ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)`** disables automatic
-  redirects, so an API key is never forwarded to a redirect target. Do not skip it.
-- **`SetHandlerLifetime(Timeout.InfiniteTimeSpan)`** — the singleton captures one `HttpClient`, so it
-  cannot observe factory handler rotation. `CreatePrimaryHandler` recycles connections through
-  `PooledConnectionLifetime` instead, which is what keeps DNS changes visible.
-- **`BaseAddress` must match `BaseUrl`**, with a trailing slash on the `Uri`.
-- **Set `Timeout` on the `HttpClient`.** The `AssinafyClientOptions.Timeout` value is ignored for a
-  supplied client, because the SDK does not mutate a transport it does not own.
+Exige o recurso **Certificado Digital** na conta (planos Standard e Pro), CPF ou CNPJ em
+`GovernmentId` do signatário, e exatamente **um signatário por certificado naquele passo**. Um CPF
+exige o certificado daquela pessoa (e-CPF, ou e-CNPJ que a nomeie como representante legal); um CNPJ
+exige um e-CNPJ da empresa.
 
-Resilience policies and extra handlers chain onto the `IHttpClientBuilder` as usual:
+Quando o método de verificação do assignment é `DigitalCertificate`, assinar é um handshake de dois
+passos com a extensão Web PKI, e não o envio de campos:
 
 ```csharp
-builder.Services
-    .AddHttpClient("Assinafy", /* … */)
-    .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
-    .AddStandardResilienceHandler();
+var operacao = await client.Signing.StartCertificateAsync(signerAccessCode);
+var tokenAssinado = await AssinarComWebPkiAsync(operacao.Token);   // sua ponte com a Web PKI
+var resultado = await client.Signing.CompleteCertificateAsync(signerAccessCode, tokenAssinado);
+
+Console.WriteLine(resultado.SignerName);   // lido do certificado
 ```
 
-Do not dispose the resolved client yourself; `IHttpClientFactory` owns the transport.
+> Ambas as rotas são extensões implantadas **somente em produção**: o sandbox não as expõe e elas não
+> constam do documento OpenAPI publicado. Exigem um assignment de certificado real em produção e um
+> token Web PKI assinado pelo navegador.
 
-## How requests and responses work
+Concluído o fluxo, baixar o artefato `pades` devolve a assinatura PAdES qualificada.
 
-**The envelope.** Every Assinafy response is `{ status, message, data }`. The SDK unwraps it: your
-method returns the `data` payload, already typed. A `status` of 400 or above becomes an
-`ApiException` regardless of the HTTP status line, so a "200 OK" carrying an error envelope still
-throws.
+## Trilha de atividades e artefatos
 
-**Naming.** Request and response bodies use `snake_case`, handled for you. The single exception is
-the signer sign body, which the API defines in camelCase; `SignAssignmentValue` applies that
-automatically.
+As atividades de um documento devolvem todos os eventos registrados, cada um com um snapshot do
+`payload` do evento e a `origin` da requisição (`ip`, `user-agent`).
 
-**Lists.** Two shapes exist, and the return type tells you which:
+Artefatos disponíveis para download:
 
-- `IReadOnlyList<T>` — the endpoint returns a complete array (tags, activities, statistics, event
-  types, field types, statuses).
-- `PaginatedResult<T>` — the endpoint pages. `Data` holds the page; `Meta` carries `CurrentPage`,
-  `PerPage`, `Total`, and `LastPage`, parsed from the `X-Pagination-*` response headers. `Meta` is
-  `null` when the response carried no such headers.
+| Artefato | Conteúdo |
+| --- | --- |
+| `original` | O PDF enviado, como recebido |
+| `certificated` | O documento assinado, com a certificação da plataforma |
+| `certificate-page` | Apenas a página de certificação |
+| `pades` | Assinaturas ICP-Brasil dos signatários + caixa de certificação — só existe em documentos que tiveram signatários por certificado digital |
+| `bundle` | Zip com `original`, `certificated` e `certificate-page`, mais o `pades` quando houver |
 
-Paging parameters are `page` (1-based) and `per-page` (max 100), alongside `search` and `sort`
-where the endpoint supports them:
+A verificação pública confere um documento assinado pelo hash da assinatura, sem autenticação.
 
-```csharp
-var page = await client.Documents.ListAsync(new Dictionary<string, string?>
-{
-    ["status"] = "pending_signature",
-    ["sort"] = "-created_at",
-    ["page"] = "1",
-    ["per-page"] = "50",
-});
+## Documentação
 
-Console.WriteLine($"{page.Data.Count} of {page.Meta?.Total} documents");
+- **[README.en.md](README.en.md)** — referência completa por recurso, em inglês
+- [docs/API.md](docs/API.md) — contrato por endpoint
+- [Documentação da API](https://api.assinafy.com.br/v1/docs)
 
-while (page.Meta is { CurrentPage: int current, LastPage: int last } && current < last)
-{
-    page = await client.Documents.ListAsync(new Dictionary<string, string?>
-    {
-        ["page"] = (current + 1).ToString(),
-        ["per-page"] = "50",
-    });
-    // …process page.Data
-}
-```
+## Licença
 
-**Cancellation and timeouts.** Every method takes a trailing `CancellationToken`. A client-side
-timeout surfaces as `NetworkException`; a token you cancelled yourself propagates as
-`OperationCanceledException`, unchanged.
-
-**Rate limiting.** The API returns `429` when a caller exceeds its quota. The SDK does not retry
-automatically — surface it, back off, and retry, or chain a resilience handler onto the
-`IHttpClientBuilder` shown in [Dependency injection](#dependency-injection).
-`Documents.WaitUntilReadyAsync` is the one exception: it treats `404`, `429`, and `5xx` as transient
-while polling.
-
-## Error handling
-
-Every SDK-specific exception derives from `AssinafyException`:
-
-| Exception | Raised when | Key members |
-|---|---|---|
-| `ValidationException` | The SDK rejects input before any HTTP call | `Details` (field-level) |
-| `ApiException` | The API returned an error status or envelope | `StatusCode`, `ApiMessage`, `Details` |
-| `NetworkException` | Connection, DNS, or TLS failure, or a client-side timeout | `InnerException` |
-| `SerializationException` | A body could not be serialized, or a success response did not match the expected envelope or payload | `InnerException` |
-
-Standard .NET argument, cancellation, disposal, and stream exceptions keep their platform types.
-
-```csharp
-try
-{
-    await client.Documents.GetAsync(documentId);
-}
-catch (ApiException ex) when (ex.StatusCode == 404)
-{
-    Console.WriteLine($"Not found: {ex.ApiMessage}");
-}
-catch (ApiException ex) when (ex.StatusCode == 429)
-{
-    // Back off and retry.
-}
-catch (ApiException ex)
-{
-    Console.WriteLine($"{ex.StatusCode}: {ex.ApiMessage}");
-    Console.WriteLine(ex.Details?.GetRawText());   // structured field errors, when supplied
-}
-catch (NetworkException ex)
-{
-    Console.WriteLine($"Transport failure: {ex.Message}");
-}
-```
-
-## The signature lifecycle
-
-A signature request moves through five stages. Everything else in this SDK supports one of them.
-
-1. **Upload** a PDF into a workspace, producing a document in `uploaded` status.
-2. **Wait** for the platform to normalize it and extract pages (`metadata_ready`).
-3. **Create signers** — reusable people records belonging to the workspace.
-4. **Create an assignment**, binding signers to the document. This is what sends the invitations.
-5. **Signers sign**, and once the last one finishes the document becomes `certificated` and its
-   signed artifacts become downloadable.
-
-End to end:
-
-```csharp
-using Assinafy.Sdk;
-using Assinafy.Sdk.Models;
-
-using var client = new AssinafyClient(new AssinafyClientOptions
-{
-    ApiKey = Environment.GetEnvironmentVariable("ASSINAFY_API_KEY"),
-    AccountId = Environment.GetEnvironmentVariable("ASSINAFY_ACCOUNT_ID"),
-});
-
-// 1–2. Upload and wait for the document to be ready.
-await using var pdf = File.OpenRead("contract.pdf");
-var document = await client.Documents.UploadAsync(pdf, "contract.pdf");
-await client.Documents.WaitUntilReadyAsync(document.Id);
-
-// 3. Create the signer.
-var signer = await client.Signers.CreateAsync(new CreateSignerRequest
-{
-    FullName = "John Doe",
-    Email = "john@example.com",
-});
-
-// 4. Request the signature. This sends the invitation.
-var assignment = await client.Assignments.CreateAsync(document.Id, new CreateAssignmentRequest
-{
-    Method = AssignmentMethods.Virtual,
-    Message = "Please review and sign.",
-    Signers =
-    [
-        new SignerRef
-        {
-            Id = signer.Id,
-            VerificationMethod = SignerChannels.Email,
-            NotificationMethods = [SignerChannels.Email],
-        },
-    ],
-});
-
-// assignment.SigningUrls carries a per-signer link if you would rather deliver it yourself.
-
-// 5. Wait for signing to finish, then download the certified PDF.
-using var deadline = new CancellationTokenSource(TimeSpan.FromHours(1));
-DocumentDetails completed;
-do
-{
-    await Task.Delay(TimeSpan.FromSeconds(10), deadline.Token);
-    completed = await client.Documents.GetAsync(document.Id, deadline.Token);
-}
-while (!string.Equals(completed.Status, "certificated", StringComparison.OrdinalIgnoreCase));
-
-var certified = await client.Documents.DownloadAsync(document.Id);
-await File.WriteAllBytesAsync("contract-signed.pdf", certified);
-```
-
-Polling is shown for clarity. In production, subscribe to the `document_ready` [webhook](#webhooks)
-instead of polling.
-
-Steps 1 through 4 collapse into a single call when you do not need to inspect the intermediate
-results:
-
-```csharp
-await using var pdf = File.OpenRead("contract.pdf");
-var result = await client.UploadAndRequestSignaturesAsync(new UploadAndRequestSignaturesOptions
-{
-    FileStream = pdf,
-    FileName = "contract.pdf",
-    Message = "Please review and sign.",
-    Signers =
-    [
-        new UploadAndRequestSignaturesSigner
-        {
-            FullName = "John Doe",
-            Email = "john@example.com",
-            VerificationMethod = SignerChannels.Email,
-            NotificationMethods = [SignerChannels.Email],
-        },
-    ],
-});
-
-// result.Document, result.Assignment, result.SignerIds
-```
-
-The helper is deliberately **not** transactional, because the API has no transaction spanning
-upload, signer creation, and assignment creation. If a later request fails, the resources already
-created remain for you to inspect or clean up.
-
-### Two assignment methods
-
-| Method | What it does | Requires |
-|---|---|---|
-| `AssignmentMethods.Virtual` | Signers are notified and sign remotely, at their convenience | Document in `uploaded`, `metadata_processing`, or `metadata_ready` |
-| `AssignmentMethods.Collect` | Field values are collected in-session against explicit page and field placements | Document in `metadata_ready`, plus `Entries` |
-
-A collect assignment needs an entry per page describing which signer fills which field:
-
-```csharp
-var collect = await client.Assignments.CreateAsync(document.Id, new CreateAssignmentRequest
-{
-    Method = AssignmentMethods.Collect,
-    Signers = [new SignerRef { Id = signer.Id }],
-    Entries =
-    [
-        new AssignmentEntry
-        {
-            PageId = document.Pages[0].Id,
-            Fields =
-            [
-                new AssignmentEntryField
-                {
-                    SignerId = signer.Id,
-                    FieldId = fieldId,
-                    DisplaySettings = new DisplaySettings
-                    {
-                        Left = 100, Top = 640, Width = 220, Height = 40, FontSize = 12,
-                    },
-                },
-            ],
-        },
-    ],
-});
-```
-
-When the signers do not exist yet, `UploadAndRequestSignaturesAsync` exposes `EntriesFactory`,
-which runs after signer creation and receives the new IDs:
-
-```csharp
-EntriesFactory = signerIds =>
-[
-    new AssignmentEntry
-    {
-        PageId = pageId,
-        Fields = [new AssignmentEntryField { SignerId = signerIds[0], FieldId = fieldId }],
-    },
-],
-```
-
-### Previewing cost
-
-Assignments consume plan documents and notification credits. Every committing call has a matching
-estimate that charges nothing:
-
-```csharp
-var estimate = await client.Assignments.EstimateCostAsync(document.Id, request);
-
-if (!estimate.HasSufficientResources)
-    throw new InvalidOperationException(estimate.BlockingReason);
-
-Console.WriteLine($"{estimate.TotalCredits} credits, {estimate.CreditBalance} available");
-```
-
-`Documents.EstimateCostFromTemplateAsync` and `Assignments.EstimateResendCostAsync` do the same for
-the template and resend flows.
-
-## Documents
-
-```csharp
-// Upload — PDF only, 25MB maximum.
-await using var pdf = File.OpenRead("contract.pdf");
-var document = await client.Documents.UploadAsync(pdf, "contract.pdf");
-
-// Read
-var details   = await client.Documents.GetAsync(document.Id);
-var listing   = await client.Documents.ListAsync();
-var matches   = await client.Documents.SearchAsync("contract", perPage: 20);
-var statuses  = await client.Documents.ListStatusesAsync();
-var timeline  = await client.Documents.ActivitiesAsync(document.Id);
-
-// Rename — only before an assignment exists; the server normalizes the result.
-var renamed = await client.Documents.RenameAsync(document.Id, "Contract 2026");
-
-// Binary artifacts
-var original  = await client.Documents.DownloadAsync(document.Id, DocumentArtifactNames.Original);
-var pades     = await client.Documents.DownloadAsync(document.Id, DocumentArtifactNames.Pades);
-var thumbnail = await client.Documents.ThumbnailAsync(document.Id);
-var pageImage = await client.Documents.DownloadPageAsync(document.Id, details.Pages[0].Id);
-
-// Public verification of a signed document, by its signature hash — no credentials needed.
-var verification = await client.Documents.VerifyAsync(signatureHash);
-
-await client.Documents.DeleteAsync(document.Id);
-```
-
-`ListAsync` accepts `status`, `method`, `search`, `tags` (comma-separated tag IDs, matching
-documents that carry all of them), `sort`, `page`, and `per-page`. `SearchAsync` hits the compact
-search route, which omits the expanded `assignment` and `pages` that `ListAsync` returns.
-
-Three local helpers save round trips of your own:
-
-```csharp
-var ready    = await client.Documents.WaitUntilReadyAsync(document.Id, maxWait: TimeSpan.FromMinutes(2));
-var signed   = await client.Documents.IsFullySignedAsync(document.Id);
-var progress = await client.Documents.GetSigningProgressAsync(document.Id);
-
-Console.WriteLine($"{progress.Signed}/{progress.Total} ({progress.Percentage}%)");
-```
-
-## Templates
-
-A template is a reusable PDF with named roles and field placements. Instantiating one produces an
-ordinary document.
-
-```csharp
-await using var file = File.OpenRead("nda.pdf");
-var template = await client.Templates.CreateAsync(file, "nda.pdf", name: "Mutual NDA");
-
-// Pages and roles appear once processing finishes.
-var ready = await client.Templates.GetAsync(template.Id);
-var pageImage = await client.Templates.DownloadPageAsync(ready.Id, ready.Pages[0].Id);
-
-var templates = await client.Templates.ListAsync(new Dictionary<string, string?>
-{
-    ["search"] = "nda",
-});
-
-await client.Templates.UpdateAsync(template.Id, new UpdateTemplateRequest
-{
-    Name = "Mutual NDA v2",
-    Message = "Please review and sign.",
-});
-
-// Instantiate: bind existing signers to the template's roles.
-var fromTemplate = await client.Documents.CreateFromTemplateAsync(
-    template.Id,
-    [new TemplateSigner { RoleId = ready.Roles[0].Id, Id = signer.Id }],
-    new CreateDocumentFromTemplateOptions
-    {
-        Name = "NDA — Acme",
-        ExpiresAt = "2026-12-31T23:59:59Z",
-        EditorFields = [new TemplateEditorField { FieldId = fieldId, Value = "Acme Inc." }],
-    });
-
-await client.Templates.DeleteAsync(template.Id);
-```
-
-The template display name is carried as the multipart file name, so `CreateAsync` appends `.pdf` to
-`name` when needed rather than sending a second form field.
-
-## Signers
-
-A signer is a workspace-level person record, reused across documents.
-
-```csharp
-var signer = await client.Signers.CreateAsync(new CreateSignerRequest
-{
-    FullName = "John Doe",
-    Email = "john@example.com",
-    WhatsAppPhoneNumber = "+5511999999999",   // E.164; normalized on save
-});
-
-var page   = await client.Signers.ListAsync(new Dictionary<string, string?> { ["search"] = "john" });
-var one    = await client.Signers.GetAsync(signer.Id);
-var byMail = await client.Signers.FindByEmailAsync("john@example.com");   // exact match, or null
-
-await client.Signers.UpdateAsync(signer.Id, new UpdateSignerRequest { GovernmentId = "00000000000" });
-await client.Signers.DeleteAsync(signer.Id);
-```
-
-`FindByEmailAsync` follows every result page and returns the first exact, case-insensitive match —
-the server-side `search` is a fuzzy filter, so it alone is not enough. Email and WhatsApp number
-cannot be changed while the signer has a verified channel on a document that is still in flight.
-
-## Assignments
-
-```csharp
-var assignments = await client.Assignments.ListAsync(new AssignmentListParams { PerPage = 50 });
-
-// Set or clear the expiration.
-await client.Assignments.ResetExpirationAsync(documentId, assignmentId, "2026-12-31T23:59:59Z");
-await client.Assignments.ResetExpirationAsync(documentId, assignmentId, null);
-
-// Re-notify a single signer (estimate first — this can cost credits).
-var resendCost = await client.Assignments.EstimateResendCostAsync(documentId, assignmentId, signerId);
-var resend = await client.Assignments.ResendNotificationAsync(documentId, assignmentId, signerId);
-
-// WhatsApp messages rendered for this assignment.
-var messages = await client.Assignments.ListWhatsAppNotificationsAsync(documentId, assignmentId);
-```
-
-Per-signer options on `SignerRef` control how each person is verified and notified:
-
-```csharp
-new SignerRef
-{
-    Id = signer.Id,
-    VerificationMethod = SignerChannels.Whatsapp,             // how identity is proven
-    NotificationMethods = [SignerChannels.Email, SignerChannels.Whatsapp],
-    Step = 1,                                                 // signing order; same step signs in parallel
-}
-```
-
-`Step` drives sequential signing: signers sharing a step are notified together, and the next step is
-notified only once the previous one completes. `SignerChannels.Whatsapp` is paid-only and costs
-extra credits. `SignerChannels.DigitalCertificate` is a verification method only.
-
-## The signer-facing flow
-
-These endpoints belong to the person signing, not to your workspace. They authenticate with the
-per-assignment **signer access code** carried in the signing link, and the SDK deliberately does
-**not** attach your API key or bearer token to any of them.
-
-Implement them when you host the signing experience yourself; skip the whole section if you let
-Assinafy notify signers and host the signing page.
-
-```csharp
-// Load everything the signer needs.
-var toSign = await client.Signing.GetAsync(signerAccessCode);
-var profile = await client.Signers.GetSelfAsync(signerAccessCode);
-
-// Record acceptance of the terms.
-await client.Signers.AcceptTermsAsync(signerAccessCode);
-
-// Verify a one-time code delivered by email or WhatsApp.
-await client.Signers.VerifyAsync(signerAccessCode, verificationCode);
-
-// Virtual assignments require confirmed signer data before signing; otherwise the API returns 400.
-await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmSignerDataRequest
-{
-    FullName = "John Doe",
-    Email = "john@example.com",
-    GovernmentId = "00000000000",
-});
-
-// Submit the field values.
-await client.Signing.SignAsync(documentId, assignmentId, signerAccessCode,
-[
-    new SignAssignmentValue
-    {
-        ItemId = item.Id,
-        FieldId = item.FieldId,
-        PageId = item.PageId,
-        Value = "John Doe",
-    },
-]);
-
-// Or decline, with a reason.
-await client.Signing.DeclineAsync(documentId, assignmentId, signerAccessCode, "Wrong counterparty");
-```
-
-A signer with several pending documents can act on them in bulk, browse their own documents, and
-download finished artifacts:
-
-```csharp
-await client.Signing.SignMultipleAsync(signerAccessCode, [documentId1, documentId2]);
-await client.Signing.DeclineMultipleAsync(signerAccessCode, [documentId3], "Not applicable");
-
-var current = await client.Signing.GetCurrentDocumentAsync(signerId, signerAccessCode);
-var mine    = await client.Signing.ListDocumentsAsync(signerId, signerAccessCode,
-                  new SignerDocumentListParams { PerPage = 25 });
-var found   = await client.Signing.SearchDocumentsAsync(signerId, signerAccessCode,
-                  new SignerDocumentListParams { Search = "nda" });
-
-var artifact = await client.Signing.DownloadPublicAsync(
-    signerId, documentId, DocumentArtifactNames.Certificated);
-```
-
-### Digital-certificate signing
-
-When an assignment's verification method is `DigitalCertificate`, signing is a two-step Web PKI
-exchange instead of a field submission:
-
-```csharp
-var operation = await client.Signing.StartCertificateAsync(signerAccessCode);
-var signedToken = await SignWithWebPkiAsync(operation.Token);   // your browser/Web PKI bridge
-var result = await client.Signing.CompleteCertificateAsync(signerAccessCode, signedToken);
-
-Console.WriteLine(result.SignerName);   // read from the certificate
-```
-
-Both routes are production-only deployed extensions: the sandbox does not expose them and they are
-absent from the published OpenAPI document. They require a real production certificate assignment
-and a browser-signed Web PKI token.
-
-## Signature images
-
-A signer's drawn signature and initials, stored for reuse across documents.
-
-```csharp
-await using var png = File.OpenRead("signature.png");
-await client.Signatures.UploadAsync(
-    png,
-    signerAccessCode,
-    reuse: true,                              // allow reuse in future signing processes
-    type: SignatureImageTypes.Signature);     // or SignatureImageTypes.Initial
-
-var image = await client.Signatures.DownloadAsync(signerAccessCode, SignatureImageTypes.Signature);
-```
-
-`Signer.HasSignature`, `HasInitial`, and `IsSignatureReusable` (returned by `GetSelfAsync`) tell you
-whether a stored image exists and whether the signer agreed to reuse it. When
-`IsSignatureReusable` is `false`, do not pre-render the stored image even if one exists.
-
-## Public documents
-
-Unauthenticated lookups for a recipient who has a document link.
-
-```csharp
-var info = await client.PublicDocuments.GetDetailsAsync(documentId);
-await client.PublicDocuments.SendTokenAsync(documentId, "john@example.com");
-```
-
-`SendTokenAsync` asks the API to email a signing access token; omit the address to use the
-document's configured recipient.
-
-## Tags
-
-Tags are unique per workspace, case-insensitively, and attach to documents.
-
-```csharp
-var tag = await client.Tags.CreateAsync(new CreateTagRequest { Name = "Contracts", Color = "3366FF" });
-var tags = await client.Tags.ListAsync(search: "con");
-
-await client.Tags.UpdateAsync(tag.Id, new UpdateTagRequest { Color = "FF6600" });
-await client.Tags.UpdateAsync(tag.Id, new UpdateTagRequest { ClearColor = true });
-
-// Attach keeps existing tags; set replaces the whole set (pass [] to clear).
-var attached = await client.Tags.AddToDocumentAsync(documentId, [tag.Id]);
-var replaced = await client.Tags.SetForDocumentAsync(documentId, [tag.Id]);
-var onDoc    = await client.Tags.ListForDocumentAsync(documentId);
-
-await client.Tags.RemoveFromDocumentAsync(documentId, tag.Id);
-await client.Tags.DeleteAsync(tag.Id, force: true);   // force detaches everywhere first
-```
-
-Creating a duplicate name returns `409`. Deleting a tag that is still attached returns `409` unless
-`force` is `true`. `DeleteWithResultAsync` and `RemoveFromDocumentWithResultAsync` are variants that
-return the API's `{ deleted }` / `{ detached }` payload instead of nothing.
-
-## Fields
-
-Field definitions describe the typed inputs a signer fills in — with an optional regular expression
-the platform validates against.
-
-```csharp
-var types = await client.Fields.ListTypesAsync();
-
-var field = await client.Fields.CreateAsync(new CreateFieldDefinitionRequest
-{
-    Name = "Customer reference",
-    Type = "text",
-    Regex = "^[A-Z]{3}-[0-9]{4}$",
-    IsRequired = true,
-});
-
-var fields = await client.Fields.ListAsync(new FieldListParams { IncludeStandard = true });
-
-await client.Fields.UpdateAsync(field.Id, new UpdateFieldDefinitionRequest { IsActive = false });
-await client.Fields.UpdateAsync(field.Id, new UpdateFieldDefinitionRequest { ClearRegex = true });
-
-// Validate before submitting, either as the account or on a signer's behalf.
-var check = await client.Fields.ValidateAsync(
-    field.Id,
-    new ValidateFieldValueRequest { Value = "ACM-1234" },
-    signerAccessCode);
-
-var checks = await client.Fields.ValidateMultipleAsync(
-[
-    new ValidateFieldValueItem { FieldId = field.Id, Value = "ACM-1234" },
-]);
-
-await client.Fields.DeleteAsync(field.Id);
-```
-
-Deleting a field already used on a document fails.
-
-## Webhooks
-
-A workspace has one subscription. Prefer it over polling for document state.
-
-```csharp
-var events = await client.Webhooks.ListEventTypesAsync();
-
-await client.Webhooks.UpdateSubscriptionAsync(new UpdateWebhookSubscriptionRequest
-{
-    Url = "https://example.com/webhooks/assinafy",
-    Email = "ops@example.com",
-    IsActive = true,
-    Events = ["document_ready", "signer_signed_document", "signer_rejected_document"],
-});
-
-var subscription = await client.Webhooks.GetAsync();
-
-// Delivery history and replay.
-var history = await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams
-{
-    Delivered = false,
-    From = DateTimeOffset.UtcNow.AddDays(-7).ToUnixTimeSeconds(),
-    PerPage = 50,
-});
-
-foreach (var failed in history.Data)
-    await client.Webhooks.RetryDispatchAsync(failed.Id);
-
-// Pause delivery without losing the configuration.
-await client.Webhooks.InactivateAsync();
-```
-
-There is no delete endpoint — `InactivateAsync`, or an update with `IsActive = false`, is how you
-stop deliveries.
-
-Deliveries arrive as the same `{ status, message, data }` envelope your endpoint should acknowledge
-with a `2xx`. `assignment_created` and `document_metadata_ready` have no guaranteed ordering, and
-unknown fields are forward-compatible additions — ignore rather than reject them. The full event
-catalog, payload keys, and delivery contract are in
-[docs/API.md](docs/API.md#webhook-payloads).
-
-## Accounts and users
-
-```csharp
-var accounts = await client.Accounts.ListAsync();          // discover account IDs
-var account  = await client.Accounts.GetAsync();
-var theme    = await client.Accounts.GetThemeAsync();      // branding colors and logo URL
-
-await client.Accounts.UpdateAsync(new UpdateAccountRequest
-{
-    Name = "Acme Legal",
-    NotificationSenderType = AccountNotificationSenderTypes.Account,
-});
-
-await using var logo = File.OpenRead("logo.png");
-await client.Accounts.UploadLogoAsync(logo, "logo.png");
-var logoBytes = await client.Accounts.DownloadLogoAsync();
-await client.Accounts.DeleteLogoAsync();
-
-var user  = await client.Users.GetSelfAsync();
-var prefs = await client.Users.GetNotificationPreferencesAsync();
-await client.Users.UpdateNotificationPreferencesAsync(new UpdateNotificationPreferencesRequest
-{
-    DocumentCompleted = true,
-    DocumentExpired = false,
-});
-```
-
-`NotificationSenderType` decides whether signers see the individual user or the workspace as the
-sender. Statistics are available per account and summed across every account the user belongs to:
-
-```csharp
-var monthly = await client.Accounts.GetStatsAsync(new DocumentStatsParams
-{
-    Granularity = DocumentStatsGranularities.Monthly,
-});
-
-var daily = await client.Users.GetStatsAsync(new DocumentStatsParams
-{
-    Granularity = DocumentStatsGranularities.Daily,
-    Month = "2026-08",     // required for daily
-});
-
-foreach (var row in monthly)
-    Console.WriteLine($"{row.Period}: {row.DocumentsSent} sent, {row.DocumentsCertified} certified");
-```
-
-API keys are managed through the `Authentication` resource. Generating a new key replaces the
-previous one, and the full value is shown only once:
-
-```csharp
-var created = await client.Authentication.CreateApiKeyAsync(new CreateApiKeyRequest { Password = password });
-var masked  = await client.Authentication.GetApiKeyAsync();
-await client.Authentication.DeleteApiKeyAsync();
-```
-
-## Reference tables
-
-**Document artifacts** (`DocumentArtifactNames`)
-
-| Value | Contents |
-|---|---|
-| `original` | The uploaded PDF, unchanged |
-| `certificated` | The signed and certificated PDF (default) |
-| `certificate-page` | The standalone certificate page |
-| `pades` | The signed PDF in PAdES format |
-| `bundle` | The signed PDF bundled with the certificate page |
-
-**Channels** (`SignerChannels`) — `Email`, `Whatsapp` (paid, extra cost), `DigitalCertificate`
-(verification only). Values are capitalized exactly as shown.
-
-**Assignment methods** (`AssignmentMethods`) — `virtual`, `collect`.
-
-**Signature image types** (`SignatureImageTypes`) — `signature`, `initial`.
-
-**Statistics granularity** (`DocumentStatsGranularities`) — `monthly`, `daily` (requires `Month`).
-
-**Notification sender** (`AccountNotificationSenderTypes`) — `User`, `Account`.
-
-Document status codes are not fixed constants; retrieve the live list, with each status's deletion
-rule, from `Documents.ListStatusesAsync()`. The statuses `WaitUntilReadyAsync` treats as ready are
-`metadata_ready`, `pending_signature`, and `certificated`.
-
-## Testing
-
-The regular suite runs on xUnit v3 over Microsoft.Testing.Platform against a stubbed HTTP transport,
-on every supported target framework. Arguments after `--` are runner options:
-
-```bash
-dotnet test --solution Assinafy.Sdk.sln -- --filter-not-trait "Category=Live"
-```
-
-Live tests run against the sandbox only, and fail fast when a credential is missing or the base URL
-is not exactly the sandbox:
-
-```bash
-ASSINAFY_API_KEY=... \
-ASSINAFY_ACCOUNT_ID=... \
-ASSINAFY_BASE_URL=https://sandbox.assinafy.com.br/v1 \
-dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj \
-  --framework net10.0 -- --filter-trait "Category=Live"
-```
-
-`ASSINAFY_TEST_EMAIL_PRIMARY` and `ASSINAFY_TEST_EMAIL_SECONDARY` are optional overrides; without
-them the suite uses reserved `example.com` addresses, so the GitHub `sandbox` environment needs only
-the two secrets above.
-
-The sandbox suite does not exercise the production-only certificate routes. Local transport tests
-cover their request construction, credential isolation, and response deserialization; the complete
-flow needs a production certificate assignment and a browser-signed Web PKI token.
-
-## Support matrix and versioning
-
-| Target | .NET support | Ends |
-|---|---|---|
-| `net8.0` | LTS, maintenance | 2026-11-10 |
-| `net9.0` | STS, maintenance | 2026-11-10 |
-| `net10.0` | LTS, active | 2028-11-14 |
-
-The package has no NuGet dependencies, so it never constrains which `Microsoft.Extensions.*`
-version your application resolves.
-
-Versioning is semantic. .NET package validation runs at pack time, so a binary-breaking change
-cannot ship in a patch. Methods kept only for older call sites are marked `[Obsolete]` with the
-replacement named in the message.
-
-**Upgrading from 1.x:** `services.AddAssinafy(...)` was removed along with the SDK's
-`Microsoft.Extensions.*` dependencies. Replace it with the registration in
-[Dependency injection](#dependency-injection) — roughly ten lines in your composition root, using
-packages your ASP.NET Core app already references. No other API changed.
-
-## Further reading
-
-- **[docs/API.md](docs/API.md)** — the complete reference: every public SDK method with its full
-  signature, and all 89 production operations with request and response payloads, error bodies,
-  authentication, and the webhook contract.
-- **[docs/openapi.json](docs/openapi.json)** — the checked-in production OpenAPI snapshot. CI
-  verifies it still matches the live document on every run.
-- **[CHANGELOG.md](CHANGELOG.md)** — release history.
-- **[SECURITY.md](SECURITY.md)** — vulnerability reporting.
-- **[LICENSE](LICENSE)** — MIT.
+Distribuído sob a licença [MIT](LICENSE).
