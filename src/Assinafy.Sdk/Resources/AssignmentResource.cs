@@ -187,19 +187,22 @@ public sealed class AssignmentResource : BaseResource
         var body = new Dictionary<string, object?>();
         if (!string.IsNullOrWhiteSpace(request.Method)) body["method"] = request.Method;
 
+        // The published contract marks `signers` required only for `virtual`, but the API prices
+        // per signer in both methods and answers a signer-less estimate with
+        // 400 "Pelo menos um signatários precisa ser informado."
         var signerRefs = ExtractSignerRefs(request);
-        if (signerRefs.Count > 0)
+        if (signerRefs.Count == 0)
+            throw new ValidationException("At least one signer is required for a cost estimate.");
+
+        body["signers"] = signerRefs.Select(reference =>
         {
-            body["signers"] = signerRefs.Select(reference =>
-            {
-                var signer = new Dictionary<string, object?>();
-                if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
-                    signer["verification_method"] = reference.VerificationMethod;
-                if (reference.NotificationMethods?.Length > 0)
-                    signer["notification_methods"] = reference.NotificationMethods;
-                return signer;
-            }).ToList();
-        }
+            var signer = new Dictionary<string, object?>();
+            if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
+                signer["verification_method"] = reference.VerificationMethod;
+            if (reference.NotificationMethods?.Length > 0)
+                signer["notification_methods"] = reference.NotificationMethods;
+            return signer;
+        }).ToList();
 
         if (request.Entries?.Count > 0) body["entries"] = request.Entries;
         return body;

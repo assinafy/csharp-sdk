@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.0
+
+### Fixed
+
+- `Assignments.EstimateCostAsync` now requires at least one signer and always sends the `signers`
+  key. The published contract marks `signers` as required only for `virtual`, but the API prices
+  per signer in both methods and answers a signer-less estimate with
+  `400 "Pelo menos um signatários precisa ser informado."` `BuildEstimatePayload` omitted the key
+  entirely when the list was empty, so a `collect` estimate could never be priced. It now throws
+  `ValidationException` locally instead of failing upstream.
+
 ## 2.0.0
 
 ### Removed (breaking)

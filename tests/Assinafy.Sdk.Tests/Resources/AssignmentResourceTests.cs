@@ -63,6 +63,45 @@ public sealed class AssignmentResourceTests
     }
 
     [Fact]
+    public void BuildEstimatePayload_SendsSignersAlongsideCollectEntries()
+    {
+        var body = AssignmentResource.BuildEstimatePayload(new CreateAssignmentRequest
+        {
+            Method = "collect",
+            Signers = [new SignerRef { VerificationMethod = "DigitalCertificate" }],
+            Entries = [new AssignmentEntry
+            {
+                PageId = "p1",
+                Fields = [new AssignmentEntryField { SignerId = "s1", FieldId = "f1" }],
+            }],
+        });
+
+        // collect is priced per signer too, so the channels must reach the API.
+        var signers = (List<Dictionary<string, object?>>)body["signers"]!;
+        signers[0]["verification_method"].Should().Be("DigitalCertificate");
+        body.Should().ContainKey("entries");
+    }
+
+    [Theory]
+    [InlineData("virtual")]
+    [InlineData("collect")]
+    public void BuildEstimatePayload_RequiresAtLeastOneSigner(string method)
+    {
+        // The API refuses a signer-less estimate in either mode.
+        var act = () => AssignmentResource.BuildEstimatePayload(new CreateAssignmentRequest
+        {
+            Method = method,
+            Entries = [new AssignmentEntry
+            {
+                PageId = "p1",
+                Fields = [new AssignmentEntryField { SignerId = "s1", FieldId = "f1" }],
+            }],
+        });
+
+        act.Should().Throw<ValidationException>().WithMessage("*At least one signer*");
+    }
+
+    [Fact]
     public void BuildPayload_IncludesOptionalFieldsWhenProvided()
     {
         var body = AssignmentResource.BuildPayload(new CreateAssignmentRequest
