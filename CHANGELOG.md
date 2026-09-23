@@ -1,15 +1,64 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+
+- **OAuth 2.1 support**, for applications that act inside another user's workspace with that user's
+  permission. `client.OAuth` covers the whole flow:
+
+  ```csharp
+  var pkce = OAuthResource.CreatePkcePair();
+  var state = OAuthResource.CreateState();          // store both in the user's session
+
+  var url = OAuthResource.BuildAuthorizationUrl(new OAuthAuthorizationRequest
+  {
+      ClientId = clientId,
+      RedirectUri = "https://myapp.example.com/oauth/callback",
+      Scopes = [OAuthScopes.DocumentsRead, OAuthScopes.WebhooksWrite, OAuthScopes.OfflineAccess],
+      State = state,
+      CodeChallenge = pkce.CodeChallenge,
+  });
+
+  var tokens = await client.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
+  {
+      Code = code,
+      RedirectUri = "https://myapp.example.com/oauth/callback",
+      CodeVerifier = pkce.CodeVerifier,
+      ClientId = clientId,
+      ClientSecret = clientSecret,
+  });
+  ```
+
+  `ExchangeCodeAsync`, `RefreshTokenAsync`, `RevokeAsync`, `GetUserInfoAsync`, and
+  `GetProtectedResourceMetadataAsync` cover the four OAuth endpoints; `CreatePkcePair`,
+  `CreateState`, and `BuildAuthorizationUrl` cover the browser leg. PKCE (S256) is generated from a
+  cryptographic RNG, and a `code_verifier` outside the RFC 7636 grammar is rejected before the
+  one-time authorization code is spent on it.
+
+- `OAuthScopes` constants for the ten permissions an application can request.
+- `OAuthException`, carrying the machine-readable `Error`, `ErrorDescription`, and `Scope`. It
+  derives from `ApiException`, so existing `catch (ApiException)` blocks keep working. A `403`
+  answering with `WWW-Authenticate: Bearer error="insufficient_scope"` now surfaces the missing
+  scope through `OAuthException.Scope` on **every** endpoint, not just the OAuth ones, so "reconnect
+  asking for this permission" is distinguishable from any other `403`.
+- `OAuthTokenResult.GrantedScopes` and `HasScope`, for reading what the user actually approved
+  rather than assuming the request was granted in full.
+
+### Changed
+
+- `ApiException` is no longer `sealed`, so `OAuthException` can derive from it. No member changed.
+- The OAuth endpoints are read and written as flat JSON, per RFC 6749 §5.1/§5.2, OpenID Connect
+  §5.3.2, and RFC 9728, rather than through this API's `{ status, message, data }` envelope.
+- `SignerChannels` documents the verification/notification coupling rules and the current prices:
+  `Email` is free, `Whatsapp` costs 0.45 credits per signer, and `DigitalCertificate` adds 2 credits
+  on top of its notification.
 ## 2.1.0
 
 ### Fixed
 
-- `Assignments.EstimateCostAsync` now requires at least one signer and always sends the `signers`
-  key. The published contract marks `signers` as required only for `virtual`, but the API prices
-  per signer in both methods and answers a signer-less estimate with
-  `400 "Pelo menos um signatários precisa ser informado."` `BuildEstimatePayload` omitted the key
-  entirely when the list was empty, so a `collect` estimate could never be priced. It now throws
-  `ValidationException` locally instead of failing upstream.
+- Assignment cost estimates require at least one signer and include the `signers` field for both
+  assignment methods.
 
 ## 2.0.0
 

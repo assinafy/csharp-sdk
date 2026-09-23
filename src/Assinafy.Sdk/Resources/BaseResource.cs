@@ -258,6 +258,124 @@ public abstract class BaseResource
         };
     }
 
+    /// <summary>
+    /// Absolute URI for a path served at the API host root, outside the <c>/v1</c> base path —
+    /// used only by <c>/.well-known/oauth-protected-resource</c>, which RFC 8615 places at the root.
+    /// </summary>
+    /// <param name="path">Root-relative path, with or without a leading slash.</param>
+    private protected Uri RootUri(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return _http.BaseAddress is { } baseAddress
+            ? new Uri(baseAddress, "/" + path.TrimStart('/'))
+            : throw new ValidationException("The HTTP client has no base address to resolve a root path against.");
+    }
+
+    /// <summary>
+    /// Send a request whose response body is a flat JSON object rather than the API's
+    /// <c>{ status, message, data }</c> envelope, and whose errors are the flat
+    /// <c>{ error, error_description }</c> shape.
+    /// </summary>
+    /// <remarks>
+    /// The OAuth endpoints follow the RFC 6749 §5.1/§5.2, OIDC §5.3.2, and RFC 9728 body contracts
+    /// instead of the envelope, because no standard OAuth client library would look for
+    /// <c>access_token</c> or <c>error</c> nested inside a <c>data</c> key.
+    /// </remarks>
+    /// <param name="requestFactory">Builds the request to send.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="authenticate">Whether to attach the configured credential.</param>
+    /// <param name="requireBody">Whether an empty success body is a contract error.</param>
+    private protected async Task<T?> CallUnwrappedAsync<T>(
+        Func<HttpRequestMessage> requestFactory,
+        CancellationToken cancellationToken,
+        bool authenticate,
+        bool requireBody)
+    {
+        using var response = await SendAsync(requestFactory, cancellationToken, authenticate).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+        if (!response.IsSuccessStatusCode)
+            throw UnwrappedError(response, json);
+
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return requireBody
+                ? throw new SerializationException("The API returned an empty body where a JSON object was expected.")
+                : default;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new SerializationException("Failed to parse the API response body as JSON.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Map a flat OAuth error body to an <see cref="OAuthException"/>, falling back to a plain
+    /// <see cref="ApiException"/> when the body is not the documented <c>{ error, ... }</c> shape
+    /// (for example an HTML error page from an intermediary).
+    /// </summary>
+    private static ApiException UnwrappedError(HttpResponseMessage response, string json)
+    {
+        var statusCode = (int)response.StatusCode;
+        if (string.IsNullOrWhiteSpace(json))
+            return ApiError(response, statusCode, response.ReasonPhrase, null);
+
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object ||
+                !root.TryGetProperty("error", out var errorEl) ||
+                errorEl.ValueKind != JsonValueKind.String)
+                return ApiError(response, statusCode, response.ReasonPhrase, null);
+
+            var description = root.TryGetProperty("error_description", out var descriptionEl) &&
+                              descriptionEl.ValueKind == JsonValueKind.String
+                ? descriptionEl.GetString()
+                : null;
+
+            return new OAuthException(
+                statusCode,
+                errorEl.GetString()!,
+                description,
+                BearerChallenge.Parse(response).GetValueOrDefault("scope"),
+                root.Clone());
+        }
+        catch (JsonException)
+        {
+            return ApiError(response, statusCode, response.ReasonPhrase, null);
+        }
+    }
+
+    /// <summary>
+    /// Build the exception for an error response. A response carrying an RFC 6750
+    /// <c>WWW-Authenticate: Bearer</c> challenge with an <c>error</c> auth-param — how the API
+    /// reports an OAuth token that lacks a required scope — becomes an
+    /// <see cref="OAuthException"/>, so callers can tell "reconnect asking for this permission"
+    /// apart from every other 403.
+    /// </summary>
+    private static ApiException ApiError(
+        HttpResponseMessage response,
+        int statusCode,
+        string? message,
+        JsonElement? details)
+    {
+        var challenge = BearerChallenge.Parse(response);
+        return challenge.TryGetValue("error", out var error)
+            ? new OAuthException(
+                statusCode,
+                error,
+                challenge.GetValueOrDefault("error_description") ?? message,
+                challenge.GetValueOrDefault("scope"),
+                details)
+            : new ApiException(statusCode, message, details);
+    }
+
     private async Task<T> SendEnvelopeAsync<T>(
         Func<HttpRequestMessage> requestFactory,
         CancellationToken cancellationToken,
@@ -342,7 +460,7 @@ public abstract class BaseResource
         {
             if (response.IsSuccessStatusCode)
                 throw new SerializationException("The API returned an empty success response instead of a JSON envelope.");
-            throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
+            throw ApiError(response, (int)response.StatusCode, response.ReasonPhrase, null);
         }
 
         try
@@ -355,7 +473,7 @@ public abstract class BaseResource
             // shape does not match T. Keep every failure inside the AssinafyException hierarchy rather
             // than leaking a raw System.Text.Json.JsonException.
             if (!response.IsSuccessStatusCode)
-                throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
+                throw ApiError(response, (int)response.StatusCode, response.ReasonPhrase, null);
 
             throw new SerializationException("Failed to parse the API response body as JSON.", ex);
         }
@@ -369,7 +487,7 @@ public abstract class BaseResource
         if (root.ValueKind != JsonValueKind.Object)
         {
             if (!response.IsSuccessStatusCode)
-                throw new ApiException((int)response.StatusCode, response.ReasonPhrase);
+                throw ApiError(response, (int)response.StatusCode, response.ReasonPhrase, null);
 
             throw new JsonException("Expected a JSON response object.");
         }
@@ -379,7 +497,8 @@ public abstract class BaseResource
             !statusEl.TryGetInt32(out var status))
         {
             if (!response.IsSuccessStatusCode)
-                throw new ApiException(
+                throw ApiError(
+                    response,
                     (int)response.StatusCode,
                     ReadMessage(root) ?? response.ReasonPhrase,
                     ReadErrorDetails(root));
@@ -391,7 +510,7 @@ public abstract class BaseResource
         if (status >= 400 || !response.IsSuccessStatusCode)
         {
             var errorStatus = status >= 400 ? status : (int)response.StatusCode;
-            throw new ApiException(errorStatus, message, ReadErrorDetails(root));
+            throw ApiError(response, errorStatus, message, ReadErrorDetails(root));
         }
 
         if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind == JsonValueKind.Null)

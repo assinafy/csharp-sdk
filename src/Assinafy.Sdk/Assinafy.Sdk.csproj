@@ -23,11 +23,11 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>2.1.0</Version>
+    <Version>2.2.0</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
-    <Description>Official .NET SDK for the Assinafy digital signature API. Zero dependencies. Covers authentication, documents, signers, signing flows, assignments, fields, templates, tags, public documents, signature images, and webhooks.</Description>
+    <Description>Official .NET SDK for the Assinafy digital signature API. Zero dependencies. Covers OAuth 2.1 with PKCE, API-key and token authentication, documents, signers, signing flows, assignments, fields, templates, tags, public documents, signature images, and webhooks.</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>assinafy;esignature;digital-signature;signature;contracts;brazil;sdk</PackageTags>
@@ -41,10 +41,10 @@
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <!-- Validates that the net8/net9/net10 assets stay API-compatible with each other. No
-         baseline version: 2.0.0 intentionally drops AddAssinafy, so no 1.x package is a valid
-         baseline. Set PackageValidationBaselineVersion back to the previous 2.x on the next release. -->
+    <!-- Validates that the net8/net9/net10 assets stay API-compatible with each other, and that
+         this release stays compatible with the previous 2.x package. -->
     <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>2.1.0</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>

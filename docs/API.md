@@ -5,11 +5,13 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `74f07116869697c5dfe439cfc860ed5203a7b914e99e6838f1959d3485ff5bb9`
+- Snapshot SHA-256: `ec720249c074471565ccacff7b00de3494ac51fa5556ccd4b35a34c74264ed81`
 - OpenAPI: `3.0.0`; API info version: `1.0.0`
-- API surface: 89 documented production operations across 67 paths and 39 component schemas.
+- API surface: 93 documented production operations across 71 paths and 39 component schemas.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
+
+The four OAuth routes are the deliberate exception to the envelope: they implement the RFC 6749 §5.1/§5.2, OpenID Connect §5.3.2, and RFC 9728 body contracts as flat JSON objects, because no standard OAuth client library would look for `access_token` or `error` nested inside a `data` key. `/.well-known/oauth-protected-resource` is additionally served at the API host root, outside the `/v1` base path, per RFC 8615.
 
 ## Official integration guidance
 
@@ -71,6 +73,66 @@ The **recommended** method is an API key, which you create from the settings pag
 
 Avoid query-string access tokens in server integrations because URLs may be retained in browser history, proxy logs, and monitoring systems. The SDK sends API keys and bearer tokens in request headers.
 
+Building an application that **other people** connect to their own workspace? Do not ask for their API key: use OAuth, which gives the application a token limited to what that user approved.
+
+### OAuth Integration Guide
+
+OAuth 2.1 authorization code with mandatory PKCE (S256), for applications acting in a user's workspace with that user's permission — as opposed to `apiKeyAuth`/`bearerAuth`, which authenticate the workspace or user directly. A token carries only the scopes the user approved and works for exactly one workspace.
+
+| | API key | OAuth |
+|---|---|---|
+| Acts on | **Your own** workspace | **Someone else's** workspace, with their permission |
+| Can do | Everything your account can do | Only what the user approved |
+| The user can switch it off | No | Yes, at any time |
+
+The flow spans two hosts on purpose: the browser-facing authorization page lives on the authorization server, and everything the integration's code calls lives on this API.
+
+1. The application sends the user's browser to `https://auth.assinafy.com.br/oauth/authorize`.
+2. The user signs in, picks **one** workspace, and approves the application.
+3. The browser returns to the application's redirect URI with a one-time code, plus `state` and `iss`.
+4. The application's server exchanges the code at `https://api.assinafy.com.br/v1/oauth/token`.
+5. The application calls this API with `Authorization: Bearer {access_token}`.
+
+Discovery documents are published by the authorization server at `https://auth.assinafy.com.br/.well-known/oauth-authorization-server` (RFC 8414) and its keys at `https://auth.assinafy.com.br/.well-known/jwks.json`. This API publishes its own protected-resource metadata at `https://api.assinafy.com.br/.well-known/oauth-protected-resource` (RFC 9728).
+
+| Endpoint | Host |
+|---|---|
+| `authorization_endpoint` | `https://auth.assinafy.com.br/oauth/authorize` |
+| `token_endpoint` | `https://api.assinafy.com.br/v1/oauth/token` |
+| `revocation_endpoint` | `https://api.assinafy.com.br/v1/oauth/revoke` |
+| `userinfo_endpoint` | `https://api.assinafy.com.br/v1/oauth/userinfo` |
+| `jwks_uri` | `https://auth.assinafy.com.br/.well-known/jwks.json` |
+
+**Registration.** Applications are created in the Assinafy app under *Settings → OAuth applications*, never through an API. Redirect URIs must be `https://`, carry no `#`, and are matched **exactly**: `…/callback` and `…/callback/` are different URIs. A **Confidential** application runs on a server the integrator controls and receives a `client_secret`; a **Public** application runs on the user's device and authenticates with PKCE alone. The type cannot be changed later.
+
+**Scopes.**
+
+| Scope | Grants |
+|---|---|
+| `documents:read` | Read documents, their pages, tags, signers, assignments and activity. |
+| `documents:write` | Create, update and delete documents, and manage their signers, assignments and activity. |
+| `templates:read` | Read reusable document templates, their pages, roles, fields and tags. |
+| `templates:write` | Create, update and delete templates, their pages, roles, fields and tags. |
+| `account:read` | Read the workspace's profile, theme and logo. |
+| `webhooks:write` | Configure and deactivate the workspace webhook subscription. |
+| `openid` | Receive a signed `id_token` identifying the user. |
+| `profile` | Read the user's name. |
+| `email` | Read the user's email and whether it is verified. |
+| `offline_access` | Receive a refresh token. A request-time signal, not a permission: it never appears in a granted access token's `scope`. |
+
+Billing and subscriptions, workspace membership, credential management and administration are **never** reachable with an OAuth token, whatever its scopes.
+
+**Constraints.**
+
+- The authorization code is single-use and expires **60 seconds** after approval.
+- Access tokens last **1 hour**; a connection lasts **30 days** from approval, and refreshing does not extend it.
+- Every refresh returns a **new** refresh token and retires the old one. Replaying a retired refresh token cannot be distinguished from a stolen one, so it terminates the entire connection.
+- A token is bound to one workspace; calling any other workspace returns `403`, even another the same user belongs to.
+- A missing scope answers `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"`. Treat it as a prompt to reconnect with that scope, not as a request to retry.
+- The `code_verifier` must be 43–128 characters from `A-Za-z0-9-._~`; anything else is rejected with `invalid_grant`.
+- The authorize and token endpoints accept **50 requests per minute per IP**.
+- Unverified applications connect to at most **25 workspaces**.
+
 ### Accounts
 
 Workspace accounts: profile, logo and theme.
@@ -97,11 +159,13 @@ For direct assignment creation, verification and notification are independently 
 | `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. |
 | `DigitalCertificate` | The signer signs with their own ICP-Brasil digital certificate (A1/A3) from their device using the Web PKI browser extension, producing a qualified PAdES signature on the document. |
 
-| Code | Requirements | Cost (per signer) |
-|------|--------------|-------------------|
-| `Email` | Signer must have an email address. | Free |
-| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | Free |
-| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 2 credits |
+| Code | Requirements | Cost per signer (verification + its notification) |
+|------|--------------|---------------------------------------------------|
+| `Email` | Signer must have an email address. | 0 credits (the Email notification) |
+| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits (the WhatsApp notification, which this method requires) |
+| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 2 credits + its notification |
+
+> **How verification is priced.** No verification method carries a price of its own — you are billed for the **notification** it is paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one.
 
 > **Digital Certificate cost.** Unlike the other verification methods (whose only cost is the notification), the digital-certificate signature itself is charged **2 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
 
@@ -349,6 +413,14 @@ User account endpoints.
 | WebhookResource | `ListEventTypesAsync` | `Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(CancellationToken cancellationToken = default)` | GET /webhooks/event-types — list all event types supported by the platform. |
 | WebhookResource | `ListDispatchesAsync` | `Task<PaginatedResult<WebhookDispatch>> ListDispatchesAsync(ListDispatchesParams? parameters = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks — list webhook delivery history with optional filters (event, delivered, from, to, page, per-page). |
 | WebhookResource | `RetryDispatchAsync` | `Task<WebhookDispatch> RetryDispatchAsync(string dispatchId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/{dispatch_id}/retry — re-attempt delivery of a previous webhook dispatch. |
+| OAuthResource | `CreatePkcePair` | `static OAuthPkcePair CreatePkcePair()` | Local: generate an RFC 7636 PKCE verifier (256 bits from a cryptographic RNG) and its S256 challenge. Create one per connection attempt. |
+| OAuthResource | `CreateState` | `static string CreateState()` | Local: generate an opaque 128-bit `state` value for CSRF protection on one connection attempt. |
+| OAuthResource | `BuildAuthorizationUrl` | `static Uri BuildAuthorizationUrl(OAuthAuthorizationRequest request)` | Local: build the authorization URL the browser is sent to, with `response_type=code`, space-joined scopes, `code_challenge_method=S256`, and the RFC 8707 `resource` indicator. Defaults to the production authorization endpoint. |
+| OAuthResource | `ExchangeCodeAsync` | `Task<OAuthTokenResult> ExchangeCodeAsync(OAuthCodeExchangeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=authorization_code — exchange the one-time code for tokens. Sent form-encoded per RFC 6749 §4.1.3 and answered as flat JSON. The code verifier is validated against the RFC 7636 grammar before the code is spent. Never sends the client's configured credential. |
+| OAuthResource | `RefreshTokenAsync` | `Task<OAuthTokenResult> RefreshTokenAsync(OAuthRefreshRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=refresh_token — renew an access token. Refresh tokens rotate: persist the new one before anything else, and never retry blindly with the old one. |
+| OAuthResource | `RevokeAsync` | `Task RevokeAsync(OAuthRevokeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/revoke — revoke an access or refresh token. Every token outcome answers 200; only failed client authentication returns 401. |
+| OAuthResource | `GetUserInfoAsync` | `Task<OAuthUserInfo> GetUserInfoAsync(CancellationToken cancellationToken = default)` | GET /oauth/userinfo — OpenID Connect claims about the user who authorized the configured access token. Requires the openid scope; name requires profile and email requires email. |
+| OAuthResource | `GetProtectedResourceMetadataAsync` | `Task<OAuthProtectedResourceMetadata> GetProtectedResourceMetadataAsync(CancellationToken cancellationToken = default)` | GET /.well-known/oauth-protected-resource — RFC 9728 metadata naming the authorization servers and accepted scopes. Served at the API host root, outside the /v1 base path, and unauthenticated. |
 
 ## C# client and helper contracts
 
@@ -703,6 +775,10 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Webhooks | GET | `/v1/accounts/{accountId}/webhooks` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Webhooks | POST | `/v1/accounts/{accountId}/webhooks/{historyId}/retry` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
 | Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
+| OAuth | POST | `/v1/oauth/token` | application/json or application/x-www-form-urlencoded: object (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 500 |
+| OAuth | POST | `/v1/oauth/revoke` | application/json or application/x-www-form-urlencoded: object (required) | 200, empty body | none (client credentials in the body) | 401, 500 |
+| OAuth | GET | `/v1/oauth/userinfo` | none | application/json: object (flat, no envelope) | bearerAuth or apiKeyAuth | 401, 403, 500 |
+| OAuth | GET | `/.well-known/oauth-protected-resource` | none | application/json: object (flat, no envelope) | none | 500 |
 
 ## Full operation request and response payloads
 
@@ -12240,3 +12316,194 @@ Example payload:
   "SignerWhatsappFailed": true
 }
 ```
+
+### POST /v1/oauth/token
+
+Exchange an authorization code or a refresh token for an access token. Security: **none** — the application authenticates with its own `client_id` (and `client_secret` for confidential applications) in the body.
+
+Implements the RFC 6749 §5.1/§5.2 token-endpoint contract in both directions: a success is a flat JSON object with `access_token` at the top level, and a failure is a flat `{error, error_description}` object. Neither is wrapped in this API's response envelope, because no standard OAuth client library would find `access_token` or `error` inside a `data` key.
+
+The SDK sends `application/x-www-form-urlencoded`, as RFC 6749 §4.1.3 mandates and every standard OAuth client does; the endpoint also accepts `application/json`.
+
+Request schema:
+
+```json
+{
+  "required": ["grant_type", "client_id"],
+  "properties": {
+    "grant_type": { "type": "string", "enum": ["authorization_code", "refresh_token"] },
+    "code": { "type": "string" },
+    "redirect_uri": { "type": "string", "format": "uri" },
+    "code_verifier": {
+      "type": "string",
+      "description": "RFC 7636: 43-128 characters from [A-Za-z0-9-._~]. Shorter values are rejected with invalid_grant."
+    },
+    "refresh_token": { "type": "string" },
+    "client_id": { "type": "string" },
+    "client_secret": {
+      "type": "string",
+      "description": "Confidential clients only. Public clients authenticate with PKCE and are never issued a secret."
+    },
+    "resource": {
+      "type": "string",
+      "format": "uri",
+      "description": "RFC 8707 resource indicator. Optional; when present it must be the resource published by /.well-known/oauth-protected-resource and must match the one sent to /authorize, otherwise invalid_target."
+    }
+  },
+  "type": "object"
+}
+```
+
+Example request — authorization code (`OAuthResource.ExchangeCodeAsync`):
+
+```
+POST /v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code
+&code=example-authorization-code
+&redirect_uri=https%3A%2F%2Fmyapp.example.com%2Foauth%2Fcallback
+&code_verifier=example-code-verifier-of-at-least-43-characters
+&client_id=example-client-id
+&client_secret=example-client-secret
+&resource=https%3A%2F%2Fapi.assinafy.com.br
+```
+
+Example request — refresh (`OAuthResource.RefreshTokenAsync`):
+
+```
+POST /v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=refresh_token
+&refresh_token=example-refresh-token
+&client_id=example-client-id
+&client_secret=example-client-secret
+```
+
+Success: `200` with a flat object (**not** the `{status, message, data}` envelope):
+
+```json
+{
+  "access_token": "example-access-token",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "example-refresh-token",
+  "scope": "documents:read documents:write",
+  "id_token": "example-id-token"
+}
+```
+
+- `refresh_token` is present only when `offline_access` was requested **and** consented.
+- `id_token` is present only when the `openid` scope was granted; it is RS256-signed.
+- `scope` is the scope of the **access token**. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested. Read it instead of assuming the request was granted in full — `OAuthTokenResult.GrantedScopes` and `HasScope` do this.
+
+Errors are flat as well, and the SDK maps them to `OAuthException` with `Error` and `ErrorDescription`:
+
+```json
+{ "error": "invalid_grant", "error_description": "The authorization code has expired." }
+```
+
+| Status | `error` | Cause |
+|---|---|---|
+| 400 | `invalid_grant` | Bad, expired, replayed, or wrong-client authorization code; a `code_verifier` outside the RFC 7636 grammar; `redirect_uri` mismatch; a refresh token whose authorization no longer includes `offline_access`. |
+| 400 | `invalid_target` | A `resource` this server does not issue tokens for, or one disagreeing with the authorized value. |
+| 400 | `unsupported_grant_type` | A grant other than `authorization_code` or `refresh_token`. |
+| 401 | `invalid_client` | Unknown or disabled client, or failed client authentication. The description never reveals whether the `client_id` exists. |
+
+### POST /v1/oauth/revoke
+
+Revoke an access or refresh token. Security: **none** — the application authenticates with its own credentials in the body.
+
+Every token outcome returns `200` — including a token that does not exist, is already revoked, or is malformed — so the endpoint can never be used to probe whether a token exists. The one exception is failed client authentication, which returns `401`. Revoking a refresh token ends the whole connection.
+
+Request schema:
+
+```json
+{
+  "required": ["token", "client_id"],
+  "properties": {
+    "token": { "type": "string" },
+    "token_type_hint": { "type": "string", "enum": ["access_token", "refresh_token"] },
+    "client_id": { "type": "string" },
+    "client_secret": { "type": "string" }
+  },
+  "type": "object"
+}
+```
+
+Example request (`OAuthResource.RevokeAsync`):
+
+```
+POST /v1/oauth/revoke
+Content-Type: application/x-www-form-urlencoded
+
+token=example-refresh-token
+&token_type_hint=refresh_token
+&client_id=example-client-id
+&client_secret=example-client-secret
+```
+
+Success: `200` with an empty body. Failure: `401` with `{"error": "invalid_client", "error_description": "Client authentication failed."}`.
+
+### GET /v1/oauth/userinfo
+
+OpenID Connect claims about the user who authorized this token. Security: **bearerAuth or apiKeyAuth**.
+
+Requires the `openid` scope; `name` additionally requires `profile` and `email` requires `email`. Per OIDC Core §5.3.2 the response is a flat JSON object of claims, never this API's envelope.
+
+Example request (`OAuthResource.GetUserInfoAsync`):
+
+```
+GET /v1/oauth/userinfo
+Authorization: Bearer example-access-token
+```
+
+Success: `200`.
+
+```json
+{
+  "sub": "d6zqpbyog2v3xvxerwn8la94",
+  "name": "Maria Silva",
+  "email": "maria@example.com",
+  "email_verified": true
+}
+```
+
+`name`, `email`, and `email_verified` are nullable and present only when the matching scope was granted. A `403` carries `WWW-Authenticate: Bearer error="insufficient_scope"`, which the SDK surfaces as `OAuthException.Error` and `OAuthException.Scope`.
+
+### GET /.well-known/oauth-protected-resource
+
+RFC 9728 protected resource metadata. Security: **none**.
+
+Identifies this API as a protected resource, the authorization servers that can issue tokens for it, and the scopes it accepts. Per RFC 8615 the response is the bare metadata object itself — never this API's usual envelope — and it is served at the **API host root**, outside the `/v1` base path. It is also referenced from the `WWW-Authenticate: Bearer resource_metadata="…"` challenge on a `401`/`403`.
+
+`scopes_supported` deliberately excludes `offline_access`: requesting a refresh token is a client concern, not something a resource is protected by.
+
+Example request (`OAuthResource.GetProtectedResourceMetadataAsync`):
+
+```
+GET /.well-known/oauth-protected-resource
+```
+
+Success: `200`.
+
+```json
+{
+  "resource": "https://api.assinafy.com.br",
+  "authorization_servers": ["https://auth.assinafy.com.br"],
+  "scopes_supported": [
+    "documents:read",
+    "documents:write",
+    "templates:read",
+    "templates:write",
+    "account:read",
+    "openid",
+    "profile",
+    "email"
+  ],
+  "bearer_methods_supported": ["header"]
+}
+```
+
+Start every integration by reading `authorization_servers[0]` and fetching that host's own `/.well-known/oauth-authorization-server` document (RFC 8414), rather than hard-coding endpoint URLs.

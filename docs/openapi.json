@@ -2,7 +2,7 @@
     "openapi": "3.0.0",
     "info": {
         "title": "Assinafy API Reference",
-        "description": "The **Assinafy API** is RESTful and gives access to documents, users, workspaces and signers, authenticated with an API key or an access token.\n\n## REST API\n\nHTTP verbs are used according to the request type:\n\n- `GET` to retrieve data;\n- `POST` to create;\n- `PUT` to update;\n- `DELETE` to remove.\n\n### Content type\n\nThe default request and response format is JSON.\n\n### Response envelope\n\nEvery response is wrapped as `{ status, message, data }`. `status` mirrors the HTTP status code (`200` means success); `data` holds the payload on success and is `null` on error.\n\n### Authentication\n\nMost endpoints require authentication. There are two options: a fixed **API key** (`X-Api-Key` header) or an **access token** (`Authorization: Bearer ...`). See the Authentication section for details.\n\n## Searching, paginating and sorting\n\nList endpoints accept these query parameters:\n\n| Parameter | Description |\n|-----------|-------------|\n| `search`  | Search term. |\n| `page`    | Page number. |\n| `per-page`| Records per page (max 100). |\n| `sort`    | Sort order, e.g. `name` or `-created_at`. |\n\n…and return pagination metadata in response headers: `X-Pagination-Current-Page`, `X-Pagination-Total-Count`, `X-Pagination-Page-Count`, `X-Pagination-Per-Page`.\n\n## Test and production environments\n\nDuring development use the **sandbox**:<br/>API: https://sandbox.assinafy.com.br/v1 · APP: https://app-sandbox.assinafy.com.br\n\nWhen ready, switch to **production**:<br/>API: https://api.assinafy.com.br/v1 · APP: https://app.assinafy.com.br\n\n## Error codes\n\nThe error code is returned in the `status` attribute.\n\n| Code | Type |\n|------|------|\n| 400 | Bad Request |\n| 401 | Unauthorized |\n| 403 | Forbidden |\n| 404 | Not Found |\n| 415 | Unsupported Media Type |\n| 429 | Too Many Requests |\n| 500 | Internal Server Error |\n\n## Postman collection\n\nExplore the API with the [Assinafy Postman collection](https://www.postman.com/devassinafy/dev-assinafy-s-workspace/collection/tqqxlsd/assinafy-api-collection): open it, select the Assinafy Collection, then **fork** it into your own workspace.",
+        "description": "The **Assinafy API** is RESTful and gives access to documents, users, workspaces and signers, authenticated with an API key or an access token.\n\n## REST API\n\nHTTP verbs are used according to the request type:\n\n- `GET` to retrieve data;\n- `POST` to create;\n- `PUT` to update;\n- `DELETE` to remove.\n\n### Content type\n\nThe default request and response format is JSON.\n\n### Response envelope\n\nEvery response is wrapped as `{ status, message, data }`. `status` mirrors the HTTP status code (`200` means success); `data` holds the payload on success and is `null` on error.\n\n### Authentication\n\nMost endpoints require authentication. There are two options: a fixed **API key** (`X-Api-Key` header) or an **access token** (`Authorization: Bearer ...`). See the Authentication section for details. Applications that act in *other people's* workspaces use OAuth instead — see **OAuth Integration Guide**.\n\n## Searching, paginating and sorting\n\nList endpoints accept these query parameters:\n\n| Parameter | Description |\n|-----------|-------------|\n| `search`  | Search term. |\n| `page`    | Page number. |\n| `per-page`| Records per page (max 100). |\n| `sort`    | Sort order, e.g. `name` or `-created_at`. |\n\n…and return pagination metadata in response headers: `X-Pagination-Current-Page`, `X-Pagination-Total-Count`, `X-Pagination-Page-Count`, `X-Pagination-Per-Page`.\n\n## Test and production environments\n\nDuring development use the **sandbox**:<br/>API: https://sandbox.assinafy.com.br/v1 · APP: https://app-sandbox.assinafy.com.br\n\nWhen ready, switch to **production**:<br/>API: https://api.assinafy.com.br/v1 · APP: https://app.assinafy.com.br\n\n## Error codes\n\nThe error code is returned in the `status` attribute.\n\n| Code | Type |\n|------|------|\n| 400 | Bad Request |\n| 401 | Unauthorized |\n| 403 | Forbidden |\n| 404 | Not Found |\n| 415 | Unsupported Media Type |\n| 429 | Too Many Requests |\n| 500 | Internal Server Error |\n\n## Client libraries and tools\n\nOfficial SDKs for eight languages, a CLI, an MCP server and an n8n node are listed under **SDKs & Tools**. To work from the spec directly — Postman, Insomnia or your own generated client — see **OpenAPI & API Clients**.",
         "version": "1.0.0"
     },
     "servers": [
@@ -434,7 +434,7 @@
                     "Accounts"
                 ],
                 "summary": "List my accounts",
-                "description": "List the workspace accounts the authenticated user belongs to.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "List the workspace accounts the authenticated user belongs to.\n\nCalled with an OAuth application token, this returns exactly one workspace: the one the user chose when they authorized the application. Use its `id` as the `{accountId}` segment of every other endpoint — a token is bound to a single workspace, and any request naming a different one is refused. This endpoint needs no particular scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "b66118db27c244ca018dd6cf1a9c7a8b",
                 "responses": {
                     "200": {
@@ -718,7 +718,7 @@
                                                     "example": "615605f50e968054a5b7c9b8"
                                                 },
                                                 "verification_method": {
-                                                    "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp (incurs an additional cost and is available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 2 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. Omit to default to `Email`.",
+                                                    "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 2 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. Omit to default to `Email`.",
                                                     "type": "string",
                                                     "enum": [
                                                         "Email",
@@ -728,7 +728,7 @@
                                                     "example": "Email"
                                                 },
                                                 "notification_methods": {
-                                                    "description": "Channels used to notify the signer of the request. Any combination of `Email` and `Whatsapp` (WhatsApp incurs an additional cost and is available only on paid subscriptions). Omit to default to `{\"Email\"}`.",
+                                                    "description": "How the signer is told a signature is being requested. **Exactly one method per signer** — the array shape is historical, and sending two returns `400`. The method must also be compatible with `verification_method`: `Email` verification takes `Email`, `Whatsapp` verification takes `Whatsapp`, and `DigitalCertificate` takes either. WhatsApp incurs an additional cost and is available only on paid subscriptions. Omit it to have it inferred from `verification_method`, or `{\"Email\"}` when neither is sent. See **Verification & Notification Methods** for the full pairing table.",
                                                     "type": "array",
                                                     "items": {
                                                         "type": "string",
@@ -783,7 +783,7 @@
                                         "type": "string"
                                     },
                                     "expires_at": {
-                                        "description": "ISO 8601; default is no expiration.",
+                                        "description": "ISO 8601; default is no expiration. Must be at least one hour in the future.",
                                         "type": "string",
                                         "format": "date-time"
                                     },
@@ -872,7 +872,7 @@
                     "Assignments"
                 ],
                 "summary": "Estimate assignment cost",
-                "description": "Estimate the cost of creating an assignment without creating it, returning a cost breakdown and the current account balances. Signer IDs are not required — only the verification/notification method affects cost. Each assignment consumes 1 document from the plan allowance; if exhausted, an extra document is charged from credits (`needs_extra_document` = true). `blocking_reason` may be `PendingPayment`, `InsufficientDocuments` or `InsufficientCredits`.\n\n### Pricing\n\nPer-unit costs (in credits) used to build the estimate:\n\n| Item | Cost |\n|------|------|\n| Extra document | 1 credit |\n| Email notification | 0 credits |\n| WhatsApp notification | 0.45 credits |\n| Digital certificate signature (per signer) | 2 credits |\n\nA `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=post&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2Festimate-cost) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252Festimate-cost%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252Festimate-cost%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Estimate the cost of creating an assignment without creating it, returning a cost breakdown and the current account balances. Signer IDs are not required — only the verification/notification method affects cost. Each assignment consumes 1 document from the plan allowance; if exhausted, an extra document is charged from credits (`needs_extra_document` = true). `blocking_reason` may be `PendingPayment`, `InsufficientDocuments` or `InsufficientCredits`.\n\n### Pricing\n\nPer-unit costs (in credits) used to build the estimate:\n\n| Item | Cost |\n|------|------|\n| Extra document | 1 credit |\n| Email notification | 0 credits |\n| WhatsApp notification | 0.45 credits |\n| Digital certificate signature (per signer) | 2 credits |\n\nVerification methods are not priced separately — every line in the `breakdown` is a notification or a signature. A `Whatsapp`-verified signer therefore shows up as a WhatsApp notification, because that channel is mandatory for that verification method. A `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=post&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2Festimate-cost) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252Festimate-cost%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252Festimate-cost%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "f3910833e526a79d16f6437ad6a8d215",
                 "parameters": [
                     {
@@ -899,7 +899,7 @@
                                         "items": {
                                             "properties": {
                                                 "verification_method": {
-                                                    "description": "Verification method to price. `Whatsapp` may incur an additional cost; `DigitalCertificate` adds the per-signer signature cost.",
+                                                    "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification.",
                                                     "type": "string",
                                                     "enum": [
                                                         "Email",
@@ -909,7 +909,7 @@
                                                     "example": "Whatsapp"
                                                 },
                                                 "notification_methods": {
-                                                    "description": "Notification channels to price. `Whatsapp` may incur an additional cost.",
+                                                    "description": "The notification channel to price — exactly one per signer, subject to the same pairing rules as **Create assignment**. `Whatsapp` costs 0.45 credits per signer. Omit it to have it inferred from `verification_method`.",
                                                     "type": "array",
                                                     "items": {
                                                         "type": "string",
@@ -1164,7 +1164,7 @@
                             "schema": {
                                 "properties": {
                                     "expires_at": {
-                                        "description": "New expiration date (ISO 8601).",
+                                        "description": "New expiration date (ISO 8601). Must be at least one hour in the future.",
                                         "type": "string",
                                         "format": "date-time",
                                         "example": "2026-12-31T23:59:59Z"
@@ -3154,6 +3154,310 @@
                 ]
             }
         },
+        "/v1/oauth/token": {
+            "post": {
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "Exchange a code, refresh token, or subject token for an access token",
+                "description": "Implements the RFC 6749 §5.1/§5.2 token-endpoint body contract in\n     *         both directions: a successful exchange returns a flat JSON object with\n     *         `access_token` at the top level, and a failure returns a flat\n     *         `{error, error_description}` object — neither is wrapped in this API's\n     *         usual response envelope, since no standard OAuth client library (or MCP\n     *         connector) would find `access_token` or `error` inside a `data` key.\n     *\n     *         The third grant, `urn:ietf:params:oauth:grant-type:token-exchange` (RFC 8693),\n     *         is restricted to a confidential internal-service client (see `/oauth/introspect`)\n     *         and trades a front-end resource's access token (the `subject_token`) for one\n     *         minted for THIS API — the crossing an MCP server makes after a user consents,\n     *         since its own token can never be forwarded here directly. The issued token is\n     *         never wider than the subject: `scope`, when sent, must be a subset of the\n     *         subject's own scopes, and `resource` must equal this API's own resource\n     *         identifier exactly. No refresh token is issued; the caller re-exchanges from\n     *         the user's own token instead of holding unattended API access.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=post&path=%2Fv1%2Foauth%2Ftoken) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Foauth%252Ftoken%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Foauth%252Ftoken%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "operationId": "b214b71efe5b11ac52d79597108ab2ba",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "grant_type",
+                                    "client_id"
+                                ],
+                                "properties": {
+                                    "grant_type": {
+                                        "description": "`urn:ietf:params:oauth:grant-type:token-exchange` is for internal service clients only (Assinafy's own MCP server) — an ordinary confidential or public client authenticates with it and always gets `invalid_client`, exactly as an unrecognized client would. Everyday integrators use `authorization_code` and `refresh_token`.",
+                                        "type": "string",
+                                        "enum": [
+                                            "authorization_code",
+                                            "refresh_token",
+                                            "urn:ietf:params:oauth:grant-type:token-exchange"
+                                        ]
+                                    },
+                                    "code": {
+                                        "type": "string"
+                                    },
+                                    "redirect_uri": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "code_verifier": {
+                                        "description": "RFC 7636: 43-128 characters from [A-Za-z0-9-._~]. Shorter values are rejected with `invalid_grant`.",
+                                        "type": "string"
+                                    },
+                                    "refresh_token": {
+                                        "type": "string"
+                                    },
+                                    "client_id": {
+                                        "type": "string"
+                                    },
+                                    "client_secret": {
+                                        "description": "Confidential clients only. Public clients authenticate with PKCE and are never issued a secret; the token-exchange grant requires a confidential, internal-service client and therefore always requires this.",
+                                        "type": "string"
+                                    },
+                                    "resource": {
+                                        "description": "RFC 8707 resource indicator. For `authorization_code`/`refresh_token`, optional; when present it must be the `resource` value published by /.well-known/oauth-protected-resource and must match the one sent to /authorize, otherwise `invalid_target`. For the token-exchange grant it is REQUIRED and must equal this API's own resource identifier exactly (never a front-end resource such as the MCP server), otherwise `invalid_target`.",
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "subject_token": {
+                                        "description": "Token-exchange grant only. The front-end resource's access token being traded in. Must be a live, original (never itself exchanged) token minted for a resource this server issues tokens for, other than this API's own audience.",
+                                        "type": "string"
+                                    },
+                                    "subject_token_type": {
+                                        "description": "Token-exchange grant only. Required; only `urn:ietf:params:oauth:token-type:access_token` is supported.",
+                                        "type": "string",
+                                        "enum": [
+                                            "urn:ietf:params:oauth:token-type:access_token"
+                                        ]
+                                    },
+                                    "requested_token_type": {
+                                        "description": "Token-exchange grant only. Optional; when present it must agree with the only type this server issues.",
+                                        "type": "string",
+                                        "enum": [
+                                            "urn:ietf:params:oauth:token-type:access_token"
+                                        ]
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The token response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "access_token": {
+                                            "type": "string"
+                                        },
+                                        "issued_token_type": {
+                                            "description": "Present only for the token-exchange grant, per RFC 8693 §2.2.1.",
+                                            "type": "string",
+                                            "example": "urn:ietf:params:oauth:token-type:access_token"
+                                        },
+                                        "token_type": {
+                                            "type": "string",
+                                            "example": "Bearer"
+                                        },
+                                        "expires_in": {
+                                            "description": "For the token-exchange grant, clamped to the subject token's own remaining lifetime as well as the exchanged-token TTL — never longer than either.",
+                                            "type": "integer",
+                                            "example": 3600
+                                        },
+                                        "refresh_token": {
+                                            "description": "Present only when the `offline_access` scope was requested AND consented on the authorization_code/refresh_token grants. Never present for the token-exchange grant. Without it a client must send the user through the authorization flow again once the access token expires.",
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "scope": {
+                                            "description": "The scope of the ACCESS token. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested.",
+                                            "type": "string",
+                                            "example": "documents:read"
+                                        },
+                                        "id_token": {
+                                            "description": "A signed OIDC id_token (RS256). Present only when the openid scope was granted.",
+                                            "type": "string",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "`invalid_grant` (bad, expired, replayed, or wrong-client authorization code; a `code_verifier` outside the RFC 7636 grammar of 43-128 unreserved characters; redirect_uri mismatch; a refresh token whose authorization no longer includes `offline_access`; for token-exchange, a `subject_token` that is unusable, itself an exchanged token, not visible to service clients, or expired), `invalid_target` (a `resource` this server does not issue tokens for, one disagreeing with the authorized value, or — for token-exchange — one other than this API's own resource identifier), `invalid_scope` (token-exchange only: the requested `scope` is not a subset of the subject token's own scopes), `invalid_request` (token-exchange only: an unsupported `subject_token_type`/`requested_token_type`), or `unsupported_grant_type`",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "invalid_grant",
+                                                "invalid_target",
+                                                "invalid_scope",
+                                                "invalid_request",
+                                                "unsupported_grant_type"
+                                            ]
+                                        },
+                                        "error_description": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "`invalid_client` — unknown/disabled client or failed client authentication. The description never reveals whether client_id exists.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "example": "invalid_client"
+                                        },
+                                        "error_description": {
+                                            "type": "string",
+                                            "example": "Client authentication failed."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/v1/oauth/revoke": {
+            "post": {
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "Revoke a token",
+                "description": "Revokes an access or refresh token. Every token outcome always returns 200 — including a token that does not exist, is already revoked, or is malformed — so the endpoint can never be used to probe whether a token exists. The one exception is failed client authentication, which returns 401.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=post&path=%2Fv1%2Foauth%2Frevoke) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Foauth%252Frevoke%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dpost%26path%3D%252Fv1%252Foauth%252Frevoke%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "operationId": "4da9798b52b228fa0be9ddc534b42eee",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "token",
+                                    "client_id"
+                                ],
+                                "properties": {
+                                    "token": {
+                                        "type": "string"
+                                    },
+                                    "token_type_hint": {
+                                        "type": "string",
+                                        "enum": [
+                                            "access_token",
+                                            "refresh_token"
+                                        ]
+                                    },
+                                    "client_id": {
+                                        "type": "string"
+                                    },
+                                    "client_secret": {
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Revoked"
+                    },
+                    "401": {
+                        "description": "`invalid_client` — the only case that is not reported as success. Every token outcome (revoked, already revoked, unknown, malformed) always returns 200; only failed client authentication returns 401.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "example": "invalid_client"
+                                        },
+                                        "error_description": {
+                                            "type": "string",
+                                            "example": "Client authentication failed."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                },
+                "security": []
+            }
+        },
+        "/v1/oauth/userinfo": {
+            "get": {
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "OpenID Connect userinfo",
+                "description": "Claims about the user who authorized this token. Requires the openid scope; name requires profile and email requires email. Per OIDC Core §5.3.2, the response is a flat JSON object of claims — never this API's usual `{status, data, message}` envelope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Foauth%2Fuserinfo) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Foauth%252Fuserinfo%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Foauth%252Fuserinfo%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "operationId": "b920740c01ff33773b9e6c13be139f7f",
+                "responses": {
+                    "200": {
+                        "description": "The user's claims",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "sub": {
+                                            "type": "string",
+                                            "example": "d6zqpbyog2v3xvxerwn8la94"
+                                        },
+                                        "name": {
+                                            "type": "string",
+                                            "example": "Maria Silva",
+                                            "nullable": true
+                                        },
+                                        "email": {
+                                            "type": "string",
+                                            "format": "email",
+                                            "nullable": true
+                                        },
+                                        "email_verified": {
+                                            "type": "boolean",
+                                            "nullable": true
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                },
+                "security": [
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "apiKeyAuth": []
+                    }
+                ]
+            }
+        },
         "/v1/documents/{documentId}/thumbnail": {
             "get": {
                 "tags": [
@@ -4050,8 +4354,9 @@
                                 ],
                                 "properties": {
                                     "decline_reason": {
-                                        "description": "Descriptive reason for declining.",
+                                        "description": "Descriptive reason for declining. Up to 2000 characters; longer values return 400.",
                                         "type": "string",
+                                        "maxLength": 2000,
                                         "example": "I do not agree with clause 2."
                                     }
                                 },
@@ -4204,8 +4509,9 @@
                                         ]
                                     },
                                     "decline_reason": {
-                                        "description": "Reason for declining.",
+                                        "description": "Reason for declining. Up to 2000 characters; longer values return 400.",
                                         "type": "string",
+                                        "maxLength": 2000,
                                         "example": "Unfavorable terms."
                                     }
                                 },
@@ -5526,7 +5832,7 @@
                                         "example": "Message to the signers"
                                     },
                                     "expires_at": {
-                                        "description": "Assignment expiration date (ISO 8601). No expiration by default.",
+                                        "description": "Assignment expiration date (ISO 8601). No expiration by default. Must be at least one hour in the future.",
                                         "type": "string",
                                         "format": "date-time",
                                         "example": "2024-07-30T23:59:00Z"
@@ -5633,7 +5939,7 @@
                                                     "example": "fa8c14f32d732271e071998246e"
                                                 },
                                                 "verification_method": {
-                                                    "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` adds the per-signer signature cost (2 credits) on top of the notification cost.",
+                                                    "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (2 credits) on top of the notification cost.",
                                                     "type": "string",
                                                     "enum": [
                                                         "Email",
@@ -5643,7 +5949,7 @@
                                                     "example": "Whatsapp"
                                                 },
                                                 "notification_methods": {
-                                                    "description": "Notification methods. If provided without verification_method, the verification method is inferred. Defaults to Email.",
+                                                    "description": "Notification method for this signer — exactly one, and it must be compatible with `verification_method`. If provided without verification_method, the verification method is inferred. Defaults to Email.",
                                                     "type": "array",
                                                     "items": {
                                                         "type": "string"
@@ -5924,7 +6230,7 @@
                     "Webhooks"
                 ],
                 "summary": "Get webhook subscription",
-                "description": "Retrieve the current webhook subscription for the account — which events it is subscribed to and the delivery configuration.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Fsubscriptions) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Retrieve the current webhook subscription for the account — which events it is subscribed to and the delivery configuration. Requires the `account:read` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Fsubscriptions) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "81205c8f43a00de885e2a7a10baaa799",
                 "parameters": [
                     {
@@ -5976,7 +6282,7 @@
                     "Webhooks"
                 ],
                 "summary": "Update webhook subscription",
-                "description": "Update the webhook subscription settings for the account — which events are monitored, whether delivery is enabled, and the delivery/contact details.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Fsubscriptions) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Update the webhook subscription settings for the account — which events are monitored, whether delivery is enabled, and the delivery/contact details. Requires the `webhooks:write` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Fsubscriptions) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Fsubscriptions%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "fc079cca354608b0297d562bc1484a68",
                 "parameters": [
                     {
@@ -6079,7 +6385,7 @@
                     "Webhooks"
                 ],
                 "summary": "Inactivate webhook subscription",
-                "description": "Deactivate the webhook integration for the account. While inactive, no events are sent to the configured endpoint.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Finactivate) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Finactivate%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Finactivate%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Deactivate the webhook integration for the account. While inactive, no events are sent to the configured endpoint. Requires the `webhooks:write` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks%2Finactivate) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Finactivate%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%252Finactivate%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "9722ccd8cf4087eda5704683314bc048",
                 "parameters": [
                     {
@@ -6133,7 +6439,7 @@
                     "Webhooks"
                 ],
                 "summary": "List webhook event types",
-                "description": "List all available event types that can be subscribed to via webhooks.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fwebhooks%2Fevent-types) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fwebhooks%252Fevent-types%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fwebhooks%252Fevent-types%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "List all available event types that can be subscribed to via webhooks. Requires the `documents:read` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fwebhooks%2Fevent-types) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fwebhooks%252Fevent-types%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fwebhooks%252Fevent-types%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "edb3edf6034dc41853a5bac6d217cd00",
                 "responses": {
                     "200": {
@@ -6185,7 +6491,7 @@
                     "Webhooks"
                 ],
                 "summary": "List webhook deliveries",
-                "description": "Retrieve the delivery history for webhooks sent to the account's configured endpoint — use it to monitor status, debug failures, and verify payloads. Pagination is returned in the `X-Pagination-*` response headers.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Retrieve the delivery history for webhooks sent to the account's configured endpoint — use it to monitor status, debug failures, and verify payloads. Pagination is returned in the `X-Pagination-*` response headers. Requires the `documents:read` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Faccounts%2F%7BaccountId%7D%2Fwebhooks) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Faccounts%252F%257BaccountId%257D%252Fwebhooks%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "adde7634a149a81406fac17636a96c99",
                 "parameters": [
                     {
@@ -6359,13 +6665,65 @@
                 ]
             }
         },
+        "/.well-known/oauth-protected-resource": {
+            "get": {
+                "tags": [
+                    "OAuth"
+                ],
+                "summary": "OAuth 2.0 protected resource metadata",
+                "description": "RFC 9728. Identifies this API as a protected resource, the\n     *         authorization server(s) that can issue tokens for it, and the scopes it\n     *         accepts. `scopes_supported` deliberately excludes `offline_access` — per the\n     *         MCP specification, requesting a refresh token is a client concern, not\n     *         something a resource is protected by. Also referenced from the\n     *         `WWW-Authenticate: Bearer resource_metadata=\"...\"` challenge on a 401/403.\n     *         Per RFC 8615, the response is the bare metadata object itself — never this\n     *         API's usual `{status, data, message}` envelope. The `authorization_servers` entry names the host that owns the browser-facing flow — start every integration by fetching `{authorization_servers[0]}/.well-known/oauth-authorization-server` (RFC 8414) from there, not from this API.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2F.well-known%2Foauth-protected-resource) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252F.well-known%252Foauth-protected-resource%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252F.well-known%252Foauth-protected-resource%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "operationId": "94f8ad95c46aea75be0241484f573ed6",
+                "responses": {
+                    "200": {
+                        "description": "The protected resource metadata",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "resource": {
+                                            "type": "string",
+                                            "format": "uri"
+                                        },
+                                        "authorization_servers": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "format": "uri"
+                                            }
+                                        },
+                                        "scopes_supported": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "bearer_methods_supported": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string",
+                                                "example": "header"
+                                            }
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "$ref": "#/components/responses/ServerError"
+                    }
+                },
+                "security": []
+            }
+        },
         "/v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications": {
             "get": {
                 "tags": [
                     "Assignments"
                 ],
                 "summary": "List WhatsApp notifications",
-                "description": "List all WhatsApp notification messages sent for an assignment. The response includes the rendered template text split into `header`, `body` and `buttons` — exactly what the signer would see. In sandbox/stage, WhatsApp messages are simulated (no real delivery) and button URLs include access/verification codes you can use to simulate the signing flow.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2F%7BassignmentId%7D%2Fwhatsapp-notifications) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Fwhatsapp-notifications%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Fwhatsapp-notifications%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "List all WhatsApp notification messages sent for an assignment. The response includes the rendered template text split into `header`, `body` and `buttons` — exactly what the signer would see. In sandbox/stage, WhatsApp messages are simulated (no real delivery) and button URLs include access/verification codes you can use to simulate the signing flow; in production the button URLs are stripped. Requires the `documents:read` OAuth scope.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2F%7BassignmentId%7D%2Fwhatsapp-notifications) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Fwhatsapp-notifications%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Fwhatsapp-notifications%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "e7a9cf679bb6b562b2d46c3df1adb457",
                 "parameters": [
                     {
@@ -6746,7 +7104,7 @@
                         "example": "metadata_ready"
                     },
                     "artifacts": {
-                        "description": "Artifact download URLs keyed by name (original, certificated, certificate-page, bundle).",
+                        "description": "Artifact download URLs keyed by name. Always `original`, plus `thumbnail` once one exists. A certificated document also carries `certificated`, `certificate-page` and `bundle`, and `pades` when it was signed with a digital certificate — the PAdES version holds the signers' ICP-Brasil signatures, which certification flattens out of the certificated PDF.",
                         "type": "object",
                         "example": {
                             "original": "https://api.assinafy.com.br/v1/documents/doc1/download/original"
@@ -7926,6 +8284,34 @@
                     }
                 }
             },
+            "Forbidden": {
+                "description": "Authenticated but not allowed to perform this action.",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/ErrorEnvelope"
+                                },
+                                {
+                                    "properties": {
+                                        "status": {
+                                            "type": "integer",
+                                            "example": 403
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "You are not allowed to perform this action."
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            ]
+                        }
+                    }
+                }
+            },
             "NotFound": {
                 "description": "The requested resource does not exist.",
                 "content": {
@@ -8511,18 +8897,56 @@
                 "description": "One-time signer access code used by signer-facing (Signing) endpoints instead of a user token.",
                 "name": "signer-access-code",
                 "in": "query"
+            },
+            "oauth2": {
+                "type": "oauth2",
+                "description": "OAuth 2.1 authorization code flow with mandatory PKCE (S256), for applications and AI assistants acting in a user's workspace with that user's permission — as opposed to `apiKeyAuth`/`bearerAuth`, which authenticate the workspace or user directly. A token carries only the scopes the user approved and works for one workspace. Endpoints are published by the authorization server at `https://auth.assinafy.com.br/.well-known/oauth-authorization-server`. An OAuth token cannot reach billing, account lifecycle, credential management or admin surfaces regardless of scope. A missing scope answers `403` with `WWW-Authenticate: Bearer error=\"insufficient_scope\"` naming it. See **OAuth Integration Guide** for the full flow.",
+                "flows": {
+                    "authorizationCode": {
+                        "authorizationUrl": "https://auth.assinafy.com.br/oauth/authorize",
+                        "tokenUrl": "https://api.assinafy.com.br/v1/oauth/token",
+                        "refreshUrl": "https://api.assinafy.com.br/v1/oauth/token",
+                        "scopes": {
+                            "documents:read": "Read documents, their pages, tags, signers, assignments and activity, and the WhatsApp notifications sent for an assignment.",
+                            "documents:write": "Create, update and delete documents, and manage their signers, assignments and activity.",
+                            "templates:read": "Read reusable document templates, their pages, roles, fields and tags.",
+                            "templates:write": "Create, update and delete templates, their pages, roles, fields and tags.",
+                            "account:read": "Read the workspace's profile, theme and logo.",
+                            "webhooks:write": "Change the workspace's webhook subscription (delivery URL, events, contact email) and deactivate it.",
+                            "openid": "Identify the authenticated user (OpenID Connect `sub` claim) and enable the `/v1/oauth/userinfo` endpoint.",
+                            "profile": "Include the user's name in the `id_token`/userinfo claims.",
+                            "email": "Include the user's email and its verification status in the `id_token`/userinfo claims.",
+                            "offline_access": "Request a refresh token, so the app keeps working after the user's session expires without prompting them again. Only granted to a client that explicitly asks for it."
+                        }
+                    }
+                }
             }
         }
     },
     "tags": [
         {
             "name": "Quick Start",
-            "description": "Steps to quickly start using the API. By the end you'll be able to create a document and invite signers.\n\n### 1. Create a user account\n\nDuring development, create a user account in the **sandbox** (https://app-sandbox.assinafy.com.br). For integrations using an API key, create a *separate* user account (e.g. *My App*) so you can grant it only the access it needs. Use the production app (https://app.assinafy.com.br) once you go live.\n\n### 2. Set up credentials\n\nGenerate an **API key** from the *My Account → API* page in the Assinafy app, and note your **workspace account ID** from *My Account → Workspaces*. Use the API key only from a back-end system — never store it in client-side code.\n\nFor sandbox plan/credit purchases, use the test card `5510 3647 0363 3414`.\n\n### 3. Upload a document\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/documents\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -F 'file=@/tmp/document.pdf'\n```\n\nSave the returned document `id` for the next steps.\n\n### 4. Create signers\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/signers\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"full_name\": \"John Dove\", \"email\": \"john@example.com\" }'\n```\n\nSave each signer `id`.\n\n### 5. Request signatures\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/documents/{document_id}/assignments\" \\\\\n  -H 'X-Api-Key: {api_key}' \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{ \"method\": \"virtual\", \"signerIds\": [\"{signer_id}\"] }'\n```\n\nThe `virtual` method requires no input from the signer. To collect input fields, use the `collect` method — see the Assignment section.",
+            "description": "Steps to quickly start using the API. By the end you'll be able to create a document and invite signers.\n\n### 1. Create a user account\n\nDuring development, create a user account in the **sandbox** (https://app-sandbox.assinafy.com.br). For integrations using an API key, create a *separate* user account (e.g. *My App*) so you can grant it only the access it needs. Use the production app (https://app.assinafy.com.br) once you go live.\n\n### 2. Set up credentials\n\nGenerate an **API key** from the *My Account → API* page in the Assinafy app, and note your **workspace account ID** from *My Account → Workspaces*. Use the API key only from a back-end system — never store it in client-side code.\n\nFor sandbox plan/credit purchases, use the test card `5510 3647 0363 3414`.\n\n### 3. Upload a document\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/documents\" \\\n  -H 'X-Api-Key: {api_key}' \\\n  -F 'file=@/tmp/document.pdf'\n```\n\nSave the returned document `id` for the next steps.\n\n### 4. Create signers\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/accounts/{account_id}/signers\" \\\n  -H 'X-Api-Key: {api_key}' \\\n  -H 'Content-Type: application/json' \\\n  -d '{ \"full_name\": \"John Dove\", \"email\": \"john@example.com\" }'\n```\n\nSave each signer `id`.\n\n### 5. Request signatures\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/documents/{document_id}/assignments\" \\\n  -H 'X-Api-Key: {api_key}' \\\n  -H 'Content-Type: application/json' \\\n  -d '{ \"method\": \"virtual\", \"signers\": [{ \"id\": \"{signer_id}\" }] }'\n```\n\nThe `virtual` method requires no input from the signer. To collect input fields, use the `collect` method — see the Assignment section.",
+            "x-content": true
+        },
+        {
+            "name": "SDKs & Tools",
+            "description": "Official client libraries, a command-line tool, an MCP server and an n8n node — all built against the same OpenAPI document that generates this reference. Source for everything lives at [github.com/assinafy](https://github.com/assinafy).\n\nEvery SDK exposes the same operations and reads the same credentials:\n\n| Variable | Meaning |\n|----------|---------|\n| `ASSINAFY_API_KEY` | API key, sent as the `X-Api-Key` header. Create it from *My Account → API*. |\n| `ASSINAFY_ACCOUNT_ID` | Workspace account id, from *My Account → Workspaces*. |\n| `ASSINAFY_BASE_URL` | `https://sandbox.assinafy.com.br/v1` while developing, `https://api.assinafy.com.br/v1` in production. |\n\nAn API key is a long-lived secret with full workspace access. Use it only from a back-end system — never in a browser bundle or a shipped mobile app.\n\n## Server-side SDKs\n\n| Language | Package | Install | Source |\n|----------|---------|---------|--------|\n| TypeScript / Node | `@assinafy/sdk` | `npm install @assinafy/sdk` | [typescript-sdk](https://github.com/assinafy/typescript-sdk) |\n| Python | `assinafy` | `pip install assinafy` | [python-sdk](https://github.com/assinafy/python-sdk) |\n| Ruby | `assinafy` | `gem \"assinafy\"` | [ruby-sdk](https://github.com/assinafy/ruby-sdk) |\n| Go | `github.com/assinafy/golang-sdk` | `go get github.com/assinafy/golang-sdk` | [golang-sdk](https://github.com/assinafy/golang-sdk) |\n| Rust | `assinafy` | `cargo add assinafy` | [rust-sdk](https://github.com/assinafy/rust-sdk) |\n| C# / .NET | `Assinafy.Sdk` | `dotnet add package Assinafy.Sdk` | [csharp-sdk](https://github.com/assinafy/csharp-sdk) |\n| Java | `com.assinafy:assinafy-sdk` | GitHub Packages — see below | [java-sdk](https://github.com/assinafy/java-sdk) |\n| PHP | `assinafy/php-sdk` | `composer require assinafy/php-sdk` | [php-sdk](https://github.com/assinafy/php-sdk) |\n\nRuntime floors are current-generation: Node 22+, Python 3.10+, Ruby 3.2+, Go 1.26+, Rust 1.86+, .NET 8+, JDK 25, PHP 8.2+.\n\n### Which Java package?\n\nTwo Java artifacts exist and they are close to identical — both ship `com.assinafy.sdk.AssinafyClient` covering the same operations. Use **java-sdk** (`com.assinafy:assinafy-sdk`) for new integrations. **webforms-java-client** (`com.assinafy:webforms-java-client-sdk`, [source](https://github.com/assinafy/webforms-java-client)) is the same client with an older setter-style options builder, kept for integrations already on it; despite the name it carries no webforms-specific API.\n\nNeither is published to Maven Central. Both resolve from GitHub Packages at `https://maven.pkg.github.com/assinafy/{repository}`, which requires a GitHub personal access token with `read:packages` even for public artifacts.\n\n### Which TypeScript package?\n\n`@assinafy/sdk` is the general-purpose REST client and the right default. [`@assinafy/chat-sdk`](https://github.com/assinafy/chat-sdk) bundles that same client *plus* chat orchestration, renderable cards, adapter and state contracts, and provider-neutral AI tool definitions — reach for it only when you are building a conversational signing experience.\n\n## Mobile SDKs\n\n| Platform | Install | Source |\n|----------|---------|--------|\n| iOS / macOS | SwiftPM — add the package URL `https://github.com/assinafy/mobile-ios-sdk.git` and pin *Up to Next Major* from the current release | [mobile-ios-sdk](https://github.com/assinafy/mobile-ios-sdk) |\n| Android | Gradle — `implementation(\"com.assinafy:assinafy-android-sdk:{version}\")`, resolved from GitHub Packages (token required) | [mobile-android-sdk](https://github.com/assinafy/mobile-android-sdk) |\n\nBoth are released on GitHub Releases; take the current version from the *Releases* page of the repository rather than a number quoted here.\n\n**Never embed an account API key in a distributed app.** A key extracted from an app bundle grants full access to the workspace. Have the app authenticate against your own back end and receive a short-lived access token, or keep account operations server-side entirely.\n\n## Command line\n\n[`@assinafy/cli`](https://github.com/assinafy/assinafy-cli) exposes the API as a terminal tool: readable tables by default, `--json` for scripting, and named profiles so sandbox and production credentials stay apart.\n\n```shell\nnpm install -g @assinafy/cli\nassinafy login\nassinafy send contract.pdf --signer \"Ana Lima <ana@example.com>\" --message \"Please sign this contract\"\n```\n\n## MCP server\n\nA Model Context Protocol server that lets an AI assistant work with documents in your workspace. It is **hosted by Assinafy — there is nothing to install or deploy**.\n\n| | |\n|---|---|\n| Endpoint | `POST https://mcp.assinafy.com.br/mcp` |\n| Transport | Streamable HTTP (remote) |\n| Authentication | `X-Api-Key: {api_key}` and `X-Assinafy-Account-Id: {account_id}` |\n\nConfigure it in your MCP client as a **remote HTTP** server carrying those two headers — there is no local command to run. Credentials are scoped to the request and are never stored. Documentation: [mcp-server](https://github.com/assinafy/mcp-server).\n\nThirteen tools are exposed:\n\n- **Documents** — `assinafy_send_document_for_signature`, `assinafy_list_documents`, `assinafy_get_document`, `assinafy_get_signing_progress`, `assinafy_download_document`, `assinafy_download_signed_document`, `assinafy_delete_document`, `assinafy_verify_document`\n- **Templates** — `assinafy_list_templates`, `assinafy_get_template`, `assinafy_create_document_from_template`\n- **Signature requests** — `assinafy_reset_assignment_expiration`, `assinafy_resend_notification`\n\nAccount, member, API-key and webhook management are deliberately not exposed to assistants. Use the REST API for those.\n\n## n8n\n\n[`@assinafy/n8n-nodes-assinafy`](https://github.com/assinafy/n8n-nodes-assinafy) ships three pieces: an **Assinafy** action node covering assignments, documents, fields, signers, tags, templates, webhooks and workspaces; an **Assinafy Trigger** webhook node; and a shared **Assinafy API** credential holding the API key, the account id and the environment (production, sandbox or a custom base URL).\n\nOn self-hosted n8n, open **Settings → Community Nodes** and enter `@assinafy/n8n-nodes-assinafy`, or install it in the n8n container directly:\n\n```shell\nnpm install @assinafy/n8n-nodes-assinafy\n```\n\nThe Trigger node derives its webhook URL authentication from the credential and can additionally verify an HMAC-SHA256 payload signature, so a subscription created from n8n needs no extra webhook setup on the Assinafy side. Availability in n8n Cloud follows n8n's own community-node review.\n\n## In practice\n\n```javascript\nimport { AssinafyClient } from '@assinafy/sdk';\n\nconst client = new AssinafyClient({\n  apiKey: process.env.ASSINAFY_API_KEY,\n  accountId: process.env.ASSINAFY_ACCOUNT_ID,\n});\n\nconst result = await client.uploadAndRequestSignatures({\n  source: { filePath: './contract.pdf' },\n  signers: [{ name: 'John Dove', email: 'john@example.com' }],\n  message: 'Please sign this contract',\n});\n\nconsole.log(result.document.id);\n```\n\n```python\nimport os\nfrom assinafy import AssinafyClient\n\nwith AssinafyClient(\n    api_key=os.environ['ASSINAFY_API_KEY'],\n    account_id=os.environ['ASSINAFY_ACCOUNT_ID'],\n) as client:\n    result = client.upload_and_request_signatures(\n        source={'file_path': './contract.pdf'},\n        signers=[{'full_name': 'John Dove', 'email': 'john@example.com'}],\n        message='Please sign this contract',\n    )\n    print(result['document']['id'])\n```",
+            "x-content": true
+        },
+        {
+            "name": "OpenAPI & API Clients",
+            "description": "This reference is generated from a single OpenAPI 3.0 document. You can download that document and load it into any OpenAPI-aware tool — Postman, Insomnia, a code generator, or your editor.\n\n## Download the spec\n\nThe document is served at `https://api.assinafy.com.br/v1/docs/openapi.json` and always describes what is currently deployed:\n\n```shell\ncurl -o assinafy-openapi.json \"https://api.assinafy.com.br/v1/docs/openapi.json\"\n```\n\n\n## Postman\n\nThere are two ways in.\n\n**Fork the ready-made collection.** Open the [Assinafy Postman collection](https://www.postman.com/devassinafy/dev-assinafy-s-workspace/collection/tqqxlsd/assinafy-api-collection), select the Assinafy Collection, then **Fork** it into your own workspace.\n\n**Or import the spec yourself:**\n\n1. **Import → Link**, paste `https://api.assinafy.com.br/v1/docs/openapi.json` and confirm. Postman creates a request for every operation, grouped by section.\n2. On the new collection, open **Authorization**, choose **API Key**, set *Key* to `X-Api-Key`, *Value* to `{{api_key}}` and *Add to* **Header**. Every request inherits it.\n3. Create an **environment** holding `base_url` (`https://sandbox.assinafy.com.br/v1` while developing) and `api_key`. Keep the key in the environment rather than the collection so it does not travel with an exported or shared collection.\n\n## Insomnia\n\n1. **Create → Import → From URL**, paste `https://api.assinafy.com.br/v1/docs/openapi.json`.\n2. Open **Manage Environments** on the imported collection and add:\n\n```json\n{\n  \"base_url\": \"https://sandbox.assinafy.com.br/v1\",\n  \"api_key\": \"your-api-key\"\n}\n```\n\n3. On the collection's **Headers** tab add `X-Api-Key` with value `{{ _.api_key }}` so every request inherits it.\n\nSwitching between sandbox and production is then a matter of selecting a different environment.\n\n## Generate your own client\n\nThe document works with the usual generators:\n\n```shell\nnpx @openapitools/openapi-generator-cli generate \\\n  -i https://api.assinafy.com.br/v1/docs/openapi.json \\\n  -g python \\\n  -o ./assinafy-client\n```\n\nWorth weighing first: the official SDKs listed under *SDKs & Tools* already unwrap the `{ status, message, data }` envelope, surface the `X-Pagination-*` response headers as pagination objects, and handle multipart document upload. A generated client hands you the raw envelope on every call and leaves that work to you.",
             "x-content": true
         },
         {
             "name": "Authentication",
-            "description": "Authentication can be done in three ways:\n\n- API key in the `X-Api-Key` header: `X-Api-Key: {api-key}`\n- Access token in the `Authorization` header: `Authorization: Bearer {access-token}`\n- Access token as a URL parameter: `?access-token={access-token}`\n\nThe **recommended** method is an API key, which you create from the settings page in the Assinafy app. An access token is obtained through login with email and password; it is a JWT that usually expires in one hour."
+            "description": "Authentication can be done in three ways:\n\n- API key in the `X-Api-Key` header: `X-Api-Key: {api-key}`\n- Access token in the `Authorization` header: `Authorization: Bearer {access-token}`\n- Access token as a URL parameter: `?access-token={access-token}`\n\nThe **recommended** method is an API key, which you create from the settings page in the Assinafy app. An access token is obtained through login with email and password; it is a JWT that usually expires in one hour.\n\nBuilding an application that **other people** connect to their own workspace? Don't ask for their API key: use OAuth, which gives your app a token limited to what the user approved. See **OAuth Integration Guide**."
+        },
+        {
+            "name": "OAuth Integration Guide",
+            "description": "Build an application that **other people connect to their own Assinafy workspace**, without ever handling their password or API key. The user approves your app once; you receive tokens limited to the permissions they approved and to one workspace. Standard OAuth 2.1 and OpenID Connect libraries work unchanged.\n\n### Do you need OAuth?\n\n| | API key | OAuth |\n|---|---|---|\n| Acts on | **Your own** workspace | **Someone else's** workspace, with their permission |\n| Can do | Everything your account can do | Only what the user approved |\n| The user can switch it off | No | Yes, at any time |\n| Choose it when | You automate your own account | You build an app that other people connect |\n\nAutomating your own workspace? Keep using your API key; nothing in this guide applies.\n\n### How it works\n\n1. Your app sends the user's browser to the authorization server, `https://auth.assinafy.com.br`.\n2. The user signs in, picks **one** workspace and approves your app.\n3. The browser comes back to your site with a one-time code.\n4. Your server exchanges the code for tokens at `https://api.assinafy.com.br/v1/oauth/token`.\n5. Your server calls this API with `Authorization: Bearer <access_token>`.\n\nTwo hosts on purpose: the browser page lives on the authorization server, and everything your code calls lives on this API.\n\n### Create your application\n\nYou must be an **owner** of the workspace that will own the application, and the workspace's plan must include OAuth applications. In the Assinafy app (https://app.assinafy.com.br), open **Settings → OAuth applications → New application**.\n\n| Field | What to put |\n|---|---|\n| Name | What users see on the approval screen |\n| Description | One sentence on what the app does with their documents |\n| Logo URL | Optional, an `https://` image |\n| Redirect URIs | Where users return after approving, e.g. `https://myapp.com/oauth/callback`. Must be `https://`, without `#`, and is matched **exactly**: `…/callback` and `…/callback/` are different. Add one per environment you run. For local development use an https tunnel; `http://localhost` is not accepted |\n| Permissions | The **most** your app will ever request. You can ask for less at connect time, never more |\n| Type | **Confidential** if your code runs on a server you control; **Public** if it runs on the user's device and cannot keep a secret. Cannot be changed later |\n\nYou get a `client_id` (public) and, for Confidential apps, a `client_secret`.\n\n> **The secret is shown once.** Store it in your server's secret storage straight away. If it is lost, rotate it: the old secret stops working immediately, so deploy the new one at once. Deleting the application disconnects every user immediately.\n\nBuilding one product that **many different Assinafy customers** will connect? Talk to us first: we can register it as a verified application owned by no single workspace, with one `client_id` for every customer.\n\n### Discovery\n\nMost OAuth libraries only need the issuer, `https://auth.assinafy.com.br`, and read the rest from its metadata document. If you configure URLs by hand, copy them from there:\n\n```shell\ncurl \"https://auth.assinafy.com.br/.well-known/oauth-authorization-server\"\n```\n\n```json\n{\n  \"issuer\": \"https://auth.assinafy.com.br\",\n  \"authorization_endpoint\": \"https://auth.assinafy.com.br/oauth/authorize\",\n  \"token_endpoint\": \"https://api.assinafy.com.br/v1/oauth/token\",\n  \"revocation_endpoint\": \"https://api.assinafy.com.br/v1/oauth/revoke\",\n  \"userinfo_endpoint\": \"https://api.assinafy.com.br/v1/oauth/userinfo\",\n  \"jwks_uri\": \"https://auth.assinafy.com.br/.well-known/jwks.json\",\n  \"response_types_supported\": [\"code\"],\n  \"grant_types_supported\": [\"authorization_code\", \"refresh_token\"],\n  \"code_challenge_methods_supported\": [\"S256\"],\n  \"token_endpoint_auth_methods_supported\": [\"client_secret_post\", \"none\"]\n}\n```\n\nThe metadata and key documents are served **only** by the authorization server. This API serves its own protected-resource metadata at `https://api.assinafy.com.br/.well-known/oauth-protected-resource`.\n\n### Connect a user\n\n#### 1. Create a PKCE pair and a state\n\nPKCE is required for **every** application, Confidential ones included. Create a new pair for each connection attempt:\n\n```js\nimport crypto from 'node:crypto';\n\nconst b64url = (buf) => buf.toString('base64url');\n\nconst codeVerifier  = b64url(crypto.randomBytes(32));\nconst codeChallenge = b64url(crypto.createHash('sha256').update(codeVerifier).digest());\nconst state         = b64url(crypto.randomBytes(16));\n\n// Keep codeVerifier and state in the user's session: step 3 and 4 need them.\n```\n\nThe verifier must be 43 to 128 characters from `A-Z a-z 0-9 - . _ ~`.\n\n#### 2. Send the browser to the authorization server\n\nUse a full page navigation (a link or a redirect), not an AJAX call. Shown unencoded for readability; URL-encode every value:\n\n```\nhttps://auth.assinafy.com.br/oauth/authorize\n  ?response_type=code\n  &client_id=YOUR_CLIENT_ID\n  &redirect_uri=https://myapp.com/oauth/callback\n  &scope=documents:read documents:write offline_access\n  &state=STATE\n  &code_challenge=CODE_CHALLENGE\n  &code_challenge_method=S256\n  &resource=https://api.assinafy.com.br\n```\n\n| Parameter | Notes |\n|---|---|\n| `redirect_uri` | One of your registered URIs, character for character |\n| `scope` | Space-separated, within what the application is registered for |\n| `state` | Random per attempt; your CSRF protection |\n| `code_challenge_method` | Only `S256` |\n| `resource` | `https://api.assinafy.com.br`, naming the API the token is for. Recommended |\n| `nonce` | Optional, echoed in the `id_token` when you request `openid` |\n\nIf the `client_id` or `redirect_uri` is wrong, the user is **not** sent back to you: the authorization server shows an error on its own page, because redirecting to an unverified address would be unsafe. Users reporting that they are stuck on an Assinafy error page usually means one of those two values is wrong.\n\n#### 3. Handle the return\n\nApproved:\n\n```\nhttps://myapp.com/oauth/callback?code=…&state=…&iss=https://auth.assinafy.com.br\n```\n\nDeclined or invalid:\n\n```\nhttps://myapp.com/oauth/callback?error=access_denied&error_description=…&state=…&iss=https://auth.assinafy.com.br\n```\n\nBefore anything else, check that `state` equals what you stored and that `iss` equals `https://auth.assinafy.com.br`. If either differs, stop: the response is not yours.\n\n#### 4. Exchange the code for tokens\n\nFrom your server. The code is single-use and expires **60 seconds** after approval.\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/oauth/token\" \\\n  -H 'Content-Type: application/x-www-form-urlencoded' \\\n  -d grant_type=authorization_code \\\n  -d code=THE_CODE \\\n  -d redirect_uri=https://myapp.com/oauth/callback \\\n  -d client_id=YOUR_CLIENT_ID \\\n  -d client_secret=YOUR_CLIENT_SECRET \\\n  -d code_verifier=THE_CODE_VERIFIER \\\n  -d resource=https://api.assinafy.com.br\n```\n\nPublic applications send the same request without `client_secret`.\n\n```json\n{\n  \"access_token\": \"…\",\n  \"token_type\": \"Bearer\",\n  \"expires_in\": 3600,\n  \"scope\": \"documents:read documents:write offline_access\",\n  \"refresh_token\": \"…\",\n  \"id_token\": \"…\"\n}\n```\n\n- `refresh_token` is present only when you requested `offline_access`; `id_token` only when you requested `openid`.\n- `scope` is what you **actually** received. Read it instead of assuming.\n- OAuth token responses are plain JSON objects, not wrapped in the `{ status, message, data }` envelope the rest of this API uses.\n\n#### 5. Find the workspace, then call the API\n\nA token belongs to the one workspace the user picked. With an OAuth token, the workspace list returns exactly that workspace:\n\n```shell\ncurl \"https://api.assinafy.com.br/v1/accounts\" \\\n  -H 'Authorization: Bearer ACCESS_TOKEN'\n```\n\nStore `data[0].id` next to the tokens, then call the API:\n\n```shell\ncurl \"https://api.assinafy.com.br/v1/accounts/WORKSPACE_ID/documents\" \\\n  -H 'Authorization: Bearer ACCESS_TOKEN'\n```\n\nAlways send the token in the `Authorization: Bearer` header. A token sent as `X-Api-Key` or in the query string is refused.\n\n### Permissions (scopes)\n\n| Scope | Lets your app |\n|---|---|\n| `documents:read` | Read documents, their signers, assignments and activity, the WhatsApp notifications sent for an assignment, and webhook event types and delivery history |\n| `documents:write` | Create documents and send them for signature |\n| `templates:read` | Read templates |\n| `templates:write` | Create and change templates |\n| `account:read` | Read the workspace's profile, theme and logo, and read the workspace's webhook subscription |\n| `webhooks:write` | Change where and which webhook events are delivered, and deactivate the webhook subscription |\n| `openid` | Receive an `id_token` identifying the user |\n| `profile` | Read the user's name |\n| `email` | Read the user's email and whether it is verified |\n| `offline_access` | Receive a refresh token, to keep working while the user is away |\n\n- Request the minimum. Every permission is another line the user reads before deciding.\n- `documents:write` can spend the workspace's notification credits, since sending for signature notifies signers.\n- The user approves everything you requested, or nothing. If a feature needs more later, run the flow again requesting the larger set.\n- Billing and subscriptions, workspace membership, credentials and administration are **never** available to an OAuth token, whatever its scopes.\n\nCalling an endpoint without the scope it requires returns `403` with a challenge naming the missing scope:\n\n```\nWWW-Authenticate: Bearer error=\"insufficient_scope\", scope=\"documents:write\", resource_metadata=\"https://api.assinafy.com.br/.well-known/oauth-protected-resource\"\n```\n\nTreat it as a prompt to reconnect with that scope added, not as a request to retry. A `403` without this header has another cause: a different workspace, the user's own role, or an area OAuth tokens can never reach.\n\n### Resource indicators\n\n`resource` (RFC 8707) names **which service** a token is for. Omit it and you get a token for\nthis API — that is what every direct integration wants, and nothing about it has changed.\n\nAssinafy also runs a separate MCP server, which is its own protected resource. A token minted\nfor it authenticates against *that* server and is refused here, and the reverse is also true.\nIf you are calling this API directly, send `https://api.assinafy.com.br` or omit the parameter.\n\nA refresh may repeat the original `resource` but never change it; a different value is\nrejected with `invalid_target`.\n\n> **Operator note.** The confidential client backing Assinafy's own MCP server is an\n> **internal-service client** (`is_internal_service`), provisioned outside this\n> self-serve flow. It has no `redirect_uris` and cannot pass through the ordinary\n> secret-rotation endpoint — that write requires `redirect_uris` under the client's\n> default validation scenario, which an internal-service client deliberately has none\n> of. If its secret leaks, the recovery path is **disable the client and provision a\n> new one**, then reconfigure the MCP server with the new credentials — not \"rotate the\n> secret.\"\n\n### One connection, one workspace\n\nThe integration mistake we see most often. A token works only for the workspace the user chose; calling any other workspace returns `403`, even one the same user belongs to. If your customer uses several workspaces, connect each one separately and keep tokens per workspace.\n\n### Refresh tokens\n\nAccess tokens last **1 hour**. With `offline_access`, renew them without the user:\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/oauth/token\" \\\n  -H 'Content-Type: application/x-www-form-urlencoded' \\\n  -d grant_type=refresh_token \\\n  -d refresh_token=CURRENT_REFRESH_TOKEN \\\n  -d client_id=YOUR_CLIENT_ID \\\n  -d client_secret=YOUR_CLIENT_SECRET\n```\n\nEvery refresh returns a **new** refresh token and retires the old one.\n\n> **Using an old refresh token disconnects the user.** A reused refresh token cannot be told apart from a stolen one being replayed, so it ends the whole connection: every token stops working and the user must connect again.\n>\n> 1. Save the new refresh token before doing anything else with the response.\n> 2. Treat a timeout as \"maybe it worked\": re-read your saved token before retrying, never retry blindly with the old one.\n> 3. Refresh one at a time per connection.\n\n- A connection lasts **30 days from the user's approval**. Refreshing does not extend it, so plan for users to reconnect monthly.\n- If the user approves your app again with different permissions, the previous tokens stop working immediately.\n\n### Disconnecting\n\nWhen a user disconnects in your product, revoke the token instead of only deleting it. The endpoint always answers `200`:\n\n```shell\ncurl -X POST \"https://api.assinafy.com.br/v1/oauth/revoke\" \\\n  -d token=THE_REFRESH_OR_ACCESS_TOKEN \\\n  -d client_id=YOUR_CLIENT_ID \\\n  -d client_secret=YOUR_CLIENT_SECRET\n```\n\nUsers can also revoke your app themselves under **Connected apps** in their Assinafy profile. Deleting or disabling your application has the same effect. In every case your tokens stop working at once: handle the `401` by asking the user to connect again.\n\n> **Revoking a token requires the `client_id` that owns it.** `/oauth/revoke` only revokes a token issued to the client authenticating the call. This matters for an RFC 8693 exchanged token specifically: it carries the *original* (front-end resource) client's id, not the service client that exchanged it — so a back-channel service client can never revoke a token it derived, and the call still answers `200` per RFC 7009's always-succeed contract, giving no indication that nothing happened. That derived token is inherently short-lived (bounded by the exchanged-token TTL), so it ages out on its own; do not build a cleanup call expecting revoke to work on it.\n\n### Verification and limits\n\n- New applications are **unverified**: the approval screen warns that Assinafy has not reviewed the app, and it can be connected to at most **25 workspaces**. Before launching beyond a pilot, ask us to verify it, telling us what the app does and why it needs each permission.\n- The authorize and token endpoints accept **50 requests per minute per IP**. Normal traffic stays far below that; hitting it usually means a refresh loop.\n- Applications are created in the Assinafy app, not through an API.\n\n### Errors\n\nOn your redirect URI (`?error=…`):\n\n| `error` | Meaning |\n|---|---|\n| `access_denied` | The user declined |\n| `invalid_scope` | A scope your application is not registered for, or none |\n| `invalid_request` | Missing or malformed PKCE parameters |\n| `unsupported_response_type` | Anything other than `response_type=code` |\n| `invalid_target` | A `resource` other than `https://api.assinafy.com.br` |\n\nFrom the token endpoint (`{ \"error\": \"…\", \"error_description\": \"…\" }`):\n\n| `error` | Usual causes |\n|---|---|\n| `invalid_grant` | Code expired or already used, wrong `code_verifier` or `redirect_uri`; refresh token already used or expired, or the user reconnected with different permissions |\n| `invalid_client` | Wrong `client_id` or secret, or the application is disabled |\n| `invalid_target` | `resource` does not match what was authorized |\n| `unsupported_grant_type` | Only `authorization_code` and `refresh_token` exist |\n\nFrom API calls:\n\n| Status | Meaning |\n|---|---|\n| `401` | Token expired, revoked, or not sent as `Bearer`. Refresh; if that fails, ask the user to reconnect |\n| `403` with `insufficient_scope` | Missing permission. Reconnect requesting the scope in `WWW-Authenticate` |\n| `403` otherwise | Another workspace, or an area OAuth tokens cannot reach |\n| `429` | Too many requests. Back off and retry later |\n\n### Signing users in (OpenID Connect)\n\nRequest `openid`, plus `profile` and/or `email`, to receive an `id_token`: a signed JWT saying who approved. Validate it with any OpenID Connect library:\n\n- signature `RS256`, keys at `https://auth.assinafy.com.br/.well-known/jwks.json` (match the `kid`);\n- `iss` equals `https://auth.assinafy.com.br`;\n- `aud` equals your `client_id`;\n- `exp` is in the future, and `nonce` matches the one you sent, if any.\n\n`sub` is the user's stable identifier. For their name and email, call **OpenID Connect userinfo** (`GET https://api.assinafy.com.br/v1/oauth/userinfo`).\n\n### AI assistants\n\nClaude, Claude Code and ChatGPT connect to Assinafy on their own through their connector settings. Your users do not need you to build or register anything for them.\n\n### Before you go live\n\n- A new PKCE verifier and `state` for every connection attempt\n- `state` and `iss` checked on your redirect URI\n- `client_secret` only on your server, never in a mobile app, browser code or a repository\n- The new refresh token saved before use, and one refresh at a time per connection\n- `401` handled: refresh, and if that fails, ask the user to reconnect\n- The workspace id stored per connection, and the returned `scope` read\n- Every production redirect URI registered, `https://` and exact\n- Only the permissions you need\n- Tokens revoked when a user disconnects\n- Verification requested\n",
+            "x-content": true
         },
         {
             "name": "Accounts",
@@ -8538,7 +8962,7 @@
         },
         {
             "name": "Verification & Notification Methods",
-            "description": "When you create an assignment, each signer can be configured with a **verification method** (how the signer proves their identity before signing) and one or more **notification methods** (how the signer is told a signature is being requested). These are set per signer via `signers[].verification_method` and `signers[].notification_methods` on the **Create assignment** endpoint.\n\nVerification and notification are **coupled** — you may send one, both or neither, and the missing side is inferred. If neither is sent, both default to `Email`.\n\n### Verification methods\n\n| Code | Description |\n|------|-------------|\n| `Email` | The signer receives a verification code by email that must be entered before signing. |\n| `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. |\n| `DigitalCertificate` | The signer signs with their own ICP-Brasil digital certificate (A1/A3) from their device using the Web PKI browser extension, producing a qualified PAdES signature on the document. |\n\n| Code | Requirements | Cost (per signer) |\n|------|--------------|-------------------|\n| `Email` | Signer must have an email address. | Free |\n| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | Free |\n| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 2 credits |\n\n> **Digital Certificate cost.** Unlike the other verification methods (whose only cost is the notification), the digital-certificate signature itself is charged **2 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.\n\n### Notification methods\n\nThe notification method is what delivers the signing invitation to the signer. Each notification has a credit cost charged when the assignment is created (and again when a notification is resent).\n\n| Code | Description |\n|------|-------------|\n| `Email` | Sends an email invitation with a link to sign the document. |\n| `Whatsapp` | Sends a WhatsApp message with a link to sign the document. |\n\n| Code | Requirements | Cost (per signer) |\n|------|--------------|-------------------|\n| `Email` | Signer must have an email address. | 0 credits |\n| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits |\n\n### Coupling rules\n\nOnly matching combinations are allowed; an invalid pairing returns `400 Bad Request`.\n\n| Verification method | Allowed notification methods |\n|---------------------|------------------------------|\n| `Email` | `Email` |\n| `Whatsapp` | `Whatsapp` |\n| `DigitalCertificate` | `Email` or `Whatsapp` |\n\nOnly one notification method is allowed per signer.\n\n### Default behavior (inference)\n\n- **Neither specified** — both default to `Email`.\n- **Only `verification_method`** — `notification_methods` is inferred from it (e.g. `Whatsapp` verification → `Whatsapp` notification).\n- **Only `notification_methods`** — `verification_method` is inferred from it.\n- **Both specified** — used as-is, subject to the coupling rules above.\n\n### Costs\n\nNotification cost is charged **per signer**, on top of the document cost. For example:\n\n- 2 signers notified by email = 0 credits\n- 2 signers notified by WhatsApp = 0.9 credits\n\nUse the **Estimate assignment cost** endpoint to preview the exact total (documents + notifications) before creating an assignment.\n\n### Notification timing and sequential signing\n\nBy default every signer is notified as soon as the assignment is created. When you set `signers[].step` to define a signing order, each signer's notification is held until their step is activated: step 1 is notified at creation, and a later step is notified only after every signer in the previous step has finished.\n",
+            "description": "When you create an assignment, each signer can be configured with a **verification method** (how the signer proves their identity before signing) and a **notification method** (how the signer is told a signature is being requested). Exactly one notification method is allowed per signer; `notification_methods` is an array for historical reasons, and sending more than one entry returns `400`. These are set per signer via `signers[].verification_method` and `signers[].notification_methods` on the **Create assignment** endpoint.\n\nVerification and notification are **coupled** — you may send one, both or neither, and the missing side is inferred. If neither is sent, both default to `Email`.\n\n### Verification methods\n\n| Code | Description |\n|------|-------------|\n| `Email` | The signer receives a verification code by email that must be entered before signing. |\n| `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. Requires the WhatsApp notification channel — the two always travel together. |\n| `DigitalCertificate` | The signer signs with their own ICP-Brasil digital certificate (A1/A3) from their device using the Web PKI browser extension, producing a qualified PAdES signature on the document. |\n\n| Code | Requirements | Cost per signer (verification + its notification) |\n|------|--------------|---------------------------------------------------|\n| `Email` | Signer must have an email address. | 0 credits (the Email notification) |\n| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits (the WhatsApp notification, which this method requires) |\n| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 2 credits + its notification |\n\n> **How verification is priced.** No verification method carries a price of its own — you are billed for the **notification** it is paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.\n\n> **Digital Certificate cost.** Unlike the other verification methods (whose only cost is the notification), the digital-certificate signature itself is charged **2 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.\n\n### Notification methods\n\nThe notification method is what delivers the signing invitation to the signer. Each notification has a credit cost charged when the assignment is created (and again when a notification is resent).\n\n| Code | Description |\n|------|-------------|\n| `Email` | Sends an email invitation with a link to sign the document. |\n| `Whatsapp` | Sends a WhatsApp message with a link to sign the document. |\n\n| Code | Requirements | Cost (per signer) |\n|------|--------------|-------------------|\n| `Email` | Signer must have an email address. | 0 credits |\n| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits |\n\n### Coupling rules\n\nOnly matching combinations are allowed; an invalid pairing returns `400 Bad Request`.\n\n| Verification method | Allowed notification methods |\n|---------------------|------------------------------|\n| `Email` | `Email` |\n| `Whatsapp` | `Whatsapp` |\n| `DigitalCertificate` | `Email` or `Whatsapp` |\n\nExactly one notification method is allowed per signer — `notification_methods` takes a single-element array, and a second entry is rejected with `400` before the pairing above is even checked.\n\n### Default behavior (inference)\n\n- **Neither specified** — both default to `Email`.\n- **Only `verification_method`** — `notification_methods` is inferred from it (e.g. `Whatsapp` verification → `Whatsapp` notification, and with it that channel's cost).\n- **Only `notification_methods`** — `verification_method` is inferred from it.\n- **Both specified** — used as-is, subject to the coupling rules above.\n\n### Costs\n\nNotification cost is charged **per signer**, on top of the document cost. For example:\n\n- 2 signers notified by email = 0 credits\n- 2 signers notified by WhatsApp = 0.9 credits\n\nVerification follows the same arithmetic, because it is the notification that is billed: 2 signers **verified** by WhatsApp are necessarily notified by WhatsApp, and therefore also cost 0.9 credits.\n\nUse the **Estimate assignment cost** endpoint to preview the exact total (documents + notifications) before creating an assignment.\n\n### Notification timing and sequential signing\n\nBy default every signer is notified as soon as the assignment is created. When you set `signers[].step` to define a signing order, each signer's notification is held until their step is activated: step 1 is notified at creation, and a later step is notified only after every signer in the previous step has finished.\n",
             "x-content": true
         },
         {
@@ -8560,6 +8984,10 @@
         {
             "name": "Tags",
             "description": "Workspace-scoped labels attachable to documents and templates."
+        },
+        {
+            "name": "OAuth",
+            "description": "The token, revocation and userinfo endpoints an OAuth application calls, and this API's protected-resource metadata. New to OAuth with Assinafy? Read **OAuth Integration Guide** first. The authorization server's own metadata is served at `https://auth.assinafy.com.br/.well-known/oauth-authorization-server`, not on this API: read endpoint URLs from it instead of hardcoding them."
         },
         {
             "name": "Webhooks",

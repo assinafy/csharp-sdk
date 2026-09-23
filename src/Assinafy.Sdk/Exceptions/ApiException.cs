@@ -8,7 +8,11 @@ namespace Assinafy.Sdk.Exceptions;
 /// failures surface as <see cref="ValidationException"/>, <see cref="NetworkException"/>, and
 /// <see cref="SerializationException"/> respectively. Derives from <see cref="AssinafyException"/>.
 /// </summary>
-public sealed class ApiException : AssinafyException
+/// <remarks>
+/// <see cref="OAuthException"/> derives from this type for the failures that carry a
+/// machine-readable OAuth error code, so catching <see cref="ApiException"/> still covers them.
+/// </remarks>
+public class ApiException : AssinafyException
 {
     /// <summary>The non-success HTTP status code, or an envelope <c>status</c> value of 400 or greater.</summary>
     public int StatusCode { get; }

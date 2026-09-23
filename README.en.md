@@ -4,9 +4,9 @@
 
 A typed .NET client for the [Assinafy](https://api.assinafy.com.br/v1/docs) electronic-signature
 API. It covers the complete documented HTTP surface — documents, templates, signers, assignments,
-the signer-facing signing flow, signature images, tags, fields, webhooks, accounts, and users — as
-strongly-typed resources on a single `AssinafyClient`, with one exception hierarchy, envelope
-handling, and pagination already taken care of.
+the signer-facing signing flow, signature images, tags, fields, webhooks, accounts, users, and the
+OAuth 2.1 authorization-code flow — as strongly-typed resources on a single `AssinafyClient`, with
+one exception hierarchy, envelope handling, and pagination already taken care of.
 
 Targets `net8.0`, `net9.0`, and `net10.0`.
 
@@ -15,30 +15,31 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 1. [Installation](#installation)
 2. [Credentials and environments](#credentials-and-environments)
 3. [Creating a client](#creating-a-client)
-4. [Dependency injection](#dependency-injection)
-5. [How requests and responses work](#how-requests-and-responses-work)
-6. [Error handling](#error-handling)
-7. [The signature lifecycle](#the-signature-lifecycle)
-8. [Documents](#documents)
-9. [Templates](#templates)
-10. [Signers](#signers)
-11. [Assignments](#assignments)
-12. [The signer-facing flow](#the-signer-facing-flow)
-13. [Signature images](#signature-images)
-14. [Public documents](#public-documents)
-15. [Tags](#tags)
-16. [Fields](#fields)
-17. [Webhooks](#webhooks)
-18. [Accounts and users](#accounts-and-users)
-19. [Reference tables](#reference-tables)
-20. [Testing](#testing)
-21. [Support matrix and versioning](#support-matrix-and-versioning)
-22. [Further reading](#further-reading)
+4. [OAuth 2.1 for multi-workspace apps](#oauth-21-for-multi-workspace-apps)
+5. [Dependency injection](#dependency-injection)
+6. [How requests and responses work](#how-requests-and-responses-work)
+7. [Error handling](#error-handling)
+8. [The signature lifecycle](#the-signature-lifecycle)
+9. [Documents](#documents)
+10. [Templates](#templates)
+11. [Signers](#signers)
+12. [Assignments](#assignments)
+13. [The signer-facing flow](#the-signer-facing-flow)
+14. [Signature images](#signature-images)
+15. [Public documents](#public-documents)
+16. [Tags](#tags)
+17. [Fields](#fields)
+18. [Webhooks](#webhooks)
+19. [Accounts and users](#accounts-and-users)
+20. [Reference tables](#reference-tables)
+21. [Testing](#testing)
+22. [Support matrix and versioning](#support-matrix-and-versioning)
+23. [Further reading](#further-reading)
 
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.0.0
+dotnet add package Assinafy.Sdk --version 2.2.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -51,10 +52,13 @@ Assinafy accepts either credential:
 
 | Credential | Sent as | Obtained from | Use for |
 |---|---|---|---|
-| API key | `X-Api-Key` header | `Authentication.CreateApiKeyAsync` (or the web app) | Server-to-server integrations |
+| API key | `X-Api-Key` header | `Authentication.CreateApiKeyAsync` (or the web app) | Server-to-server integrations in **your own** workspace |
 | Access token | `Authorization: Bearer …` | `Authentication.LoginAsync` / `SocialLoginAsync` | Acting as a signed-in user |
+| OAuth token | `Authorization: Bearer …` | `OAuth.ExchangeCodeAsync` | An app acting in **someone else's** workspace, with their permission |
 
-The two are mutually exclusive; supplying both throws a `ValidationException`. Create a *separate*
+The first two are mutually exclusive; supplying both throws a `ValidationException`. An OAuth
+access token is supplied as `Token`, exactly like any other bearer credential — see
+[OAuth 2.1 for multi-workspace apps](#oauth-21-for-multi-workspace-apps). Create a *separate*
 user for an API-key integration so it can be granted only the access it needs, and never commit the
 key.
 
@@ -132,6 +136,216 @@ transport — redirects disabled, five-minute pooled connection lifetime — so
 
 Credentials are attached per request, so a supplied `HttpClient`'s default headers are never
 mutated and the instance stays safe to share. Its `Timeout` is left untouched — set it yourself.
+
+## OAuth 2.1 for multi-workspace apps
+
+Use OAuth when **other people** connect your application to **their own** Assinafy workspace, so you
+never handle their password or API key. Automating your own workspace needs none of this — keep
+using an API key.
+
+| | API key | OAuth |
+|---|---|---|
+| Acts on | Your own workspace | Someone else's, with their permission |
+| Can do | Everything your account can | Only the scopes the user approved |
+| User can switch it off | No | Yes, at any time |
+
+The flow spans two hosts on purpose: the approval page belongs to the authorization server
+(`https://auth.assinafy.com.br`), while every call your code makes — the token exchange included —
+belongs to this API. Register the application under **Settings → OAuth applications** in the
+Assinafy app; redirect URIs must be `https://` and are matched character for character, so
+`…/callback` and `…/callback/` are different URIs.
+
+### 1. Start the connection
+
+PKCE is mandatory for every application, confidential ones included. Create a new pair per attempt
+and keep both values in the user's session:
+
+```csharp
+using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Resources;
+
+var pkce = OAuthResource.CreatePkcePair();     // 256-bit verifier + its S256 challenge
+var state = OAuthResource.CreateState();       // CSRF protection
+
+HttpContext.Session.SetString("assinafy_verifier", pkce.CodeVerifier);
+HttpContext.Session.SetString("assinafy_state", state);
+
+var authorizationUrl = OAuthResource.BuildAuthorizationUrl(new OAuthAuthorizationRequest
+{
+    ClientId = clientId,
+    RedirectUri = "https://myapp.example.com/oauth/callback",
+    Scopes =
+    [
+        OAuthScopes.DocumentsRead,
+        OAuthScopes.DocumentsWrite,
+        OAuthScopes.OfflineAccess,      // ask for this to receive a refresh token
+    ],
+    State = state,
+    CodeChallenge = pkce.CodeChallenge,
+});
+
+return Redirect(authorizationUrl.ToString());   // a full page navigation, never an AJAX call
+```
+
+### 2. Handle the redirect and exchange the code
+
+The user comes back with `?code=…&state=…&iss=…`, or `?error=access_denied&…` if they declined.
+Validate `state` and `iss` **before anything else** — if either differs, the response is not yours.
+The code is single-use and expires 60 seconds after approval, so exchange it from your server
+straight away:
+
+```csharp
+if (state != HttpContext.Session.GetString("assinafy_state") ||
+    iss != OAuthResource.DefaultIssuer)
+    return BadRequest();
+
+using var anonymous = new AssinafyClient(new AssinafyClientOptions());
+
+var tokens = await anonymous.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
+{
+    Code = code,
+    RedirectUri = "https://myapp.example.com/oauth/callback",
+    CodeVerifier = HttpContext.Session.GetString("assinafy_verifier")!,
+    ClientId = clientId,
+    ClientSecret = clientSecret,    // omit entirely for a public application
+});
+```
+
+The token endpoint authenticates with the application's own credentials, so the client needs no
+configured credential of its own. Read `tokens.Scope` rather than assuming the request was granted
+in full:
+
+```csharp
+if (!tokens.HasScope(OAuthScopes.DocumentsWrite))
+    return View("ReconnectWithWriteAccess");
+```
+
+### 3. Find the workspace, then call the API
+
+A token belongs to the **one** workspace the user picked. With an OAuth token the workspace list
+returns exactly that workspace — store its ID beside the tokens:
+
+```csharp
+using var client = new AssinafyClient(new AssinafyClientOptions { Token = tokens.AccessToken });
+
+var accounts = await client.Accounts.ListAsync();
+var accountId = accounts[0].Id;                 // the workspace the user connected
+
+var documents = await client.Documents.ListAsync(accountId: accountId);
+```
+
+Calling any other workspace returns `403`, even another one the same user belongs to. If a customer
+uses several workspaces, connect each separately and keep tokens per workspace.
+
+### 4. Refresh, and handle a missing scope
+
+Access tokens last one hour. With `offline_access` you can renew without the user:
+
+```csharp
+var refreshed = await client.OAuth.RefreshTokenAsync(new OAuthRefreshRequest
+{
+    RefreshToken = storedRefreshToken,
+    ClientId = clientId,
+    ClientSecret = clientSecret,
+});
+
+await SaveTokensAsync(refreshed);   // do this FIRST: refresh tokens rotate
+```
+
+> **Using a retired refresh token disconnects the user.** Every refresh returns a new refresh token
+> and invalidates the old one. A replayed token cannot be told apart from a stolen one, so it ends
+> the whole connection. Persist the new token before doing anything else, treat a timeout as "it may
+> have succeeded" by re-reading your stored token rather than retrying with the old one, and refresh
+> one at a time per connection. A connection lasts 30 days from approval and refreshing does not
+> extend it, so plan for users to reconnect monthly.
+
+Calling an endpoint the token was never granted returns `403` with a challenge naming the scope.
+The SDK surfaces it on every endpoint, not only the OAuth ones:
+
+```csharp
+try
+{
+    await client.Documents.UploadAsync(pdf, "contract.pdf", accountId);
+}
+catch (OAuthException ex) when (ex.Error == "insufficient_scope")
+{
+    // Reconnect requesting ex.Scope — do not retry, the answer will not change.
+    return Redirect(BuildReconnectUrl(ex.Scope));
+}
+catch (OAuthException ex) when (ex.Error == "invalid_grant")
+{
+    // The grant is spent or the user reconnected with different permissions.
+    return Redirect(BuildReconnectUrl(null));
+}
+```
+
+### 5. Disconnect
+
+When a user disconnects in your product, revoke the token instead of only deleting your copy.
+Revoking a refresh token ends the whole connection, and the endpoint always answers `200`:
+
+```csharp
+await client.OAuth.RevokeAsync(new OAuthRevokeRequest
+{
+    Token = storedRefreshToken,
+    ClientId = clientId,
+    ClientSecret = clientSecret,
+    TokenTypeHint = "refresh_token",
+});
+```
+
+### Scopes
+
+| `OAuthScopes` constant | Value | Lets your app |
+|---|---|---|
+| `DocumentsRead` | `documents:read` | Read documents, their signers, assignments, and activity |
+| `DocumentsWrite` | `documents:write` | Create documents and send them for signature |
+| `TemplatesRead` | `templates:read` | Read templates |
+| `TemplatesWrite` | `templates:write` | Create and change templates |
+| `AccountRead` | `account:read` | Read the workspace profile, theme, and logo |
+| `WebhooksWrite` | `webhooks:write` | Configure and deactivate the workspace webhook subscription |
+| `OpenId` | `openid` | Receive an `id_token` identifying the user |
+| `Profile` | `profile` | Read the user's name |
+| `Email` | `email` | Read the user's email and whether it is verified |
+| `OfflineAccess` | `offline_access` | Receive a refresh token |
+
+Request the minimum: the user approves everything or nothing, and `documents:write` can spend the
+workspace's notification credits. Billing, workspace membership, credentials, and administration are
+never reachable with an OAuth token, whatever its scopes.
+
+### OpenID Connect and discovery
+
+Request `openid` (plus `profile` and/or `email`) to receive a signed `id_token`, and read the
+claims back from the userinfo endpoint:
+
+```csharp
+var who = await client.OAuth.GetUserInfoAsync();
+Console.WriteLine($"{who.Sub} · {who.Name} · {who.Email} (verified: {who.EmailVerified})");
+```
+
+Validate an `id_token` with any OpenID Connect library: `RS256`, keys at
+`https://auth.assinafy.com.br/.well-known/jwks.json`, `iss` equal to `OAuthResource.DefaultIssuer`,
+and `aud` equal to your `client_id`.
+
+Rather than hard-coding endpoints, discover them:
+
+```csharp
+var metadata = await client.OAuth.GetProtectedResourceMetadataAsync();
+// metadata.AuthorizationServers[0] → fetch its /.well-known/oauth-authorization-server
+```
+
+### Token-endpoint errors
+
+| `Error` | Usual cause | What to do |
+|---|---|---|
+| `invalid_grant` | Code expired or already used; wrong `code_verifier` or `redirect_uri`; refresh token spent, or the user reconnected with different permissions | Send the user through the flow again |
+| `invalid_client` | Wrong `client_id` or secret, or the application is disabled | Fix the configuration |
+| `invalid_target` | `resource` disagrees with the authorized value | Send the same `Resource` to both endpoints |
+| `unsupported_grant_type` | Only `authorization_code` and `refresh_token` exist | Fix the call |
+| `insufficient_scope` | A `403` on an ordinary endpoint; the token lacks the permission in `Scope` | Reconnect requesting that scope |
+
+New applications are unverified: the approval screen says so and they connect to at most 25
+workspaces. The authorize and token endpoints accept 50 requests per minute per IP.
 
 ## Dependency injection
 
@@ -243,6 +457,7 @@ Every SDK-specific exception derives from `AssinafyException`:
 |---|---|---|
 | `ValidationException` | The SDK rejects input before any HTTP call | `Details` (field-level) |
 | `ApiException` | The API returned an error status or envelope | `StatusCode`, `ApiMessage`, `Details` |
+| `OAuthException` | The failure carries a machine-readable OAuth error code, from an OAuth endpoint or an `insufficient_scope` challenge on any endpoint. Derives from `ApiException` | `Error`, `ErrorDescription`, `Scope` |
 | `NetworkException` | Connection, DNS, or TLS failure, or a client-side timeout | `InnerException` |
 | `SerializationException` | A body could not be serialized, or a success response did not match the expected envelope or payload | `InnerException` |
 
@@ -857,8 +1072,11 @@ await client.Authentication.DeleteApiKeyAsync();
 | `pades` | The signed PDF in PAdES format |
 | `bundle` | The signed PDF bundled with the certificate page |
 
-**Channels** (`SignerChannels`) — `Email`, `Whatsapp` (paid, extra cost), `DigitalCertificate`
-(verification only). Values are capitalized exactly as shown.
+**Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
+only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 2 credits per signer
+on top of its notification). Values are capitalized exactly as shown. Verification and notification
+are coupled: `Email`↔`Email`, `Whatsapp`↔`Whatsapp`, and `DigitalCertificate` pairs with either.
+Only the notification is billed.
 
 **Assignment methods** (`AssignmentMethods`) — `virtual`, `collect`.
 
@@ -867,6 +1085,10 @@ await client.Authentication.DeleteApiKeyAsync();
 **Statistics granularity** (`DocumentStatsGranularities`) — `monthly`, `daily` (requires `Month`).
 
 **Notification sender** (`AccountNotificationSenderTypes`) — `User`, `Account`.
+
+**OAuth scopes** (`OAuthScopes`) — `documents:read`, `documents:write`, `templates:read`,
+`templates:write`, `account:read`, `webhooks:write`, `openid`, `profile`, `email`, `offline_access`. See
+[OAuth 2.1 for multi-workspace apps](#oauth-21-for-multi-workspace-apps).
 
 Document status codes are not fixed constants; retrieve the live list, with each status's deletion
 rule, from `Documents.ListStatusesAsync()`. The statuses `WaitUntilReadyAsync` treats as ready are
@@ -881,8 +1103,8 @@ on every supported target framework. Arguments after `--` are runner options:
 dotnet test --solution Assinafy.Sdk.sln -- --filter-not-trait "Category=Live"
 ```
 
-Live tests run against the sandbox only, and fail fast when a credential is missing or the base URL
-is not exactly the sandbox:
+Live tests run against the sandbox only. They require credentials and refuse to run
+when the base URL is not exactly the sandbox:
 
 ```bash
 ASSINAFY_API_KEY=... \
@@ -893,8 +1115,7 @@ dotnet test --project tests/Assinafy.Sdk.Tests/Assinafy.Sdk.Tests.csproj \
 ```
 
 `ASSINAFY_TEST_EMAIL_PRIMARY` and `ASSINAFY_TEST_EMAIL_SECONDARY` are optional overrides; without
-them the suite uses reserved `example.com` addresses, so the GitHub `sandbox` environment needs only
-the two secrets above.
+them the suite uses reserved `example.com` addresses.
 
 The sandbox suite does not exercise the production-only certificate routes. Local transport tests
 cover their request construction, credential isolation, and response deserialization; the complete

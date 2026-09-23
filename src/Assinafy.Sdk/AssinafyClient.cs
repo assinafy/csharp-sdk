@@ -23,6 +23,12 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Authentication and user API-key endpoints.</summary>
     public AuthenticationResource Authentication { get; }
 
+    /// <summary>
+    /// OAuth 2.1 authorization-code flow with PKCE, for applications acting in another user's
+    /// workspace with that user's permission. Automating your own workspace needs an API key instead.
+    /// </summary>
+    public OAuthResource OAuth { get; }
+
     /// <summary>Workspace account management: account CRUD, theme, logo, and document KPIs.</summary>
     public AccountResource Accounts { get; }
 
@@ -98,6 +104,7 @@ public sealed class AssinafyClient : IDisposable
             ConfigureHttpClient(_http, options, applyTimeout: ownsHttpClient);
 
             Authentication = new AuthenticationResource(_http, authenticate);
+            OAuth = new OAuthResource(_http, authenticate);
             Accounts = new AccountResource(_http, options.AccountId, authenticate);
             Users = new UserResource(_http, authenticate);
             Documents = new DocumentResource(_http, options.AccountId, authenticate);
