@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.2.1
+
+### Fixed
+
+- Unconfigured live tests skip in a plain `dotnet test` run.
+
 ## 2.2.0
 
 ### Added

@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.2.0
+dotnet add package Assinafy.Sdk --version 2.2.1
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -1103,8 +1103,8 @@ on every supported target framework. Arguments after `--` are runner options:
 dotnet test --solution Assinafy.Sdk.sln -- --filter-not-trait "Category=Live"
 ```
 
-Live tests run against the sandbox only. They require credentials and refuse to run
-when the base URL is not exactly the sandbox:
+Without live-test credentials, a plain `dotnet test` skips the live tests. To run them, use a
+sandbox account; they refuse any other base URL:
 
 ```bash
 ASSINAFY_API_KEY=... \

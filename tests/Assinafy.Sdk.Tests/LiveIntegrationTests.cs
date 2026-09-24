@@ -39,10 +39,15 @@ public sealed class LiveIntegrationTests
         }, http, ownsHttpClient: true);
     }
 
-    private static string RequiredEnvironmentVariable(string name) =>
-        Environment.GetEnvironmentVariable(name) is { } value && !string.IsNullOrWhiteSpace(value)
-            ? value.Trim()
-            : throw new InvalidOperationException($"{name} must be configured to run live tests.");
+    private static string RequiredEnvironmentVariable(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        Assert.SkipWhen(
+            string.IsNullOrWhiteSpace(value),
+            $"{name} is not configured; set the sandbox live-test environment variables to run this test.");
+
+        return value!.Trim();
+    }
 
     private static string TestEmail(string name, string fallback) =>
         Environment.GetEnvironmentVariable(name) is { } value && !string.IsNullOrWhiteSpace(value)
