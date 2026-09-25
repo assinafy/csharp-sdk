@@ -1,4 +1,6 @@
 using System.Net.Http.Headers;
+using System.Net.Security;
+using System.Security.Authentication;
 using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Resources;
@@ -201,8 +203,9 @@ public sealed class AssinafyClient : IDisposable
 
     /// <summary>
     /// Create the primary handler the SDK uses for its own transport: automatic redirects disabled
-    /// (so <c>X-Api-Key</c> is never forwarded to a redirect target) and a five-minute pooled
-    /// connection lifetime (so a long-lived client still picks up DNS changes).
+    /// (so <c>X-Api-Key</c> is never forwarded to a redirect target), a five-minute pooled
+    /// connection lifetime (so a long-lived client still picks up DNS changes), and TLS 1.2 or
+    /// 1.3 only (TLS 1.0 and 1.1 are refused).
     /// </summary>
     /// <remarks>
     /// Pass this to <c>ConfigurePrimaryHttpMessageHandler</c> when registering the client with
@@ -215,6 +218,10 @@ public sealed class AssinafyClient : IDisposable
     {
         AllowAutoRedirect = false,
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        SslOptions = new SslClientAuthenticationOptions
+        {
+            EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
+        },
     };
 
     private static Uri ValidateBaseAddress(string value)

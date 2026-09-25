@@ -35,7 +35,7 @@ Compatível com `net8.0`, `net9.0` e `net10.0`. **Zero dependências NuGet.**
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.2.1
+dotnet add package Assinafy.Sdk --version 2.2.2
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui

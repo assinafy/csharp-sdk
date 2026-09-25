@@ -52,6 +52,15 @@ public sealed class ContainerRegistrationTests
     }
 
     [Fact]
+    public void CreatePrimaryHandler_AllowsOnlyTls12AndTls13()
+    {
+        using var handler = AssinafyClient.CreatePrimaryHandler();
+
+        handler.SslOptions.EnabledSslProtocols.Should().Be(
+            System.Security.Authentication.SslProtocols.Tls12 | System.Security.Authentication.SslProtocols.Tls13);
+    }
+
+    [Fact]
     public async Task RegisteredClient_SendsCredentialsWithoutMutatingTheSharedTransport()
     {
         var fakeHandler = new FakeHttpMessageHandler();

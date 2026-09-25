@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.2
+
+### Changed
+
+- The SDK's own HTTPS client now requires TLS 1.2 or newer; TLS 1.0 and 1.1 are refused.
+  An `HttpClient` you supply keeps its own TLS settings.
+
 ## 2.2.1
 
 ### Fixed

@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.2.1
+dotnet add package Assinafy.Sdk --version 2.2.2
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
