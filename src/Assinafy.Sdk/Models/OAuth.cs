@@ -131,7 +131,8 @@ public sealed record OAuthTokenResult
     /// <summary>
     /// The refresh token, present only when <see cref="OAuthScopes.OfflineAccess"/> was requested
     /// and approved. Each refresh returns a new one and retires the old one — persist it before
-    /// doing anything else with the response.
+    /// doing anything else with the response. <see cref="Resources.OAuthResource.RefreshTokenAsync"/>
+    /// rejects a refresh response that does not carry a new one.
     /// </summary>
     [JsonPropertyName("refresh_token")]
     public string? RefreshToken { get; init; }
@@ -189,8 +190,10 @@ public sealed class OAuthCodeExchangeRequest
 /// Refreshing rotates the token: the response carries a new refresh token and the old one stops
 /// working. Replaying a retired refresh token cannot be told apart from a stolen one being
 /// replayed, so it ends the entire connection and the user must reconnect. Persist the new token
-/// before anything else, treat a timeout as "it may have succeeded" by re-reading the stored token
-/// rather than retrying with the old one, and refresh one at a time per connection.
+/// before anything else, refresh one at a time per connection, and never resend a refresh token
+/// automatically. After a refresh fails, unless it provably failed before the request was sent,
+/// re-read the stored token: continue only if another worker has saved a different one; if it is
+/// still the one sent, ask the user to reconnect.
 /// </remarks>
 public sealed class OAuthRefreshRequest
 {

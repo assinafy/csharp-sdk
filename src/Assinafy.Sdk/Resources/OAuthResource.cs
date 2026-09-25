@@ -23,6 +23,10 @@ namespace Assinafy.Sdk.Resources;
 /// <para>These endpoints follow the RFC body contracts rather than this API's
 /// <c>{ status, message, data }</c> envelope, and they authenticate with the application's own
 /// credentials passed per call, never with the client's configured API key.</para>
+/// <para>Token and revoke requests must never be resent: a replayed code or refresh token ends
+/// the connection. Make them through a client constructed without an <see cref="HttpClient"/>,
+/// whose transport carries no retry or hedging handler; an <c>IHttpClientFactory</c> client
+/// inherits any handler added with <c>ConfigureHttpClientDefaults</c>.</para>
 /// </remarks>
 public sealed class OAuthResource : BaseResource
 {
@@ -116,8 +120,9 @@ public sealed class OAuthResource : BaseResource
     /// <see cref="OAuthScopes.OfflineAccess"/> was approved.
     /// </summary>
     /// <remarks>
-    /// Call this from your server: the code is single-use and expires 60 seconds after approval.
-    /// Verify the redirect's <c>state</c> and <c>iss</c> before calling.
+    /// Call this from your server: the code is single-use and expires 60 seconds after approval, so
+    /// never retry the exchange automatically. Verify the redirect's <c>state</c> and <c>iss</c>
+    /// before calling.
     /// </remarks>
     /// <param name="request">Code, redirect URI, PKCE verifier, and application credentials.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -156,9 +161,14 @@ public sealed class OAuthResource : BaseResource
     /// </summary>
     /// <remarks>
     /// Refresh tokens rotate: persist the returned <see cref="OAuthTokenResult.RefreshToken"/>
-    /// before doing anything else, never retry blindly with the old one after a timeout, and
-    /// refresh one at a time per connection — replaying a retired token disconnects the user
-    /// entirely. A connection lasts 30 days from approval and refreshing does not extend it.
+    /// before doing anything else, and refresh one at a time per connection — replaying a retired
+    /// token disconnects the user entirely. Never resend a refresh token automatically, so keep
+    /// this call away from retry and hedging handlers. After a failure that did not provably
+    /// happen before the request was sent (DNS resolution, a refused connection, the TLS
+    /// handshake), the token may already be retired: continue only if another worker has stored a
+    /// different one, otherwise ask the user to reconnect. A refresh token is valid for 30 days
+    /// and every refresh returns a new one with a fresh 30 days, so a connection expires only
+    /// after 30 days without a refresh.
     /// </remarks>
     /// <param name="request">The current refresh token and the application credentials.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -166,6 +176,10 @@ public sealed class OAuthResource : BaseResource
     /// <exception cref="OAuthException">
     /// <c>invalid_grant</c> when the refresh token is spent or expired, or when the user
     /// reconnected with different permissions — send them through the flow again.
+    /// </exception>
+    /// <exception cref="SerializationException">
+    /// The response carries no new refresh token, or returns the one sent. The sent token may
+    /// already be retired, so do not send it again; ask the user to reconnect.
     /// </exception>
     public Task<OAuthTokenResult> RefreshTokenAsync(
         OAuthRefreshRequest request,
@@ -194,7 +208,9 @@ public sealed class OAuthResource : BaseResource
     /// <remarks>
     /// Every token outcome answers <c>200</c> — unknown, already revoked, and malformed tokens
     /// alike — so the endpoint cannot be used to probe whether a token exists. Only failed client
-    /// authentication fails, with <c>invalid_client</c>.
+    /// authentication fails, with <c>invalid_client</c>. Because a retired refresh token also
+    /// answers <c>200</c>, read the token from storage immediately before this call, under the
+    /// same per-connection lock as refresh, rather than reusing a copy a refresh may have retired.
     /// </remarks>
     /// <param name="request">The token to revoke and the application credentials.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -288,6 +304,13 @@ public sealed class OAuthResource : BaseResource
 
         if (result is null || string.IsNullOrWhiteSpace(result.AccessToken))
             throw new SerializationException("The token endpoint returned no access token.");
+
+        // A refresh must rotate: the token just sent may already be retired, so a response that
+        // does not replace it cannot be stored safely.
+        if (form.TryGetValue("refresh_token", out var sent) &&
+            (string.IsNullOrWhiteSpace(result.RefreshToken) ||
+             string.Equals(result.RefreshToken, sent, StringComparison.Ordinal)))
+            throw new SerializationException("The token endpoint returned no new refresh token.");
 
         return result;
     }

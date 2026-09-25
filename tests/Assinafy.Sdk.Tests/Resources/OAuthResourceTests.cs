@@ -290,6 +290,44 @@ public sealed class OAuthResourceTests
         form.Should().NotContainKey("resource");
     }
 
+    [Theory]
+    [InlineData("""{"access_token":"at-2","token_type":"Bearer","expires_in":3600}""")]
+    [InlineData("""{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":null}""")]
+    [InlineData("""{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":""}""")]
+    [InlineData("""{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":"  "}""")]
+    [InlineData("""{"access_token":"at-2","token_type":"Bearer","expires_in":3600,"refresh_token":"rt-1"}""")]
+    public async Task RefreshTokenAsync_RejectsAResponseWithoutANewRefreshToken(string body)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddRawResponse(HttpMethod.Post, "/oauth/token", body);
+
+        var resource = new OAuthResource(Client(handler));
+        var thrown = await ((Func<Task>)(() => resource.RefreshTokenAsync(new OAuthRefreshRequest
+        {
+            RefreshToken = "rt-1",
+            ClientId = "client-1",
+        }))).Should().ThrowAsync<SerializationException>();
+
+        thrown.Which.Message.Should().NotContain("rt-1").And.NotContain("at-2");
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task RefreshTokenAsync_NeverRetriesATransientFailure()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddRawResponse(HttpMethod.Post, "/oauth/token", string.Empty, HttpStatusCode.ServiceUnavailable);
+
+        var resource = new OAuthResource(Client(handler));
+        await ((Func<Task>)(() => resource.RefreshTokenAsync(new OAuthRefreshRequest
+        {
+            RefreshToken = "rt-1",
+            ClientId = "client-1",
+        }))).Should().ThrowAsync<ApiException>();
+
+        handler.Requests.Should().ContainSingle("replaying a refresh token that may have rotated ends the connection");
+    }
+
     [Fact]
     public async Task RevokeAsync_PostsTheTokenAndAcceptsAnEmptyBody()
     {

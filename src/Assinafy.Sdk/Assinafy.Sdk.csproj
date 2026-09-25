@@ -23,7 +23,7 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>2.2.2</Version>
+    <Version>2.3.0</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
@@ -44,7 +44,7 @@
     <!-- Validates that the net8/net9/net10 assets stay API-compatible with each other, and that
          this release stays compatible with the previous 2.x package. -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>2.2.1</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>2.2.2</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>

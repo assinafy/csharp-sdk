@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.2.2
+dotnet add package Assinafy.Sdk --version 2.3.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -115,10 +115,9 @@ redirect target. If you supply your own `HttpClient`, its `BaseAddress` must mat
 **you** must disable redirects on its primary handler:
 
 ```csharp
-using var handler = new SocketsHttpHandler { AllowAutoRedirect = false };
-using var http = new HttpClient(handler)
+using var http = new HttpClient(AssinafyClient.CreatePrimaryHandler())
 {
-    BaseAddress = new Uri("https://sandbox.assinafy.com.br/v1/"),
+    BaseAddress = new Uri("https://sandbox.assinafy.com.br/v1/"),   // note the trailing slash
 };
 using var client = new AssinafyClient(
     new AssinafyClientOptions
@@ -131,8 +130,9 @@ using var client = new AssinafyClient(
 ```
 
 `AssinafyClient.CreatePrimaryHandler()` returns exactly the handler the SDK uses for its own
-transport — redirects disabled, five-minute pooled connection lifetime — so
-`new HttpClient(AssinafyClient.CreatePrimaryHandler())` is the one-line version of the above.
+transport — redirects disabled, five-minute pooled connection lifetime, and TLS 1.2 or 1.3 only,
+because Assinafy refuses older protocols during the handshake (a `NetworkException`, never an HTTP
+status).
 
 Credentials are attached per request, so a supplied `HttpClient`'s default headers are never
 mutated and the instance stays safe to share. Its `Timeout` is left untouched — set it yourself.
@@ -195,13 +195,15 @@ The code is single-use and expires 60 seconds after approval, so exchange it fro
 straight away:
 
 ```csharp
-if (state != HttpContext.Session.GetString("assinafy_state") ||
+if (state is null ||
+    state != HttpContext.Session.GetString("assinafy_state") ||
     iss != OAuthResource.DefaultIssuer)
     return BadRequest();
 
-using var anonymous = new AssinafyClient(new AssinafyClientOptions());
+if (error is not null)          // access_denied, invalid_scope, invalid_request, …
+    return View("ConnectionFailed", error);
 
-var tokens = await anonymous.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
+var tokens = await oauth.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
 {
     Code = code,
     RedirectUri = "https://myapp.example.com/oauth/callback",
@@ -211,9 +213,12 @@ var tokens = await anonymous.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeReques
 });
 ```
 
-The token endpoint authenticates with the application's own credentials, so the client needs no
-configured credential of its own. Read `tokens.Scope` rather than assuming the request was granted
-in full:
+`oauth` is a client your application creates once, as
+`new AssinafyClient(new AssinafyClientOptions())`, and uses only for token and revoke calls. It
+needs no credential, since those endpoints authenticate with the application's own, and it owns its
+transport, so no retry or hedging handler can resend a one-time code or a refresh token (see
+[Dependency injection](#dependency-injection)). Read `tokens.Scope` rather than assuming the
+request was granted in full:
 
 ```csharp
 if (!tokens.HasScope(OAuthScopes.DocumentsWrite))
@@ -239,25 +244,41 @@ uses several workspaces, connect each separately and keep tokens per workspace.
 
 ### 4. Refresh, and handle a missing scope
 
-Access tokens last one hour. With `offline_access` you can renew without the user:
+Access tokens last one hour. With `offline_access` you can renew without the user: when a call
+answers `401`, refresh once, then repeat the call with a client built from the new access token,
+because a client keeps the token it was constructed with:
 
 ```csharp
-var refreshed = await client.OAuth.RefreshTokenAsync(new OAuthRefreshRequest
+var sent = await LoadRefreshTokenAsync(connectionId);   // under this connection's refresh lock
+
+var refreshed = await oauth.OAuth.RefreshTokenAsync(new OAuthRefreshRequest
 {
-    RefreshToken = storedRefreshToken,
+    RefreshToken = sent,
     ClientId = clientId,
     ClientSecret = clientSecret,
 });
 
-await SaveTokensAsync(refreshed);   // do this FIRST: refresh tokens rotate
+await SaveTokensAsync(connectionId, refreshed);   // do this FIRST: refresh tokens rotate
+
+using var client = new AssinafyClient(new AssinafyClientOptions { Token = refreshed.AccessToken });
 ```
 
 > **Using a retired refresh token disconnects the user.** Every refresh returns a new refresh token
-> and invalidates the old one. A replayed token cannot be told apart from a stolen one, so it ends
-> the whole connection. Persist the new token before doing anything else, treat a timeout as "it may
-> have succeeded" by re-reading your stored token rather than retrying with the old one, and refresh
-> one at a time per connection. A connection lasts 30 days from approval and refreshing does not
-> extend it, so plan for users to reconnect monthly.
+> and invalidates the old one; `RefreshTokenAsync` throws a `SerializationException` when a response
+> carries no new one. A replayed token cannot be told apart from a stolen one, so it ends the whole
+> connection. Persist the new token before doing anything else, refresh one at a time per
+> connection, and never resend a refresh token automatically, from your own code or through a
+> retry handler. A refresh token is valid for 30 days and every refresh returns a new one with a
+> fresh 30 days, so a connection expires only if your app goes 30 days without refreshing; after
+> that, the user must connect again.
+
+**If a refresh fails**, the server may still have rotated the token: a timeout or a lost response
+looks the same as a request that never arrived. Re-read your stored token and continue only if
+another worker has saved a *different* one. If it is still the token you sent, never send it again:
+treat the connection as uncertain and ask the user to connect again. Only failures that provably
+happened before the request was sent are safe to retry — DNS resolution, a refused connection, or
+the TLS handshake, which surface as a `NetworkException` whose inner `HttpRequestException` has an
+`HttpRequestError` of `NameResolutionError`, `ConnectionError`, or `SecureConnectionError`.
 
 Calling an endpoint the token was never granted returns `403` with a challenge naming the scope.
 The SDK surfaces it on every endpoint, not only the OAuth ones:
@@ -282,12 +303,17 @@ catch (OAuthException ex) when (ex.Error == "invalid_grant")
 ### 5. Disconnect
 
 When a user disconnects in your product, revoke the token instead of only deleting your copy.
-Revoking a refresh token ends the whole connection, and the endpoint always answers `200`:
+Revoking a refresh token ends the whole connection, and the endpoint answers `200` whatever the
+token's state, one a refresh has already retired included, so a stale copy gives no sign of whether
+the connection ended. Read the token from storage immediately before the call, under the same
+per-connection lock you refresh with:
 
 ```csharp
-await client.OAuth.RevokeAsync(new OAuthRevokeRequest
+var current = await LoadRefreshTokenAsync(connectionId);   // under this connection's refresh lock
+
+await oauth.OAuth.RevokeAsync(new OAuthRevokeRequest
 {
-    Token = storedRefreshToken,
+    Token = current,
     ClientId = clientId,
     ClientSecret = clientSecret,
     TokenTypeHint = "refresh_token",
@@ -324,8 +350,9 @@ Console.WriteLine($"{who.Sub} · {who.Name} · {who.Email} (verified: {who.Email
 ```
 
 Validate an `id_token` with any OpenID Connect library: `RS256`, keys at
-`https://auth.assinafy.com.br/.well-known/jwks.json`, `iss` equal to `OAuthResource.DefaultIssuer`,
-and `aud` equal to your `client_id`.
+`https://auth.assinafy.com.br/.well-known/jwks.json` matched by `kid`, `iss` equal to
+`OAuthResource.DefaultIssuer`, `aud` equal to your `client_id`, `exp` in the future, and `nonce`
+equal to the one you sent, if any.
 
 Rather than hard-coding endpoints, discover them:
 
@@ -384,16 +411,37 @@ Then inject `AssinafyClient` anywhere. Four details matter:
 - **Set `Timeout` on the `HttpClient`.** The `AssinafyClientOptions.Timeout` value is ignored for a
   supplied client, because the SDK does not mutate a transport it does not own.
 
-Resilience policies and extra handlers chain onto the `IHttpClientBuilder` as usual:
+Resilience policies and extra handlers chain onto the `IHttpClientBuilder` as usual. Limit retries
+to safe methods: the standard handler retries every method by default, and repeating a `POST` can,
+for example, upload the same document twice:
 
 ```csharp
+using Microsoft.Extensions.Http.Resilience;   // 9.8+: older versions still retry timeouts
+
 builder.Services
     .AddHttpClient("Assinafy", /* … */)
     .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 ```
 
 Do not dispose the resolved client yourself; `IHttpClientFactory` owns the transport.
+
+**Keep OAuth token and revoke calls off the factory.** Resending `POST /oauth/token` replays a
+one-time code or a refresh token that may already have rotated, which disconnects the user, and
+configuring the handlers you add cannot rule that out: a retry or hedging handler registered with
+`ConfigureHttpClientDefaults` applies to every client the factory creates, a separate named client
+included; a hedging handler (`AddStandardHedgingHandler`) sends parallel copies by design; and
+`Microsoft.Extensions.Http.Resilience` before 9.8 retried timeouts even with
+`DisableForUnsafeHttpMethods`. A client constructed without an `HttpClient` owns a transport the
+factory never touches — `CreatePrimaryHandler()` and no other handler — so register one for
+`ExchangeCodeAsync`, `RefreshTokenAsync`, and `RevokeAsync`:
+
+```csharp
+builder.Services.AddKeyedSingleton("AssinafyOAuth", (_, _) =>
+    new AssinafyClient(new AssinafyClientOptions()));   // no credential of its own
+```
+
+Inject it as `[FromKeyedServices("AssinafyOAuth")] AssinafyClient oauth`.
 
 ## How requests and responses work
 

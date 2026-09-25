@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+
+- `DocumentVerificationResult.AgreementCode`, the agreement code printed on the document's
+  certificate.
+
+### Changed
+
+- `OAuthResource.RefreshTokenAsync` throws a `SerializationException` when a refresh response
+  carries no new refresh token, or returns the one that was sent. Such a response cannot be stored
+  safely, because the sent token may already be retired; ask the user to reconnect instead of
+  resending it.
+
+### Documentation
+
+- The OAuth guide sends token and revoke calls through a client constructed without an
+  `HttpClient`, whose transport no retry or hedging handler can reach, including one registered
+  with `ConfigureHttpClientDefaults`. The resilience example retries safe methods only.
+- After a failed refresh, the same refresh token is never sent again: continue only if another
+  worker has saved a different one, otherwise ask the user to reconnect. Only failures that provably
+  happened before the request was sent (DNS, a refused connection, the TLS handshake) are safe to
+  retry.
+- The refresh example builds a new client from the refreshed access token, since a client keeps the
+  token it was built with, and the disconnect example revokes the refresh token read from storage
+  immediately before the call.
+- A connection expires only after 30 days without a refresh; every refresh returns a refresh token
+  valid for a fresh 30 days.
+
 ## 2.2.2
 
 ### Changed

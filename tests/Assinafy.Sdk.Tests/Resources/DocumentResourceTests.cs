@@ -308,6 +308,24 @@ public sealed class DocumentResourceTests
         var result = await resource.VerifyAsync("abc123");
 
         result.IsValid.Should().BeTrue();
+        result.AgreementCode.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Verify_ReadsTheCertificateAgreementCode()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/abc123/verify",
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                hash = "abc123",
+                agreement_code = "550E8400-E29B-41D4-A716-446655440000",
+                is_valid = true,
+            }));
+
+        var result = await CreateResource(handler).VerifyAsync("abc123");
+
+        result.AgreementCode.Should().Be("550E8400-E29B-41D4-A716-446655440000");
     }
 
     [Fact]

@@ -249,6 +249,10 @@ public sealed record DocumentVerificationResult
     [JsonPropertyName("id")]
     public string? Id { get; init; }
 
+    /// <summary>Agreement code printed on the document certificate, or <see langword="null"/> when the API returns none.</summary>
+    [JsonPropertyName("agreement_code")]
+    public string? AgreementCode { get; init; }
+
     /// <summary>Status code of the matched document, or <see langword="null"/> when not valid.</summary>
     [JsonPropertyName("status")]
     public string? Status { get; init; }

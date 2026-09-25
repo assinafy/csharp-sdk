@@ -5,11 +5,13 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `ec720249c074471565ccacff7b00de3494ac51fa5556ccd4b35a34c74264ed81`
+- Snapshot SHA-256: `ba8573634f810ee466c31e734fb62767360f17f603670a5a781c6b68d12cef92`
 - OpenAPI: `3.0.0`; API info version: `1.0.0`
 - API surface: 93 documented production operations across 71 paths and 39 component schemas.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
+
+Every request must use HTTPS with TLS 1.2 or higher. TLS 1.0 and 1.1 are rejected during the handshake, so they fail as a connection error (`NetworkException`), never as an HTTP status.
 
 The four OAuth routes are the deliberate exception to the envelope: they implement the RFC 6749 §5.1/§5.2, OpenID Connect §5.3.2, and RFC 9728 body contracts as flat JSON objects, because no standard OAuth client library would look for `access_token` or `error` nested inside a `data` key. `/.well-known/oauth-protected-resource` is additionally served at the API host root, outside the `/v1` base path, per RFC 8615.
 
@@ -125,8 +127,10 @@ Billing and subscriptions, workspace membership, credential management and admin
 **Constraints.**
 
 - The authorization code is single-use and expires **60 seconds** after approval.
-- Access tokens last **1 hour**; a connection lasts **30 days** from approval, and refreshing does not extend it.
+- Access tokens last **1 hour**. A refresh token is valid for **30 days**, and every refresh returns a new one with a fresh 30 days, so a connection expires only after 30 days without a refresh; the user must then reconnect.
 - Every refresh returns a **new** refresh token and retires the old one. Replaying a retired refresh token cannot be distinguished from a stolen one, so it terminates the entire connection.
+- Token and revoke requests are never resent automatically, by the caller's code or by an HTTP retry or hedging handler. After a failed refresh, unless the failure provably happened before the request was sent (DNS resolution, a refused connection, the TLS handshake), never send the same refresh token again: continue only if another worker has stored a different one; otherwise treat the connection as uncertain and ask the user to reconnect.
+- Refresh one at a time per connection, and revoke the refresh token read from storage immediately before the call, under the same lock: the revoke endpoint also answers `200` for a token a refresh has already retired.
 - A token is bound to one workspace; calling any other workspace returns `403`, even another the same user belongs to.
 - A missing scope answers `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"`. Treat it as a prompt to reconnect with that scope, not as a request to retry.
 - The `code_verifier` must be 43–128 characters from `A-Za-z0-9-._~`; anything else is rejected with `invalid_grant`.
@@ -417,8 +421,8 @@ User account endpoints.
 | OAuthResource | `CreateState` | `static string CreateState()` | Local: generate an opaque 128-bit `state` value for CSRF protection on one connection attempt. |
 | OAuthResource | `BuildAuthorizationUrl` | `static Uri BuildAuthorizationUrl(OAuthAuthorizationRequest request)` | Local: build the authorization URL the browser is sent to, with `response_type=code`, space-joined scopes, `code_challenge_method=S256`, and the RFC 8707 `resource` indicator. Defaults to the production authorization endpoint. |
 | OAuthResource | `ExchangeCodeAsync` | `Task<OAuthTokenResult> ExchangeCodeAsync(OAuthCodeExchangeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=authorization_code — exchange the one-time code for tokens. Sent form-encoded per RFC 6749 §4.1.3 and answered as flat JSON. The code verifier is validated against the RFC 7636 grammar before the code is spent. Never sends the client's configured credential. |
-| OAuthResource | `RefreshTokenAsync` | `Task<OAuthTokenResult> RefreshTokenAsync(OAuthRefreshRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=refresh_token — renew an access token. Refresh tokens rotate: persist the new one before anything else, and never retry blindly with the old one. |
-| OAuthResource | `RevokeAsync` | `Task RevokeAsync(OAuthRevokeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/revoke — revoke an access or refresh token. Every token outcome answers 200; only failed client authentication returns 401. |
+| OAuthResource | `RefreshTokenAsync` | `Task<OAuthTokenResult> RefreshTokenAsync(OAuthRefreshRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=refresh_token — renew an access token. Refresh tokens rotate: persist the new one before anything else, and never resend a refresh token automatically. Throws `SerializationException` when the response carries no new refresh token or returns the one sent. |
+| OAuthResource | `RevokeAsync` | `Task RevokeAsync(OAuthRevokeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/revoke — revoke an access or refresh token. Every token outcome answers 200; only failed client authentication returns 401. Read the token from storage immediately before the call, since a retired copy also answers 200. |
 | OAuthResource | `GetUserInfoAsync` | `Task<OAuthUserInfo> GetUserInfoAsync(CancellationToken cancellationToken = default)` | GET /oauth/userinfo — OpenID Connect claims about the user who authorized the configured access token. Requires the openid scope; name requires profile and email requires email. |
 | OAuthResource | `GetProtectedResourceMetadataAsync` | `Task<OAuthProtectedResourceMetadata> GetProtectedResourceMetadataAsync(CancellationToken cancellationToken = default)` | GET /.well-known/oauth-protected-resource — RFC 9728 metadata naming the authorization servers and accepted scopes. Served at the API host root, outside the /v1 base path, and unauthenticated. |
 
@@ -430,7 +434,7 @@ User account endpoints.
 
 `AssinafyClient.Create(apiKey, accountId, configure)` is the API-key shorthand. `AssinafyClient.FromConfig(config)` accepts `api_key`/`apiKey`, `account_id`/`accountId`, `token`/`access_token`/`accessToken`, and `base_url`/`baseUrl`. Dispose the client when it owns its transport; a supplied client's lifetime stays with its owner.
 
-The package has no NuGet dependencies and ships no container adapter. For dependency injection, register a named `HttpClient` with `ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)` and `SetHandlerLifetime(Timeout.InfiniteTimeSpan)`, then register `AssinafyClient` as a singleton over `IHttpClientFactory.CreateClient`. `AssinafyClient.CreatePrimaryHandler()` is public and returns the SDK's own handler: automatic redirects disabled, five-minute pooled connection lifetime. See the README for the full registration.
+The package has no NuGet dependencies and ships no container adapter. For dependency injection, register a named `HttpClient` with `ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)` and `SetHandlerLifetime(Timeout.InfiniteTimeSpan)`, then register `AssinafyClient` as a singleton over `IHttpClientFactory.CreateClient`. `AssinafyClient.CreatePrimaryHandler()` is public and returns the SDK's own handler: automatic redirects disabled, five-minute pooled connection lifetime, TLS 1.2 or 1.3 only. See the README for the full registration. Limit any retry policy on that client to safe methods, and make OAuth token and revoke calls through a separate client constructed without an `HttpClient`: its transport is `CreatePrimaryHandler()` alone, outside `IHttpClientFactory`, so no retry or hedging handler — one registered with `ConfigureHttpClientDefaults` included — can resend them.
 
 Every constructed client exposes `Authentication`, `Accounts`, `Users`, `Documents`, `Signers`, `Assignments`, `Templates`, `Tags`, `Fields`, `PublicDocuments`, `Signing`, `Signatures`, and `Webhooks`.
 
@@ -4040,6 +4044,7 @@ Example payload:
   "data": {
     "hash": "FE32EDDADE7CBDDCBB934E7402047450B0E59C02",
     "id": "63ddb172402799bfc991d10d",
+    "agreement_code": "550E8400-E29B-41D4-A716-446655440000",
     "status": "certificated",
     "page_count": "1",
     "signer_count": "1",
@@ -11895,6 +11900,12 @@ Full schema:
       "example": "63ddb172402799bfc991d10d",
       "nullable": true
     },
+    "agreement_code": {
+      "description": "Agreement code printed on the document certificate.",
+      "type": "string",
+      "example": "550E8400-E29B-41D4-A716-446655440000",
+      "nullable": true
+    },
     "status": {
       "type": "string",
       "example": "certificated",
@@ -11946,6 +11957,7 @@ Example payload:
 {
   "hash": "FE32EDDADE7CBDDCBB934E7402047450B0E59C02",
   "id": "63ddb172402799bfc991d10d",
+  "agreement_code": "550E8400-E29B-41D4-A716-446655440000",
   "status": "certificated",
   "page_count": "1",
   "signer_count": "1",
@@ -12395,6 +12407,7 @@ Success: `200` with a flat object (**not** the `{status, message, data}` envelop
 ```
 
 - `refresh_token` is present only when `offline_access` was requested **and** consented.
+- A refresh always returns a **new** `refresh_token` and retires the one sent. `OAuthResource.RefreshTokenAsync` throws `SerializationException` for a success without one, or with the one sent; do not send that token again.
 - `id_token` is present only when the `openid` scope was granted; it is RS256-signed.
 - `scope` is the scope of the **access token**. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested. Read it instead of assuming the request was granted in full — `OAuthTokenResult.GrantedScopes` and `HasScope` do this.
 
@@ -12415,7 +12428,7 @@ Errors are flat as well, and the SDK maps them to `OAuthException` with `Error` 
 
 Revoke an access or refresh token. Security: **none** — the application authenticates with its own credentials in the body.
 
-Every token outcome returns `200` — including a token that does not exist, is already revoked, or is malformed — so the endpoint can never be used to probe whether a token exists. The one exception is failed client authentication, which returns `401`. Revoking a refresh token ends the whole connection.
+Every token outcome returns `200` — including a token that does not exist, is already revoked, or is malformed — so the endpoint can never be used to probe whether a token exists. The one exception is failed client authentication, which returns `401`. Revoking a refresh token ends the whole connection. Because a token a refresh has already retired also answers `200`, revoke the refresh token read from storage immediately before the call.
 
 Request schema:
 

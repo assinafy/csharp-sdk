@@ -35,7 +35,7 @@ Compatível com `net8.0`, `net9.0` e `net10.0`. **Zero dependências NuGet.**
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.2.2
+dotnet add package Assinafy.Sdk --version 2.3.0
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
@@ -127,7 +127,9 @@ using var client = new AssinafyClient(
 ```
 
 `AssinafyClient.CreatePrimaryHandler()` devolve exatamente o handler que o SDK usa no próprio
-transporte — redirecionamentos desativados, tempo de vida de conexão de cinco minutos.
+transporte — redirecionamentos desativados, tempo de vida de conexão de cinco minutos e apenas TLS
+1.2 ou 1.3, porque a Assinafy recusa protocolos anteriores no handshake (uma `NetworkException`,
+nunca um status HTTP).
 
 As credenciais são anexadas por requisição, de modo que os headers padrão de um `HttpClient`
 fornecido nunca são alterados e a instância continua segura para compartilhar. O `Timeout` dele fica
@@ -171,16 +173,38 @@ Quatro detalhes importam:
 - **Defina o `Timeout` no `HttpClient`.** `AssinafyClientOptions.Timeout` é ignorado para um cliente
   fornecido, porque o SDK não altera um transporte que não é dele.
 
-Políticas de resiliência encadeiam normalmente no `IHttpClientBuilder`:
+Políticas de resiliência encadeiam normalmente no `IHttpClientBuilder`. Limite as retentativas aos
+métodos seguros: o handler padrão repete qualquer método, e repetir um `POST` pode, por exemplo,
+enviar o mesmo documento duas vezes:
 
 ```csharp
+using Microsoft.Extensions.Http.Resilience;   // 9.8+: versões anteriores ainda repetem timeouts
+
 builder.Services
     .AddHttpClient("Assinafy", /* … */)
     .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
-    .AddStandardResilienceHandler();
+    .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 ```
 
 Não faça `Dispose` do cliente resolvido: o `IHttpClientFactory` é dono do transporte.
+
+**Mantenha as chamadas de token e de revogação do OAuth fora da factory.** Reenviar um
+`POST /oauth/token` reapresenta um código de uso único ou um refresh token que talvez já tenha
+rotacionado, o que desconecta o usuário, e configurar os handlers que você adiciona não elimina esse
+risco: um handler de retentativa ou de hedging registrado com `ConfigureHttpClientDefaults` vale
+para todo cliente que a factory cria, inclusive um cliente nomeado à parte; um handler de hedging
+(`AddStandardHedgingHandler`) envia cópias em paralelo por definição; e o
+`Microsoft.Extensions.Http.Resilience` anterior à 9.8 repetia timeouts mesmo com
+`DisableForUnsafeHttpMethods`. Um cliente construído sem `HttpClient` é dono de um transporte que a
+factory nunca toca — `CreatePrimaryHandler()` e nenhum outro handler —, então registre um para
+`ExchangeCodeAsync`, `RefreshTokenAsync` e `RevokeAsync`:
+
+```csharp
+builder.Services.AddKeyedSingleton("AssinafyOAuth", (_, _) =>
+    new AssinafyClient(new AssinafyClientOptions()));   // sem credencial própria
+```
+
+Injete-o como `[FromKeyedServices("AssinafyOAuth")] AssinafyClient oauth`.
 
 ## Como funcionam requisições e respostas
 
@@ -501,13 +525,15 @@ e `iss` **antes de qualquer outra coisa** — se um dos dois divergir, a respost
 é de uso único e expira 60 segundos após a aprovação, então troque-o pelo servidor imediatamente:
 
 ```csharp
-if (state != HttpContext.Session.GetString("assinafy_state") ||
+if (state is null ||
+    state != HttpContext.Session.GetString("assinafy_state") ||
     iss != OAuthResource.DefaultIssuer)
     return BadRequest();
 
-using var anonimo = new AssinafyClient(new AssinafyClientOptions());
+if (error is not null)          // access_denied, invalid_scope, invalid_request, …
+    return View("FalhaNaConexao", error);
 
-var tokens = await anonimo.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
+var tokens = await oauth.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
 {
     Code = code,
     RedirectUri = "https://meuapp.example.com/oauth/callback",
@@ -517,8 +543,13 @@ var tokens = await anonimo.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
 });
 ```
 
-A rota de token se autentica com as credenciais da própria aplicação, então o cliente não precisa
-de credencial configurada. Leia `tokens.Scope` em vez de supor que tudo foi concedido:
+`oauth` é um cliente que sua aplicação cria uma única vez, como
+`new AssinafyClient(new AssinafyClientOptions())`, e usa só nas chamadas de token e de revogação.
+Ele não precisa de credencial, porque essas rotas se autenticam com as credenciais da própria
+aplicação, e é dono do próprio transporte, então nenhum handler de retentativa ou de hedging
+consegue reenviar um código de uso único ou um refresh token (veja
+[Injeção de dependência](#injeção-de-dependência)). Leia `tokens.Scope` em vez de supor que tudo
+foi concedido:
 
 ```csharp
 if (!tokens.HasScope(OAuthScopes.DocumentsWrite))
@@ -544,25 +575,42 @@ cliente usa várias workspaces, conecte cada uma separadamente e guarde tokens p
 
 ### 4. Renove e trate escopo faltante
 
-O token de acesso dura uma hora. Com `offline_access` você renova sem o usuário:
+O token de acesso dura uma hora. Com `offline_access` você renova sem o usuário: quando uma chamada
+responder `401`, renove uma vez e repita a chamada com um cliente construído com o novo token de
+acesso, porque um cliente guarda o token com que foi construído:
 
 ```csharp
-var renovado = await client.OAuth.RefreshTokenAsync(new OAuthRefreshRequest
+var enviado = await CarregarRefreshTokenAsync(conexaoId);   // sob o lock de renovação da conexão
+
+var renovado = await oauth.OAuth.RefreshTokenAsync(new OAuthRefreshRequest
 {
-    RefreshToken = refreshTokenArmazenado,
+    RefreshToken = enviado,
     ClientId = clientId,
     ClientSecret = clientSecret,
 });
 
-await SalvarTokensAsync(renovado);   // faça isso PRIMEIRO: refresh tokens rotacionam
+await SalvarTokensAsync(conexaoId, renovado);   // faça isso PRIMEIRO: refresh tokens rotacionam
+
+using var client = new AssinafyClient(new AssinafyClientOptions { Token = renovado.AccessToken });
 ```
 
 > **Usar um refresh token aposentado desconecta o usuário.** Cada renovação devolve um refresh token
-> novo e invalida o anterior. Um token reapresentado não se distingue de um roubado, então isso
-> encerra a conexão inteira. Persista o token novo antes de qualquer outra coisa, trate um timeout
-> como "pode ter funcionado" relendo o token guardado em vez de repetir com o antigo, e renove um de
-> cada vez por conexão. Uma conexão dura 30 dias a partir da aprovação e renovar não estende esse
-> prazo, então planeje reconexões mensais.
+> novo e invalida o anterior; `RefreshTokenAsync` lança `SerializationException` quando a resposta
+> não traz um novo. Um token reapresentado não se distingue de um roubado, então isso encerra a
+> conexão inteira. Persista o token novo antes de qualquer outra coisa, renove um de cada vez por
+> conexão e nunca reenvie um refresh token automaticamente, nem pelo seu código nem por um handler
+> de retentativa. Um refresh token vale 30 dias e cada renovação devolve um novo, com mais 30 dias,
+> então a conexão só expira se sua aplicação passar 30 dias sem renovar; depois disso, o usuário
+> precisa conectar de novo.
+
+**Se uma renovação falhar**, o servidor pode ter rotacionado o token mesmo assim: um timeout ou uma
+resposta perdida parece igual a uma requisição que nunca chegou. Releia o token guardado e siga em
+frente só se outro worker tiver salvo um token *diferente*. Se ainda for o token que você enviou,
+nunca o envie de novo: trate a conexão como incerta e peça ao usuário que conecte de novo. Só é
+seguro repetir falhas que comprovadamente aconteceram antes do envio — resolução de DNS, conexão
+recusada ou handshake TLS, que aparecem como uma `NetworkException` cuja `HttpRequestException`
+interna tem `HttpRequestError` igual a `NameResolutionError`, `ConnectionError` ou
+`SecureConnectionError`.
 
 Chamar um endpoint para o qual o token nunca recebeu permissão devolve `403` com um desafio nomeando
 o escopo. O SDK expõe isso em **todos** os endpoints, não só nos de OAuth:
@@ -587,12 +635,17 @@ catch (OAuthException ex) when (ex.Error == "invalid_grant")
 ### 5. Desconecte
 
 Quando o usuário desconecta no seu produto, revogue o token em vez de apenas apagar sua cópia.
-Revogar o refresh token encerra a conexão inteira, e a rota sempre responde `200`:
+Revogar o refresh token encerra a conexão inteira, e a rota responde `200` seja qual for o estado do
+token, inclusive um que uma renovação já aposentou, então uma cópia desatualizada não dá sinal de
+que a conexão terminou ou não. Leia o token do armazenamento imediatamente antes da chamada, sob o
+mesmo lock por conexão usado na renovação:
 
 ```csharp
-await client.OAuth.RevokeAsync(new OAuthRevokeRequest
+var atual = await CarregarRefreshTokenAsync(conexaoId);   // sob o lock de renovação da conexão
+
+await oauth.OAuth.RevokeAsync(new OAuthRevokeRequest
 {
-    Token = refreshTokenArmazenado,
+    Token = atual,
     ClientId = clientId,
     ClientSecret = clientSecret,
     TokenTypeHint = "refresh_token",
@@ -629,8 +682,9 @@ Console.WriteLine($"{quem.Sub} · {quem.Name} · {quem.Email} (verificado: {quem
 ```
 
 Valide o `id_token` com qualquer biblioteca OpenID Connect: `RS256`, chaves em
-`https://auth.assinafy.com.br/.well-known/jwks.json`, `iss` igual a `OAuthResource.DefaultIssuer` e
-`aud` igual ao seu `client_id`.
+`https://auth.assinafy.com.br/.well-known/jwks.json` escolhidas pelo `kid`, `iss` igual a
+`OAuthResource.DefaultIssuer`, `aud` igual ao seu `client_id`, `exp` no futuro e `nonce` igual ao
+que você enviou, se enviou.
 
 Em vez de fixar endpoints no código, descubra-os:
 

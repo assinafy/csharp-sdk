@@ -82,7 +82,9 @@ public sealed class AssinafyClient : IDisposable
     /// must match <see cref="AssinafyClientOptions.BaseUrl"/>. When using an API key,
     /// configure the supplied primary handler with automatic redirects disabled —
     /// <see cref="CreatePrimaryHandler"/> does this — because .NET otherwise forwards
-    /// custom headers such as <c>X-Api-Key</c> to redirect targets.
+    /// custom headers such as <c>X-Api-Key</c> to redirect targets. Make OAuth token and revoke
+    /// calls through a client created without an <see cref="HttpClient"/> instead, whose transport
+    /// no retry or hedging handler can reach.
     /// </summary>
     /// <param name="options">Authentication, account, and base URL configuration. Its timeout is ignored for a supplied client.</param>
     /// <param name="http">Caller-owned HTTP client whose existing base address, if set, matches <paramref name="options"/>.</param>
