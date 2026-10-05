@@ -9,6 +9,35 @@ namespace Assinafy.Sdk.Tests.Resources;
 
 public sealed class TransportContractTests
 {
+    [Fact]
+    public async Task DeletionRestrictions_PreserveTheTopLevelBlockers()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Delete, "/accounts/acc", new
+        {
+            status = 400,
+            message = "Cannot delete while restrictions are active.",
+            data = (object?)null,
+            restrictions = new[] { new { code = "ActivePaidSubscription", account_ids = new[] { "acc" } } },
+        }, HttpStatusCode.BadRequest);
+        var resource = new AccountResource(FakeHttpMessageHandler.CreateClient(handler), "acc");
+        var exception = (await ((Func<Task>)(() => resource.DeleteAsync())).Should().ThrowAsync<ApiException>()).Which;
+        exception.Details!.Value.GetProperty("restrictions")[0].GetProperty("code").GetString()
+            .Should().Be("ActivePaidSubscription");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(100)]
+    [InlineData(302)]
+    public async Task SuccessEnvelope_RejectsNonSuccessStatus(int status)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/doc-1", new { status, data = new { id = "doc-1" } });
+        var resource = new DocumentResource(FakeHttpMessageHandler.CreateClient(handler), "acc");
+        await ((Func<Task>)(() => resource.GetAsync("doc-1"))).Should().ThrowAsync<SerializationException>();
+    }
+
     [Theory]
     [InlineData("../users/api-keys", "..%2Fusers%2Fapi-keys")]
     [InlineData("doc?force=true", "doc%3Fforce%3Dtrue")]

@@ -358,7 +358,7 @@ public sealed class DocumentResource : BaseResource
         {
             foreach (var field in options.EditorFields)
             {
-                if (string.IsNullOrWhiteSpace(field.FieldId))
+                if (field is null || string.IsNullOrWhiteSpace(field.FieldId))
                     throw new ValidationException("Template editor field ID is required.");
                 if (field.Value is null)
                     throw new ValidationException("Template editor field value is required.");
@@ -404,7 +404,7 @@ public sealed class DocumentResource : BaseResource
     {
         return signers.Select(signer =>
         {
-            if (string.IsNullOrWhiteSpace(signer.RoleId))
+            if (signer is null || string.IsNullOrWhiteSpace(signer.RoleId))
                 throw new ValidationException("Template role ID is required.");
 
             var payload = new Dictionary<string, object?> { ["role_id"] = signer.RoleId };

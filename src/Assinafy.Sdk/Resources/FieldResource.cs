@@ -114,7 +114,7 @@ public sealed class FieldResource : BaseResource
     /// <summary><c>POST /accounts/{accountId}/fields/{field_id}/validate</c> — validate a single value against a field definition. Pass a signer access code when calling on a signer's behalf.</summary>
     /// <param name="fieldId">Field definition to validate against.</param>
     /// <param name="request">The value to validate.</param>
-    /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
+    /// <param name="signerAccessCode">Optional signer access code; when supplied, workspace credentials are not sent.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The validation result for the supplied value.</returns>
@@ -137,12 +137,13 @@ public sealed class FieldResource : BaseResource
             path,
             HttpMethod.Post,
             request,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            authenticate: signerAccessCode is null);
     }
 
     /// <summary><c>POST /accounts/{accountId}/fields/validate-multiple</c> — validate multiple values at once.</summary>
     /// <param name="values">Field-value pairs to validate; each references its field definition.</param>
-    /// <param name="signerAccessCode">Optional signer access code; supply it when validating on a signer's behalf.</param>
+    /// <param name="signerAccessCode">Optional signer access code; when supplied, workspace credentials are not sent.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>One validation result for each submitted field value.</returns>
@@ -163,7 +164,8 @@ public sealed class FieldResource : BaseResource
             path,
             HttpMethod.Post,
             values,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            authenticate: signerAccessCode is null).ConfigureAwait(false);
     }
 
     /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
@@ -207,8 +209,8 @@ public sealed class FieldResource : BaseResource
 
     private static IDictionary<string, string?>? OptionalAccessCodeQuery(string? signerAccessCode)
     {
-        return string.IsNullOrWhiteSpace(signerAccessCode)
+        return signerAccessCode is null
             ? null
-            : new Dictionary<string, string?> { [SignerAccessCodeParam] = signerAccessCode };
+            : AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"));
     }
 }

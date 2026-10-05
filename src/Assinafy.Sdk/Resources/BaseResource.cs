@@ -306,7 +306,11 @@ public abstract class BaseResource
 
         try
         {
-            return JsonSerializer.Deserialize<T>(json, JsonOptions);
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+                throw new JsonException("Expected a JSON response object.");
+
+            return document.RootElement.Deserialize<T>(JsonOptions);
         }
         catch (JsonException ex)
         {
@@ -513,6 +517,9 @@ public abstract class BaseResource
             throw ApiError(response, errorStatus, message, ReadErrorDetails(root));
         }
 
+        if (status is < 200 or >= 300)
+            throw new JsonException("Expected a successful API envelope status between 200 and 299.");
+
         if (!root.TryGetProperty("data", out var dataEl) || dataEl.ValueKind == JsonValueKind.Null)
         {
             if (requireData)
@@ -539,7 +546,7 @@ public abstract class BaseResource
     {
         return root.TryGetProperty("data", out var data) && data.ValueKind != JsonValueKind.Null
             ? data.Clone()
-            : null;
+            : root.TryGetProperty("restrictions", out _) ? root.Clone() : null;
     }
 
     private protected static string AppendQueryString(string path, IDictionary<string, string?>? queryParams)

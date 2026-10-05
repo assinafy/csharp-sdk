@@ -18,6 +18,71 @@ namespace Assinafy.Sdk.Tests.Resources;
 /// </summary>
 public sealed class OAuthResourceTests
 {
+    [Fact]
+    public async Task ExchangeSubjectToken_PostsTheInternalServiceGrantWithoutWorkspaceCredentials()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/oauth/token", new
+        {
+            access_token = "api-token",
+            token_type = "Bearer",
+            issued_token_type = "urn:ietf:params:oauth:token-type:access_token",
+            expires_in = 300,
+            scope = "documents:read",
+        });
+        var resource = new OAuthResource(Client(handler), request => request.Headers.Add("X-Api-Key", "key"));
+        var result = await resource.ExchangeSubjectTokenAsync(new OAuthTokenExchangeRequest
+        {
+            SubjectToken = "front-end-token",
+            ClientId = "service-client",
+            ClientSecret = "service-secret",
+        });
+
+        var sent = handler.Requests.Should().ContainSingle().Subject;
+        sent.Method.Should().Be(HttpMethod.Post);
+        sent.RequestUri!.PathAndQuery.Should().Be("/v1/oauth/token");
+        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
+        sent.Content!.Headers.ContentType!.MediaType.Should().Be("application/x-www-form-urlencoded");
+        Form(handler.RequestBodies.Single()).Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["grant_type"] = "urn:ietf:params:oauth:grant-type:token-exchange",
+            ["subject_token"] = "front-end-token",
+            ["subject_token_type"] = "urn:ietf:params:oauth:token-type:access_token",
+            ["client_id"] = "service-client",
+            ["client_secret"] = "service-secret",
+            ["resource"] = OAuthResource.DefaultResource,
+        });
+        result.AccessToken.Should().Be("api-token");
+        result.IssuedTokenType.Should().Be("urn:ietf:params:oauth:token-type:access_token");
+        result.RefreshToken.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{\"sub\":\" \"}")]
+    public async Task UserInfo_RejectsMissingSubject(string body)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddRawResponse(HttpMethod.Get, "/oauth/userinfo", body);
+        var resource = new OAuthResource(Client(handler));
+        await ((Func<Task>)(() => resource.GetUserInfoAsync())).Should().ThrowAsync<SerializationException>();
+    }
+
+    [Theory]
+    [InlineData("{\"access_token\":\"at\",\"expires_in\":3600}")]
+    [InlineData("{\"access_token\":\"at\",\"token_type\":\"Basic\",\"expires_in\":3600}")]
+    [InlineData("{\"access_token\":\"at\",\"token_type\":\"Bearer\",\"expires_in\":0}")]
+    public async Task ExchangeCode_RejectsInvalidTokenMetadataWithoutRetrying(string body)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddRawResponse(HttpMethod.Post, "/oauth/token", body);
+        var resource = new OAuthResource(Client(handler));
+        await ((Func<Task>)(() => resource.ExchangeCodeAsync(ValidExchange()))).Should().ThrowAsync<SerializationException>();
+        handler.Requests.Should().ContainSingle();
+    }
+
     private static HttpClient Client(FakeHttpMessageHandler handler) => FakeHttpMessageHandler.CreateClient(handler);
 
     private static OAuthCodeExchangeRequest ValidExchange() => new()

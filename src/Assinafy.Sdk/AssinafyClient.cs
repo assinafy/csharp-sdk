@@ -205,7 +205,8 @@ public sealed class AssinafyClient : IDisposable
 
     /// <summary>
     /// Create the primary handler the SDK uses for its own transport: automatic redirects disabled
-    /// (so <c>X-Api-Key</c> is never forwarded to a redirect target), a five-minute pooled
+    /// (so <c>X-Api-Key</c> is never forwarded to a redirect target), cookies disabled
+    /// (so sessions cannot bleed between workspace and signer requests), a five-minute pooled
     /// connection lifetime (so a long-lived client still picks up DNS changes), and TLS 1.2 or
     /// 1.3 only (TLS 1.0 and 1.1 are refused).
     /// </summary>
@@ -219,6 +220,7 @@ public sealed class AssinafyClient : IDisposable
     public static SocketsHttpHandler CreatePrimaryHandler() => new()
     {
         AllowAutoRedirect = false,
+        UseCookies = false,
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         SslOptions = new SslClientAuthenticationOptions
         {
@@ -340,7 +342,7 @@ public sealed class AssinafyClient : IDisposable
             cancellationToken).ConfigureAwait(false);
 
         if (options.WaitForReady ?? true)
-            await Documents.WaitUntilReadyAsync(document.Id, cancellationToken: cancellationToken)
+            document = await Documents.WaitUntilReadyAsync(document.Id, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
         var signerIds = new List<string>(options.Signers.Count);

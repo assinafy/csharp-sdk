@@ -10,6 +10,7 @@ public sealed class SigningResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>GET /sign</c> — signer-facing endpoint: load the document and assignment data for the current signer access code.</summary>
+    /// <remarks>Returns 409 while the document is being prepared. Digital-certificate signers must confirm their data and accept terms before this call; the query flag does not bypass that requirement.</remarks>
     /// <param name="signerAccessCode">The signer's access code identifying which assignment to load.</param>
     /// <param name="hasAcceptedTerms">When set, records whether the signer has accepted the terms of use; sent as the <c>has_accepted_terms</c> query flag.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

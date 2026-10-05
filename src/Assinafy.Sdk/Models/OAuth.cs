@@ -12,7 +12,7 @@ namespace Assinafy.Sdk.Models;
 /// </remarks>
 public static class OAuthScopes
 {
-    /// <summary>Read documents, their pages, tags, signers, assignments, and activity.</summary>
+    /// <summary>Read documents, their pages, tags, signers, assignments, activity, WhatsApp histories, and webhook types/history.</summary>
     public const string DocumentsRead = "documents:read";
 
     /// <summary>Create, update, and delete documents and manage their signers and assignments. Sending for signature spends the workspace's notification credits.</summary>
@@ -24,7 +24,7 @@ public static class OAuthScopes
     /// <summary>Create, update, and delete templates, their pages, roles, fields, and tags.</summary>
     public const string TemplatesWrite = "templates:write";
 
-    /// <summary>Read the workspace's profile, theme, and logo.</summary>
+    /// <summary>Read the workspace's profile, theme, logo, and webhook subscription.</summary>
     public const string AccountRead = "account:read";
 
     /// <summary>Configure and deactivate the workspace webhook subscription.</summary>
@@ -124,6 +124,10 @@ public sealed record OAuthTokenResult
     [JsonPropertyName("token_type")]
     public string TokenType { get; init; } = string.Empty;
 
+    /// <summary>RFC 8693 issued token type, present only for an internal-service token exchange.</summary>
+    [JsonPropertyName("issued_token_type")]
+    public string? IssuedTokenType { get; init; }
+
     /// <summary>Lifetime of <see cref="AccessToken"/> in seconds, typically 3600.</summary>
     [JsonPropertyName("expires_in")]
     public int ExpiresIn { get; init; }
@@ -207,6 +211,28 @@ public sealed class OAuthRefreshRequest
     public string? ClientSecret { get; set; }
 
     /// <summary>RFC 8707 resource indicator, when one was used to obtain the token.</summary>
+    public string? Resource { get; set; }
+}
+
+/// <summary>Body for <c>POST /oauth/token</c> with the RFC 8693 token-exchange grant.</summary>
+/// <remarks>
+/// Restricted to provisioned confidential internal-service clients. Ordinary marketplace,
+/// confidential, and public applications receive <c>invalid_client</c>; use authorization code
+/// and refresh grants for those integrations. Exchanges never issue a refresh token and cannot
+/// widen the subject token's permissions or lifetime.
+/// </remarks>
+public sealed class OAuthTokenExchangeRequest
+{
+    /// <summary>The original access token for the front-end resource; an exchanged token cannot be exchanged again.</summary>
+    public required string SubjectToken { get; set; }
+
+    /// <summary>The provisioned internal-service client's identifier.</summary>
+    public required string ClientId { get; set; }
+
+    /// <summary>The internal-service client's secret, sent only to the token endpoint.</summary>
+    public required string ClientSecret { get; set; }
+
+    /// <summary>The target API resource identifier. Defaults to <see cref="Resources.OAuthResource.DefaultResource"/>.</summary>
     public string? Resource { get; set; }
 }
 

@@ -18,7 +18,7 @@ public sealed class UploadAndRequestSignaturesSigner
     /// <summary>Optional per-signer verification method: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>Optional notification channels: <c>Email</c>, <c>Whatsapp</c>, or both.</summary>
+    /// <summary>Exactly one optional notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. The API infers the omitted side.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Optional signing-order step for this signer (see <see cref="SignerRef.Step"/>).</summary>
@@ -40,7 +40,7 @@ public sealed class UploadAndRequestSignaturesOptions
     /// <summary>The signers to create for the assignment; at least one is required.</summary>
     public required IReadOnlyList<UploadAndRequestSignaturesSigner> Signers { get; set; }
 
-    /// <summary>When <see langword="true"/> (the default), waits for the document to reach <c>ready</c> before creating the assignment.</summary>
+    /// <summary>When <see langword="true"/> (the default), waits for the document to reach <c>metadata_ready</c> before creating the assignment.</summary>
     public bool? WaitForReady { get; set; }
 
     /// <summary>Assignment method to create. Defaults to <c>virtual</c> when not set.</summary>
@@ -72,7 +72,7 @@ public sealed class UploadAndRequestSignaturesOptions
 /// <summary>Result of the <c>UploadAndRequestSignatures</c> convenience flow.</summary>
 public sealed class UploadAndRequestSignaturesResult
 {
-    /// <summary>The uploaded document and its current lifecycle state.</summary>
+    /// <summary>The document returned by readiness polling, or the upload response when waiting is disabled. Fetch it again for its state after the assignment was created.</summary>
     public required DocumentDetails Document { get; init; }
 
     /// <summary>The signature request (assignment) created for the document.</summary>

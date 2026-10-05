@@ -15,6 +15,6 @@ public static class DocumentArtifactNames
     /// <summary>The signed PDF using the PAdES signature format.</summary>
     public const string Pades = "pades";
 
-    /// <summary>The signed PDF bundled with the certificate page.</summary>
+    /// <summary>A ZIP containing the original, certificated PDF, certificate page, and PAdES artifact when available.</summary>
     public const string Bundle = "bundle";
 }

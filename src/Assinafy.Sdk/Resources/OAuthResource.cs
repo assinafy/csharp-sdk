@@ -201,6 +201,38 @@ public sealed class OAuthResource : BaseResource
             cancellationToken);
     }
 
+    /// <summary><c>POST /oauth/token</c> — exchange a front-end resource's access token for an API token using RFC 8693.</summary>
+    /// <remarks>
+    /// Only provisioned confidential internal-service clients can use this grant; ordinary
+    /// applications receive <c>invalid_client</c>. No refresh token is issued. The issued access
+    /// token retains the original client's identity, so the exchanging service client cannot
+    /// revoke it with its own credentials. Use a transport without retries or hedging.
+    /// </remarks>
+    /// <param name="request">Original subject token, service-client credentials, and target API resource.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A short-lived API token carrying the subject token's permissions.</returns>
+    public Task<OAuthTokenResult> ExchangeSubjectTokenAsync(
+        OAuthTokenExchangeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.SubjectToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ClientId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.ClientSecret);
+
+        return PostTokenAsync(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["grant_type"] = "urn:ietf:params:oauth:grant-type:token-exchange",
+                ["subject_token"] = request.SubjectToken,
+                ["subject_token_type"] = "urn:ietf:params:oauth:token-type:access_token",
+                ["client_id"] = request.ClientId,
+            },
+            request.ClientSecret,
+            request.Resource ?? DefaultResource,
+            cancellationToken);
+    }
+
     /// <summary>
     /// <c>POST /oauth/revoke</c> — revoke an access or refresh token when a user disconnects.
     /// Revoking the refresh token ends the whole connection.
@@ -255,12 +287,15 @@ public sealed class OAuthResource : BaseResource
     /// <exception cref="OAuthException"><c>insufficient_scope</c> when the token lacks <c>openid</c>.</exception>
     public async Task<OAuthUserInfo> GetUserInfoAsync(CancellationToken cancellationToken = default)
     {
-        return await CallUnwrappedAsync<OAuthUserInfo>(
+        var result = await CallUnwrappedAsync<OAuthUserInfo>(
                    () => new HttpRequestMessage(HttpMethod.Get, "oauth/userinfo"),
                    cancellationToken,
                    authenticate: true,
-                   requireBody: true).ConfigureAwait(false)
-               ?? throw new SerializationException("The userinfo endpoint returned no claims.");
+                   requireBody: true).ConfigureAwait(false);
+        if (result is null || string.IsNullOrWhiteSpace(result.Sub))
+            throw new SerializationException("The userinfo endpoint returned no subject identifier.");
+
+        return result;
     }
 
     /// <summary>
@@ -304,6 +339,8 @@ public sealed class OAuthResource : BaseResource
 
         if (result is null || string.IsNullOrWhiteSpace(result.AccessToken))
             throw new SerializationException("The token endpoint returned no access token.");
+        if (!string.Equals(result.TokenType, "Bearer", StringComparison.OrdinalIgnoreCase) || result.ExpiresIn <= 0)
+            throw new SerializationException("The token endpoint returned an invalid token type or lifetime.");
 
         // A refresh must rotate: the token just sent may already be retired, so a response that
         // does not replace it cannot be stored safely.

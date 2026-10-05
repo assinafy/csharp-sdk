@@ -214,12 +214,15 @@ public sealed class AssignmentResource : BaseResource
 
         foreach (var entry in entries)
         {
-            if (string.IsNullOrWhiteSpace(entry.PageId))
+            if (entry is null || string.IsNullOrWhiteSpace(entry.PageId))
                 throw new ValidationException("Assignment entry page ID is required.");
+
+            if (entry.Fields is null)
+                throw new ValidationException("Assignment entry fields are required.");
 
             foreach (var field in entry.Fields)
             {
-                if (string.IsNullOrWhiteSpace(field.SignerId) || string.IsNullOrWhiteSpace(field.FieldId))
+                if (field is null || string.IsNullOrWhiteSpace(field.SignerId) || string.IsNullOrWhiteSpace(field.FieldId))
                     throw new ValidationException("Assignment entry signer and field IDs are required.");
 
                 var settings = field.DisplaySettings;
@@ -237,7 +240,11 @@ public sealed class AssignmentResource : BaseResource
     private static List<SignerRef> ExtractSignerRefs(CreateAssignmentRequest request)
     {
         if (request.Signers?.Count > 0)
+        {
+            if (request.Signers.Any(signer => signer is null))
+                throw new ValidationException("Signer references must not contain null entries.");
             return request.Signers;
+        }
 
         if (request.SignerIds?.Length > 0)
             return request.SignerIds.Select(id => (SignerRef)id).ToList();

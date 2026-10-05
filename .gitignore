@@ -18,3 +18,5 @@ TestResults/
 test-results/
 artifacts/
 coverage.*
+/AGENTS.md
+/CLAUDE.md

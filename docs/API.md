@@ -5,9 +5,9 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `ba8573634f810ee466c31e734fb62767360f17f603670a5a781c6b68d12cef92`
+- Snapshot SHA-256: `e736ee4bea3b76f98df4c2388134cf7339810629bc49dbb63004441097a7f448`
 - OpenAPI: `3.0.0`; API info version: `1.0.0`
-- API surface: 93 documented production operations across 71 paths and 39 component schemas.
+- API surface: 93 documented production operations across 71 paths and 41 component schemas.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
 
@@ -34,19 +34,19 @@ For sandbox plan/credit purchases, use the test card `5510 3647 0363 3414`.
 ### 3. Upload a document
 
 ```shell
-curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/documents" \\
-  -H 'X-Api-Key: {api_key}' \\
+curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/documents" \
+  -H 'X-Api-Key: {api_key}' \
   -F 'file=@/tmp/document.pdf'
 ```
 
-Save the returned document `id` for the next steps.
+Save the returned document `id` and wait for `metadata_ready` before requesting signatures.
 
 ### 4. Create signers
 
 ```shell
-curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/signers" \\
-  -H 'X-Api-Key: {api_key}' \\
-  -H 'Content-Type: application/json' \\
+curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/signers" \
+  -H 'X-Api-Key: {api_key}' \
+  -H 'Content-Type: application/json' \
   -d '{ "full_name": "John Dove", "email": "john@example.com" }'
 ```
 
@@ -55,9 +55,9 @@ Save each signer `id`.
 ### 5. Request signatures
 
 ```shell
-curl -X POST "https://api.assinafy.com.br/v1/documents/{document_id}/assignments" \\
-  -H 'X-Api-Key: {api_key}' \\
-  -H 'Content-Type: application/json' \\
+curl -X POST "https://api.assinafy.com.br/v1/documents/{document_id}/assignments" \
+  -H 'X-Api-Key: {api_key}' \
+  -H 'Content-Type: application/json' \
   -d '{ "method": "virtual", "signers": [{ "id": "{signer_id}" }] }'
 ```
 
@@ -105,17 +105,17 @@ Discovery documents are published by the authorization server at `https://auth.a
 | `userinfo_endpoint` | `https://api.assinafy.com.br/v1/oauth/userinfo` |
 | `jwks_uri` | `https://auth.assinafy.com.br/.well-known/jwks.json` |
 
-**Registration.** Applications are created in the Assinafy app under *Settings → OAuth applications*, never through an API. Redirect URIs must be `https://`, carry no `#`, and are matched **exactly**: `…/callback` and `…/callback/` are different URIs. A **Confidential** application runs on a server the integrator controls and receives a `client_secret`; a **Public** application runs on the user's device and authenticates with PKCE alone. The type cannot be changed later.
+**Registration.** Workspace-owned applications are created by an owner in the Assinafy app under *Integrations → OAuth apps* when the plan includes OAuth applications. Verified marketplace applications can be registered by Assinafy for multiple customers. Redirect URIs must be `https://`, carry no `#`, and are matched **exactly**: `…/callback` and `…/callback/` are different URIs. A **Confidential** application runs on a server the integrator controls and receives a `client_secret`; a **Public** application runs on the user's device and authenticates with PKCE alone. The type cannot be changed later.
 
 **Scopes.**
 
 | Scope | Grants |
 |---|---|
-| `documents:read` | Read documents, their pages, tags, signers, assignments and activity. |
+| `documents:read` | Read documents, their pages, tags, signers, assignments, activity, WhatsApp notifications, and webhook event types and delivery history. |
 | `documents:write` | Create, update and delete documents, and manage their signers, assignments and activity. |
 | `templates:read` | Read reusable document templates, their pages, roles, fields and tags. |
 | `templates:write` | Create, update and delete templates, their pages, roles, fields and tags. |
-| `account:read` | Read the workspace's profile, theme and logo. |
+| `account:read` | Read the workspace's profile, theme, logo, and webhook subscription. |
 | `webhooks:write` | Configure and deactivate the workspace webhook subscription. |
 | `openid` | Receive a signed `id_token` identifying the user. |
 | `profile` | Read the user's name. |
@@ -151,16 +151,16 @@ Create, list, download, tag and delete documents.
 
 ### Verification & Notification Methods
 
-When you create an assignment, each signer can be configured with a **verification method** (how the signer proves their identity before signing) and one or more **notification methods** (how the signer is told a signature is being requested). These are set per signer via `signers[].verification_method` and `signers[].notification_methods` on the **Create assignment** endpoint.
+When you create an assignment, each signer can be configured with a **verification method** (how the signer proves their identity before signing) and a **notification method** (how the signer is told a signature is being requested). Exactly one notification method is allowed per signer; `notification_methods` is an array for historical reasons, and sending more than one entry returns `400`. These are set per signer via `signers[].verification_method` and `signers[].notification_methods` on the **Create assignment** endpoint.
 
-For direct assignment creation, verification and notification are independently configurable. An omitted verification method defaults to `Email`; omitted notification methods default to `Email`. The create-from-template route accepts one notification method per signer and infers a missing verification or notification method from the supplied side.
+Verification and notification are **coupled** — you may send one, both or neither, and the missing side is inferred. If neither is sent, both default to `Email`.
 
 ### Verification methods
 
 | Code | Description |
 |------|-------------|
 | `Email` | The signer receives a verification code by email that must be entered before signing. |
-| `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. |
+| `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. Requires the WhatsApp notification channel — the two always travel together. |
 | `DigitalCertificate` | The signer signs with their own ICP-Brasil digital certificate (A1/A3) from their device using the Web PKI browser extension, producing a qualified PAdES signature on the document. |
 
 | Code | Requirements | Cost per signer (verification + its notification) |
@@ -169,7 +169,7 @@ For direct assignment creation, verification and notification are independently 
 | `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits (the WhatsApp notification, which this method requires) |
 | `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 2 credits + its notification |
 
-> **How verification is priced.** No verification method carries a price of its own — you are billed for the **notification** it is paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one.
+> **How verification is priced.** No verification method carries a price of its own — you are billed for the **notification** it is paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.
 
 > **Digital Certificate cost.** Unlike the other verification methods (whose only cost is the notification), the digital-certificate signature itself is charged **2 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
 
@@ -187,14 +187,24 @@ The notification method is what delivers the signing invitation to the signer. E
 | `Email` | Signer must have an email address. | 0 credits |
 | `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits |
 
-### Channel rules
+### Coupling rules
 
-Direct assignment creation accepts `Email`, `Whatsapp`, or both notification channels for a signer. Create-from-template accepts one notification channel per signer. Email and WhatsApp recipient requirements still apply, and WhatsApp requires a paid subscription.
+Only matching combinations are allowed; an invalid pairing returns `400 Bad Request`.
 
-### Default behavior
+| Verification method | Allowed notification methods |
+|---------------------|------------------------------|
+| `Email` | `Email` |
+| `Whatsapp` | `Whatsapp` |
+| `DigitalCertificate` | `Email` or `Whatsapp` |
 
-- **Direct assignment:** omitted `verification_method` defaults to `Email`; omitted `notification_methods` defaults to `Email`.
-- **Create from template:** when only one side is supplied, the missing verification or notification method is inferred from it; when neither is supplied, both default to `Email`.
+Exactly one notification method is allowed per signer — `notification_methods` takes a single-element array, and a second entry is rejected with `400` before the pairing above is even checked.
+
+### Default behavior (inference)
+
+- **Neither specified** — both default to `Email`.
+- **Only `verification_method`** — `notification_methods` is inferred from it (e.g. `Whatsapp` verification → `Whatsapp` notification, and with it that channel's cost).
+- **Only `notification_methods`** — `verification_method` is inferred from it.
+- **Both specified** — used as-is, subject to the coupling rules above.
 
 ### Costs
 
@@ -202,6 +212,8 @@ Notification cost is charged **per signer**, on top of the document cost. For ex
 
 - 2 signers notified by email = 0 credits
 - 2 signers notified by WhatsApp = 0.9 credits
+
+Verification follows the same arithmetic, because it is the notification that is billed: 2 signers **verified** by WhatsApp are necessarily notified by WhatsApp, and therefore also cost 0.9 credits.
 
 Use the **Estimate assignment cost** endpoint to preview the exact total (documents + notifications) before creating an assignment.
 
@@ -422,6 +434,7 @@ User account endpoints.
 | OAuthResource | `BuildAuthorizationUrl` | `static Uri BuildAuthorizationUrl(OAuthAuthorizationRequest request)` | Local: build the authorization URL the browser is sent to, with `response_type=code`, space-joined scopes, `code_challenge_method=S256`, and the RFC 8707 `resource` indicator. Defaults to the production authorization endpoint. |
 | OAuthResource | `ExchangeCodeAsync` | `Task<OAuthTokenResult> ExchangeCodeAsync(OAuthCodeExchangeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=authorization_code — exchange the one-time code for tokens. Sent form-encoded per RFC 6749 §4.1.3 and answered as flat JSON. The code verifier is validated against the RFC 7636 grammar before the code is spent. Never sends the client's configured credential. |
 | OAuthResource | `RefreshTokenAsync` | `Task<OAuthTokenResult> RefreshTokenAsync(OAuthRefreshRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token with grant_type=refresh_token — renew an access token. Refresh tokens rotate: persist the new one before anything else, and never resend a refresh token automatically. Throws `SerializationException` when the response carries no new refresh token or returns the one sent. |
+| OAuthResource | `ExchangeSubjectTokenAsync` | `Task<OAuthTokenResult> ExchangeSubjectTokenAsync(OAuthTokenExchangeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/token — RFC 8693 exchange restricted to provisioned confidential internal-service clients. |
 | OAuthResource | `RevokeAsync` | `Task RevokeAsync(OAuthRevokeRequest request, CancellationToken cancellationToken = default)` | POST /oauth/revoke — revoke an access or refresh token. Every token outcome answers 200; only failed client authentication returns 401. Read the token from storage immediately before the call, since a retired copy also answers 200. |
 | OAuthResource | `GetUserInfoAsync` | `Task<OAuthUserInfo> GetUserInfoAsync(CancellationToken cancellationToken = default)` | GET /oauth/userinfo — OpenID Connect claims about the user who authorized the configured access token. Requires the openid scope; name requires profile and email requires email. |
 | OAuthResource | `GetProtectedResourceMetadataAsync` | `Task<OAuthProtectedResourceMetadata> GetProtectedResourceMetadataAsync(CancellationToken cancellationToken = default)` | GET /.well-known/oauth-protected-resource — RFC 9728 metadata naming the authorization servers and accepted scopes. Served at the API host root, outside the /v1 base path, and unauthenticated. |
@@ -779,8 +792,8 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Webhooks | GET | `/v1/accounts/{accountId}/webhooks` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Webhooks | POST | `/v1/accounts/{accountId}/webhooks/{historyId}/retry` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
 | Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| OAuth | POST | `/v1/oauth/token` | application/json or application/x-www-form-urlencoded: object (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 500 |
-| OAuth | POST | `/v1/oauth/revoke` | application/json or application/x-www-form-urlencoded: object (required) | 200, empty body | none (client credentials in the body) | 401, 500 |
+| OAuth | POST | `/v1/oauth/token` | application/x-www-form-urlencoded or application/json: OAuthTokenRequest (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 500 |
+| OAuth | POST | `/v1/oauth/revoke` | application/x-www-form-urlencoded or application/json: OAuthRevokeRequest (required) | 200, empty body | none (client credentials in the body) | 401, 500 |
 | OAuth | GET | `/v1/oauth/userinfo` | none | application/json: object (flat, no envelope) | bearerAuth or apiKeyAuth | 401, 403, 500 |
 | OAuth | GET | `/.well-known/oauth-protected-resource` | none | application/json: object (flat, no envelope) | none | 500 |
 
@@ -848,21 +861,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}
 
@@ -957,21 +964,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}
 
@@ -1049,27 +1050,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [DeletionRestrictions](#shared-deletionrestrictions) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/theme
 
@@ -1126,15 +1119,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/logo
 
@@ -1164,21 +1153,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/logo
 
@@ -1232,21 +1215,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}/logo
 
@@ -1284,15 +1261,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts
 
@@ -1359,15 +1332,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts
 
@@ -1463,21 +1432,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}/activities
 
@@ -1544,15 +1507,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/assignments
 
@@ -1677,15 +1636,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/documents/{documentId}/assignments
 
@@ -1731,7 +1686,7 @@ Request body: required.
             "example": "615605f50e968054a5b7c9b8"
           },
           "verification_method": {
-            "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp (incurs an additional cost and is available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 2 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. Omit to default to `Email`.",
+            "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 2 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. Omit to default to `Email`.",
             "type": "string",
             "enum": [
               "Email",
@@ -1741,7 +1696,7 @@ Request body: required.
             "example": "Email"
           },
           "notification_methods": {
-            "description": "Channels used to notify the signer of the request. Any combination of `Email` and `Whatsapp` (WhatsApp incurs an additional cost and is available only on paid subscriptions). Omit to default to `{\"Email\"}`.",
+            "description": "How the signer is told a signature is being requested. **Exactly one method per signer** — the array shape is historical, and sending two returns `400`. The method must also be compatible with `verification_method`: `Email` verification takes `Email`, `Whatsapp` verification takes `Whatsapp`, and `DigitalCertificate` takes either. WhatsApp incurs an additional cost and is available only on paid subscriptions. Omit it to have it inferred from `verification_method`, or `{\"Email\"}` when neither is sent. See **Verification & Notification Methods** for the full pairing table.",
             "type": "array",
             "items": {
               "type": "string",
@@ -1796,7 +1751,7 @@ Request body: required.
       "type": "string"
     },
     "expires_at": {
-      "description": "ISO 8601; default is no expiration.",
+      "description": "ISO 8601; default is no expiration. Must be at least one hour in the future.",
       "type": "string",
       "format": "date-time"
     },
@@ -1960,21 +1915,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/documents/{documentId}/assignments/estimate-cost
 
@@ -2019,7 +1968,7 @@ Request body: required.
       "items": {
         "properties": {
           "verification_method": {
-            "description": "Verification method to price. `Whatsapp` may incur an additional cost; `DigitalCertificate` adds the per-signer signature cost.",
+            "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification.",
             "type": "string",
             "enum": [
               "Email",
@@ -2029,7 +1978,7 @@ Request body: required.
             "example": "Whatsapp"
           },
           "notification_methods": {
-            "description": "Notification channels to price. `Whatsapp` may incur an additional cost.",
+            "description": "The notification channel to price — exactly one per signer, subject to the same pairing rules as **Create assignment**. `Whatsapp` costs 0.45 credits per signer. Omit it to have it inferred from `verification_method`.",
             "type": "array",
             "items": {
               "type": "string",
@@ -2064,7 +2013,7 @@ Example payload:
     {
       "verification_method": "Whatsapp",
       "notification_methods": [
-        "Email"
+        "Whatsapp"
       ]
     }
   ],
@@ -2215,15 +2164,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost
 
@@ -2297,15 +2242,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/documents/{documentId}/assignments/{assignmentId}/reset-expiration
 
@@ -2325,7 +2266,7 @@ Request body: required.
 {
   "properties": {
     "expires_at": {
-      "description": "New expiration date (ISO 8601).",
+      "description": "New expiration date (ISO 8601). Must be at least one hour in the future.",
       "type": "string",
       "format": "date-time",
       "example": "2026-12-31T23:59:59Z"
@@ -2448,27 +2389,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/login
 
@@ -2574,15 +2507,11 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/authentication/request-password-reset
 
@@ -2666,9 +2595,7 @@ Error responses:
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/authentication/reset-password
 
@@ -2765,15 +2692,11 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/authentication/change-password
 
@@ -2873,21 +2796,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/documents
 
@@ -3057,15 +2974,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/documents
 
@@ -3240,21 +3153,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/documents/search
 
@@ -3421,15 +3328,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/statuses
 
@@ -3501,15 +3404,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}
 
@@ -3667,21 +3566,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/documents/{documentId}
 
@@ -3735,21 +3628,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PATCH /v1/documents/{documentId}
 
@@ -3932,27 +3819,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}/download/{artifactName}
 
@@ -3983,21 +3862,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentSignatureHash}/verify
 
@@ -4061,9 +3934,7 @@ Error responses:
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/documents/{documentId}/tags
 
@@ -4128,15 +3999,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/documents/{documentId}/tags
 
@@ -4227,15 +4094,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/documents/{documentId}/tags
 
@@ -4326,15 +4189,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}/documents/{documentId}/tags/{tagId}
 
@@ -4396,15 +4255,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/fields
 
@@ -4477,15 +4332,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/fields
 
@@ -4588,21 +4439,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/fields/{fieldId}
 
@@ -4667,21 +4512,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/fields/{fieldId}
 
@@ -4775,21 +4614,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}/fields/{fieldId}
 
@@ -4844,21 +4677,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/fields/{fieldId}/validate
 
@@ -4939,15 +4766,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/fields/validate-multiple
 
@@ -5045,15 +4868,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/field-types
 
@@ -5111,15 +4930,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/users/self/notification-preferences
 
@@ -5179,15 +4994,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/users/self/notification-preferences
 
@@ -5202,7 +5013,55 @@ Request body: required.
 
 ```json
 {
-  "$ref": "#/components/schemas/NotificationPreferences"
+  "description": "Owner-facing document notifications, keyed by notification type. `true` means the e-mail is sent.",
+  "properties": {
+    "DocumentCompleted": {
+      "description": "Every signer has signed and the document is certified.",
+      "type": "boolean",
+      "example": true
+    },
+    "SignerDeclined": {
+      "description": "A signer declined to sign.",
+      "type": "boolean",
+      "example": true
+    },
+    "DocumentCancelled": {
+      "description": "The document was cancelled.",
+      "type": "boolean",
+      "example": true
+    },
+    "DocumentAboutToExpire": {
+      "description": "The signature deadline is approaching.",
+      "type": "boolean",
+      "example": true
+    },
+    "DocumentExpired": {
+      "description": "The signature deadline passed.",
+      "type": "boolean",
+      "example": true
+    },
+    "DocumentExpirationReset": {
+      "description": "The signature deadline was extended.",
+      "type": "boolean",
+      "example": true
+    },
+    "DocumentProcessingFailed": {
+      "description": "An uploaded document could not be processed.",
+      "type": "boolean",
+      "example": true
+    },
+    "TemplateProcessingFailed": {
+      "description": "A template could not be processed.",
+      "type": "boolean",
+      "example": true
+    },
+    "SignerWhatsappFailed": {
+      "description": "A WhatsApp notification to a signer could not be delivered.",
+      "type": "boolean",
+      "example": true
+    }
+  },
+  "type": "object"
 }
 ```
 
@@ -5270,21 +5129,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}/thumbnail
 
@@ -5314,21 +5167,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}/pages/{pageId}/download
 
@@ -5359,21 +5206,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/public/documents/{documentId}
 
@@ -5531,15 +5372,11 @@ Error responses:
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/public/documents/{documentId}/send-token
 
@@ -5598,9 +5435,7 @@ Error responses:
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/signers
 
@@ -5667,15 +5502,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/signers
 
@@ -5770,21 +5601,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/signers/{signerId}
 
@@ -5844,21 +5669,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/signers/{signerId}
 
@@ -5959,27 +5778,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}/signers/{signerId}
 
@@ -6034,21 +5845,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/self
 
@@ -6108,15 +5913,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/document
 
@@ -6274,21 +6075,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/sign
 
@@ -6454,9 +6249,7 @@ No response payload documented.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 409
 
@@ -6466,9 +6259,7 @@ No response payload documented.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/documents/{documentId}/assignments/{assignmentId}
 
@@ -6578,9 +6369,7 @@ No response payload documented.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 409
 
@@ -6590,9 +6379,7 @@ No response payload documented.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/documents/{documentId}/assignments/{assignmentId}/reject
 
@@ -6615,8 +6402,9 @@ Request body: required.
   ],
   "properties": {
     "decline_reason": {
-      "description": "Descriptive reason for declining.",
+      "description": "Descriptive reason for declining. Up to 2000 characters; longer values return 400.",
       "type": "string",
+      "maxLength": 2000,
       "example": "I do not agree with clause 2."
     }
   },
@@ -6674,15 +6462,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/signers/documents/sign-multiple
 
@@ -6770,15 +6554,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/signers/documents/decline-multiple
 
@@ -6810,8 +6590,9 @@ Request body: required.
       ]
     },
     "decline_reason": {
-      "description": "Reason for declining.",
+      "description": "Reason for declining. Up to 2000 characters; longer values return 400.",
       "type": "string",
+      "maxLength": 2000,
       "example": "Unfavorable terms."
     }
   },
@@ -6873,15 +6654,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/verify
 
@@ -6941,21 +6718,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/documents/{documentId}/signers/confirm-data
 
@@ -7043,15 +6814,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/signers/accept-terms
 
@@ -7087,15 +6854,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/signature
 
@@ -7142,15 +6905,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signature/{signatureType}
 
@@ -7180,21 +6939,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/documents
 
@@ -7359,15 +7112,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/documents/search
 
@@ -7531,15 +7280,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/documents/{documentId}/download/{artifactName}
 
@@ -7571,15 +7316,11 @@ Error responses:
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/authentication/social-login
 
@@ -7693,15 +7434,11 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/auth/link-social-login
 
@@ -7770,21 +7507,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/stats
 
@@ -7858,21 +7589,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/users/self/stats
 
@@ -7945,21 +7670,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/tags
 
@@ -8024,15 +7743,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/tags
 
@@ -8123,15 +7838,11 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 409
 
@@ -8171,9 +7882,7 @@ Example payload:
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/tags/{tagId}
 
@@ -8260,27 +7969,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/accounts/{accountId}/tags/{tagId}
 
@@ -8342,21 +8043,15 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/templates
 
@@ -8476,15 +8171,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/templates/{templateId}/documents
 
@@ -8588,7 +8279,7 @@ Request body: required.
       "example": "Message to the signers"
     },
     "expires_at": {
-      "description": "Assignment expiration date (ISO 8601). No expiration by default.",
+      "description": "Assignment expiration date (ISO 8601). No expiration by default. Must be at least one hour in the future.",
       "type": "string",
       "format": "date-time",
       "example": "2024-07-30T23:59:00Z"
@@ -8779,21 +8470,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/templates/{templateId}/documents/estimate-cost
 
@@ -8829,7 +8514,7 @@ Request body: required.
             "example": "fa8c14f32d732271e071998246e"
           },
           "verification_method": {
-            "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` adds the per-signer signature cost (2 credits) on top of the notification cost.",
+            "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (2 credits) on top of the notification cost.",
             "type": "string",
             "enum": [
               "Email",
@@ -8839,7 +8524,7 @@ Request body: required.
             "example": "Whatsapp"
           },
           "notification_methods": {
-            "description": "Notification methods. If provided without verification_method, the verification method is inferred. Defaults to Email.",
+            "description": "Notification method for this signer — exactly one, and it must be compatible with `verification_method`. If provided without verification_method, the verification method is inferred. Defaults to Email.",
             "type": "array",
             "items": {
               "type": "string"
@@ -8931,15 +8616,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/users/self
 
@@ -8999,15 +8680,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/users/api-keys
 
@@ -9059,15 +8736,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/users/api-keys
 
@@ -9145,15 +8818,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### DELETE /v1/users/api-keys
 
@@ -9205,15 +8874,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/webhooks/subscriptions
 
@@ -9274,15 +8939,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/webhooks/subscriptions
 
@@ -9400,21 +9061,15 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### PUT /v1/accounts/{accountId}/webhooks/inactivate
 
@@ -9475,15 +9130,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/webhooks/event-types
 
@@ -9540,15 +9191,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}/webhooks
 
@@ -9624,15 +9271,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### POST /v1/accounts/{accountId}/webhooks/{historyId}/retry
 
@@ -9698,27 +9341,19 @@ Error responses:
 
 #### 400
 
-Error response.
-
-No response payload documented.
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 404
 
-Error response.
-
-No response payload documented.
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications
 
@@ -9787,17 +9422,11 @@ Error responses:
 
 #### 401
 
-Error response.
-
-No response payload documented.
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
-Error response.
-
-No response payload documented.
-
-## Component schemas
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### Schema: Envelope
 
@@ -10313,7 +9942,7 @@ Full schema:
       "example": "metadata_ready"
     },
     "artifacts": {
-      "description": "Artifact download URLs keyed by name (original, certificated, certificate-page, bundle).",
+      "description": "Artifact download URLs keyed by name. Always `original`, plus `thumbnail` once one exists. A certificated document also carries `certificated`, `certificate-page` and `bundle`, and `pades` when it was signed with a digital certificate — the PAdES version holds the signers' ICP-Brasil signatures, which certification flattens out of the certificated PDF.",
       "type": "object",
       "example": {
         "original": "https://api.assinafy.com.br/v1/documents/doc1/download/original"
@@ -12329,9 +11958,108 @@ Example payload:
 }
 ```
 
+### OAuthTokenRequest
+
+```json
+{
+  "description": "Body of `POST /v1/oauth/token`. Sent form-encoded per RFC 6749, or as JSON.",
+  "required": [
+    "grant_type",
+    "client_id"
+  ],
+  "properties": {
+    "grant_type": {
+      "description": "`urn:ietf:params:oauth:grant-type:token-exchange` is for internal service clients only (Assinafy's own MCP server) — an ordinary confidential or public client authenticates with it and always gets `invalid_client`, exactly as an unrecognized client would. Everyday integrators use `authorization_code` and `refresh_token`.",
+      "type": "string",
+      "enum": [
+        "authorization_code",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:token-exchange"
+      ]
+    },
+    "code": {
+      "type": "string"
+    },
+    "redirect_uri": {
+      "type": "string",
+      "format": "uri"
+    },
+    "code_verifier": {
+      "description": "RFC 7636: 43-128 characters from [A-Za-z0-9-._~]. Shorter values are rejected with `invalid_grant`.",
+      "type": "string"
+    },
+    "refresh_token": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "client_secret": {
+      "description": "Confidential clients only. Public clients authenticate with PKCE and are never issued a secret; the token-exchange grant requires a confidential, internal-service client and therefore always requires this.",
+      "type": "string"
+    },
+    "resource": {
+      "description": "RFC 8707 resource indicator. For `authorization_code`/`refresh_token`, optional; when present it must be the `resource` value published by /.well-known/oauth-protected-resource and must match the one sent to /authorize, otherwise `invalid_target`. For the token-exchange grant it is REQUIRED and must equal this API's own resource identifier exactly (never a front-end resource such as the MCP server), otherwise `invalid_target`.",
+      "type": "string",
+      "format": "uri"
+    },
+    "subject_token": {
+      "description": "Token-exchange grant only. The front-end resource's access token being traded in. Must be a live, original (never itself exchanged) token minted for a resource this server issues tokens for, other than this API's own audience.",
+      "type": "string"
+    },
+    "subject_token_type": {
+      "description": "Token-exchange grant only. Required; only `urn:ietf:params:oauth:token-type:access_token` is supported.",
+      "type": "string",
+      "enum": [
+        "urn:ietf:params:oauth:token-type:access_token"
+      ]
+    },
+    "requested_token_type": {
+      "description": "Token-exchange grant only. Optional; when present it must agree with the only type this server issues.",
+      "type": "string",
+      "enum": [
+        "urn:ietf:params:oauth:token-type:access_token"
+      ]
+    }
+  },
+  "type": "object"
+}
+```
+
+### OAuthRevokeRequest
+
+```json
+{
+  "description": "Body of `POST /v1/oauth/revoke`. Sent form-encoded per RFC 7009, or as JSON.",
+  "required": [
+    "token",
+    "client_id"
+  ],
+  "properties": {
+    "token": {
+      "type": "string"
+    },
+    "token_type_hint": {
+      "type": "string",
+      "enum": [
+        "access_token",
+        "refresh_token"
+      ]
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "client_secret": {
+      "type": "string"
+    }
+  },
+  "type": "object"
+}
+```
+
 ### POST /v1/oauth/token
 
-Exchange an authorization code or a refresh token for an access token. Security: **none** — the application authenticates with its own `client_id` (and `client_secret` for confidential applications) in the body.
+Exchange an authorization code, refresh token, or internal-service subject token for an access token. Security: **none** — the application authenticates with its own `client_id` (and `client_secret` for confidential applications) in the body.
 
 Implements the RFC 6749 §5.1/§5.2 token-endpoint contract in both directions: a success is a flat JSON object with `access_token` at the top level, and a failure is a flat `{error, error_description}` object. Neither is wrapped in this API's response envelope, because no standard OAuth client library would find `access_token` or `error` inside a `data` key.
 
@@ -12341,25 +12069,64 @@ Request schema:
 
 ```json
 {
-  "required": ["grant_type", "client_id"],
+  "description": "Body of `POST /v1/oauth/token`. Sent form-encoded per RFC 6749, or as JSON.",
+  "required": [
+    "grant_type",
+    "client_id"
+  ],
   "properties": {
-    "grant_type": { "type": "string", "enum": ["authorization_code", "refresh_token"] },
-    "code": { "type": "string" },
-    "redirect_uri": { "type": "string", "format": "uri" },
-    "code_verifier": {
+    "grant_type": {
+      "description": "`urn:ietf:params:oauth:grant-type:token-exchange` is for internal service clients only (Assinafy's own MCP server) — an ordinary confidential or public client authenticates with it and always gets `invalid_client`, exactly as an unrecognized client would. Everyday integrators use `authorization_code` and `refresh_token`.",
       "type": "string",
-      "description": "RFC 7636: 43-128 characters from [A-Za-z0-9-._~]. Shorter values are rejected with invalid_grant."
+      "enum": [
+        "authorization_code",
+        "refresh_token",
+        "urn:ietf:params:oauth:grant-type:token-exchange"
+      ]
     },
-    "refresh_token": { "type": "string" },
-    "client_id": { "type": "string" },
-    "client_secret": {
+    "code": {
+      "type": "string"
+    },
+    "redirect_uri": {
       "type": "string",
-      "description": "Confidential clients only. Public clients authenticate with PKCE and are never issued a secret."
+      "format": "uri"
+    },
+    "code_verifier": {
+      "description": "RFC 7636: 43-128 characters from [A-Za-z0-9-._~]. Shorter values are rejected with `invalid_grant`.",
+      "type": "string"
+    },
+    "refresh_token": {
+      "type": "string"
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "client_secret": {
+      "description": "Confidential clients only. Public clients authenticate with PKCE and are never issued a secret; the token-exchange grant requires a confidential, internal-service client and therefore always requires this.",
+      "type": "string"
     },
     "resource": {
+      "description": "RFC 8707 resource indicator. For `authorization_code`/`refresh_token`, optional; when present it must be the `resource` value published by /.well-known/oauth-protected-resource and must match the one sent to /authorize, otherwise `invalid_target`. For the token-exchange grant it is REQUIRED and must equal this API's own resource identifier exactly (never a front-end resource such as the MCP server), otherwise `invalid_target`.",
       "type": "string",
-      "format": "uri",
-      "description": "RFC 8707 resource indicator. Optional; when present it must be the resource published by /.well-known/oauth-protected-resource and must match the one sent to /authorize, otherwise invalid_target."
+      "format": "uri"
+    },
+    "subject_token": {
+      "description": "Token-exchange grant only. The front-end resource's access token being traded in. Must be a live, original (never itself exchanged) token minted for a resource this server issues tokens for, other than this API's own audience.",
+      "type": "string"
+    },
+    "subject_token_type": {
+      "description": "Token-exchange grant only. Required; only `urn:ietf:params:oauth:token-type:access_token` is supported.",
+      "type": "string",
+      "enum": [
+        "urn:ietf:params:oauth:token-type:access_token"
+      ]
+    },
+    "requested_token_type": {
+      "description": "Token-exchange grant only. Optional; when present it must agree with the only type this server issues.",
+      "type": "string",
+      "enum": [
+        "urn:ietf:params:oauth:token-type:access_token"
+      ]
     }
   },
   "type": "object"
@@ -12393,6 +12160,59 @@ grant_type=refresh_token
 &client_secret=example-client-secret
 ```
 
+The RFC 8693 grant is restricted to provisioned confidential internal-service clients. Ordinary marketplace, public, and confidential applications receive `invalid_client` and use the authorization-code and refresh grants. `OAuthResource.ExchangeSubjectTokenAsync` sends:
+
+```http
+POST /v1/oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Atoken-exchange&subject_token=example-subject-token&subject_token_type=urn%3Aietf%3Aparams%3Aoauth%3Atoken-type%3Aaccess_token&client_id=example-service-client&client_secret=example-service-secret&resource=https%3A%2F%2Fapi.assinafy.com.br
+```
+
+The result includes `issued_token_type: "urn:ietf:params:oauth:token-type:access_token"`, never a refresh token. Its lifetime cannot exceed the subject token's remaining lifetime; permissions cannot be widened. An exchanged token cannot be exchanged again. The issued token carries the original client's identity, so the exchanging service client's revoke request cannot revoke it even though revoke answers `200`.
+
+Success response schema (`application/json`, flat JSON):
+
+```json
+{
+  "properties": {
+    "access_token": {
+      "type": "string"
+    },
+    "issued_token_type": {
+      "description": "Present only for the token-exchange grant, per RFC 8693 §2.2.1.",
+      "type": "string",
+      "example": "urn:ietf:params:oauth:token-type:access_token"
+    },
+    "token_type": {
+      "type": "string",
+      "example": "Bearer"
+    },
+    "expires_in": {
+      "description": "For the token-exchange grant, clamped to the subject token's own remaining lifetime as well as the exchanged-token TTL — never longer than either.",
+      "type": "integer",
+      "example": 3600
+    },
+    "refresh_token": {
+      "description": "Present only when the `offline_access` scope was requested AND consented on the authorization_code/refresh_token grants. Never present for the token-exchange grant. Without it a client must send the user through the authorization flow again once the access token expires.",
+      "type": "string",
+      "nullable": true
+    },
+    "scope": {
+      "description": "The scope of the ACCESS token. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested.",
+      "type": "string",
+      "example": "documents:read"
+    },
+    "id_token": {
+      "description": "A signed OIDC id_token (RS256). Present only when the openid scope was granted.",
+      "type": "string",
+      "nullable": true
+    }
+  },
+  "type": "object"
+}
+```
+
 Success: `200` with a flat object (**not** the `{status, message, data}` envelope):
 
 ```json
@@ -12406,7 +12226,7 @@ Success: `200` with a flat object (**not** the `{status, message, data}` envelop
 }
 ```
 
-- `refresh_token` is present only when `offline_access` was requested **and** consented.
+- `refresh_token` is present only when `offline_access` was requested **and** consented for authorization-code and refresh grants; never for token exchange.
 - A refresh always returns a **new** `refresh_token` and retires the one sent. `OAuthResource.RefreshTokenAsync` throws `SerializationException` for a success without one, or with the one sent; do not send that token again.
 - `id_token` is present only when the `openid` scope was granted; it is RS256-signed.
 - `scope` is the scope of the **access token**. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested. Read it instead of assuming the request was granted in full — `OAuthTokenResult.GrantedScopes` and `HasScope` do this.
@@ -12421,7 +12241,7 @@ Errors are flat as well, and the SDK maps them to `OAuthException` with `Error` 
 |---|---|---|
 | 400 | `invalid_grant` | Bad, expired, replayed, or wrong-client authorization code; a `code_verifier` outside the RFC 7636 grammar; `redirect_uri` mismatch; a refresh token whose authorization no longer includes `offline_access`. |
 | 400 | `invalid_target` | A `resource` this server does not issue tokens for, or one disagreeing with the authorized value. |
-| 400 | `unsupported_grant_type` | A grant other than `authorization_code` or `refresh_token`. |
+| 400 | `unsupported_grant_type` | An unsupported grant. Ordinary applications use `authorization_code` or `refresh_token`; RFC 8693 is restricted to internal-service clients. |
 | 401 | `invalid_client` | Unknown or disabled client, or failed client authentication. The description never reveals whether the `client_id` exists. |
 
 ### POST /v1/oauth/revoke
@@ -12434,12 +12254,28 @@ Request schema:
 
 ```json
 {
-  "required": ["token", "client_id"],
+  "description": "Body of `POST /v1/oauth/revoke`. Sent form-encoded per RFC 7009, or as JSON.",
+  "required": [
+    "token",
+    "client_id"
+  ],
   "properties": {
-    "token": { "type": "string" },
-    "token_type_hint": { "type": "string", "enum": ["access_token", "refresh_token"] },
-    "client_id": { "type": "string" },
-    "client_secret": { "type": "string" }
+    "token": {
+      "type": "string"
+    },
+    "token_type_hint": {
+      "type": "string",
+      "enum": [
+        "access_token",
+        "refresh_token"
+      ]
+    },
+    "client_id": {
+      "type": "string"
+    },
+    "client_secret": {
+      "type": "string"
+    }
   },
   "type": "object"
 }
@@ -12472,6 +12308,34 @@ GET /v1/oauth/userinfo
 Authorization: Bearer example-access-token
 ```
 
+Success response schema (`application/json`, flat JSON):
+
+```json
+{
+  "properties": {
+    "sub": {
+      "type": "string",
+      "example": "d6zqpbyog2v3xvxerwn8la94"
+    },
+    "name": {
+      "type": "string",
+      "example": "Maria Silva",
+      "nullable": true
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "nullable": true
+    },
+    "email_verified": {
+      "type": "boolean",
+      "nullable": true
+    }
+  },
+  "type": "object"
+}
+```
+
 Success: `200`.
 
 ```json
@@ -12499,6 +12363,40 @@ Example request (`OAuthResource.GetProtectedResourceMetadataAsync`):
 GET /.well-known/oauth-protected-resource
 ```
 
+Success response schema (`application/json`, flat JSON):
+
+```json
+{
+  "properties": {
+    "resource": {
+      "type": "string",
+      "format": "uri"
+    },
+    "authorization_servers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "format": "uri"
+      }
+    },
+    "scopes_supported": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "bearer_methods_supported": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "example": "header"
+      }
+    }
+  },
+  "type": "object"
+}
+```
+
 Success: `200`.
 
 ```json
@@ -12520,3 +12418,275 @@ Success: `200`.
 ```
 
 Start every integration by reading `authorization_servers[0]` and fetching that host's own `/.well-known/oauth-authorization-server` document (RFC 8414), rather than hard-coding endpoint URLs.
+
+## Shared error response payloads
+
+Standard errors use `ErrorEnvelope`. Deletion restrictions are returned at the top level and are available in `ApiException.Details` when `data` is absent or null. OAuth errors use the flat `{error, error_description}` shape documented above.
+
+### Shared Unauthorized
+
+Missing or invalid credentials.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 401
+        },
+        "message": {
+          "type": "string",
+          "example": "Your request was made with invalid credentials."
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 401,
+  "message": "Your request was made with invalid credentials.",
+  "data": null
+}
+```
+
+### Shared Forbidden
+
+Authenticated but not allowed to perform this action.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 403
+        },
+        "message": {
+          "type": "string",
+          "example": "You are not allowed to perform this action."
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 403,
+  "message": "You are not allowed to perform this action.",
+  "data": null
+}
+```
+
+### Shared NotFound
+
+The requested resource does not exist.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 404
+        },
+        "message": {
+          "type": "string",
+          "example": "The requested resource was not found."
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 404,
+  "message": "The requested resource was not found.",
+  "data": null
+}
+```
+
+### Shared ValidationError
+
+One or more fields failed validation.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 422
+        },
+        "message": {
+          "type": "string",
+          "example": "One or more fields failed validation."
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 422,
+  "message": "One or more fields failed validation.",
+  "data": null
+}
+```
+
+### Shared DeletionRestrictions
+
+Deletion blocked by active restrictions. Each `restrictions` entry describes one blocker; resolve them individually, or retry with `force: true` to cancel blocking subscriptions/documents automatically.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 400
+        },
+        "message": {
+          "type": "string",
+          "example": "Cannot delete while restrictions are active."
+        },
+        "restrictions": {
+          "type": "array",
+          "items": {
+            "properties": {
+              "code": {
+                "description": "Machine-readable restriction code. `PendingDocuments` only appears together with `ActivePaidSubscription`, never alone.",
+                "type": "string",
+                "enum": [
+                  "ActivePaidSubscription",
+                  "PendingDocuments"
+                ],
+                "example": "ActivePaidSubscription"
+              },
+              "message": {
+                "type": "string",
+                "example": "Account has an active paid subscription."
+              },
+              "account_ids": {
+                "description": "IDs of the accounts affected by this restriction.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "example": [
+                  "vmvk6Urzus3byLD2qO"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 400,
+  "message": "Cannot delete while restrictions are active.",
+  "data": null,
+  "restrictions": [
+    {
+      "code": "ActivePaidSubscription",
+      "message": "Account has an active paid subscription.",
+      "account_ids": [
+        "example-account-id"
+      ]
+    }
+  ]
+}
+```
+
+### Shared ServerError
+
+Unexpected server error.
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/ErrorEnvelope"
+    },
+    {
+      "properties": {
+        "status": {
+          "type": "integer",
+          "example": 500
+        },
+        "message": {
+          "type": "string",
+          "example": "An unexpected error occurred."
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 500,
+  "message": "An unexpected error occurred.",
+  "data": null
+}
+```

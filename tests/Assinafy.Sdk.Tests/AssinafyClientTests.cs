@@ -137,6 +137,7 @@ public sealed class AssinafyClientTests
         using var handler = AssinafyClient.CreatePrimaryHandler();
 
         handler.AllowAutoRedirect.Should().BeFalse();
+        handler.UseCookies.Should().BeFalse();
     }
 
     [Fact]
@@ -227,6 +228,38 @@ public sealed class AssinafyClientTests
         result.Assignment.Id.Should().Be("assignment-1");
         handler.Requests.Select(request => request.Method)
             .Should().Equal(HttpMethod.Post, HttpMethod.Post, HttpMethod.Post);
+    }
+
+    [Fact]
+    public async Task UploadAndRequestSignatures_ReturnsTheReadyDocumentWithPages()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/documents",
+            FakeHttpMessageHandler.ApiOk(new { id = "doc-1", status = "uploaded" }));
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/doc-1",
+            FakeHttpMessageHandler.ApiOk(new
+            {
+                id = "doc-1", status = "metadata_ready",
+                pages = new[] { new { id = "page-1", number = 1 } },
+            }));
+        handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/signers",
+            FakeHttpMessageHandler.ApiOk(new { id = "signer-1" }));
+        handler.AddJsonResponse(HttpMethod.Post, "/documents/doc-1/assignments",
+            FakeHttpMessageHandler.ApiOk(new { id = "assignment-1" }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(new AssinafyClientOptions { AccountId = "acc" }, http);
+        using var stream = new MemoryStream([1]);
+
+        var result = await client.UploadAndRequestSignaturesAsync(new()
+        {
+            FileStream = stream, FileName = "contract.pdf",
+            Signers = [new() { FullName = "Signer" }],
+        });
+
+        result.Document.Status.Should().Be("metadata_ready");
+        result.Document.Pages.Should().ContainSingle().Which.Id.Should().Be("page-1");
+        handler.Requests.Select(request => request.Method)
+            .Should().Equal(HttpMethod.Post, HttpMethod.Get, HttpMethod.Post, HttpMethod.Post);
     }
 
     [Fact]

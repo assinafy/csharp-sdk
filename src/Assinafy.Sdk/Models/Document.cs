@@ -45,7 +45,7 @@ public sealed record DocumentArtifacts
     [JsonPropertyName("pades")]
     public string? Pades { get; init; }
 
-    /// <summary>URL of the signed PDF bundled with the certificate page, or <see langword="null"/> if not yet produced.</summary>
+    /// <summary>URL of the ZIP containing the original, certificated PDF, certificate page, and PAdES artifact when available, or <see langword="null"/> if not yet produced.</summary>
     [JsonPropertyName("bundle")]
     public string? Bundle { get; init; }
 

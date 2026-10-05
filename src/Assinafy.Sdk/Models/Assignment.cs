@@ -6,7 +6,7 @@ namespace Assinafy.Sdk.Models;
 /// <summary>A signer within an assignment: the base <see cref="Signer"/> plus per-assignment verification, notification, and progress details.</summary>
 public sealed record AssignmentSigner : Signer
 {
-    /// <summary>How the signer's identity is verified before signing — one of <see cref="SignerChannels"/> (<c>Email</c> by default, or <c>Whatsapp</c>), or <see langword="null"/>.</summary>
+    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c> (see <see cref="SignerChannels"/>), or <see langword="null"/>.</summary>
     [JsonPropertyName("verification_method")]
     public string? VerificationMethod { get; init; }
 
@@ -204,10 +204,10 @@ public sealed class SignerRef
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. Defaults to <c>Email</c> when omitted.</summary>
+    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified.</summary>
     public string? VerificationMethod { get; set; }
 
-    /// <summary>Channels used to notify the signer; direct assignment creation accepts <c>Email</c>, <c>Whatsapp</c>, or both. Defaults to <c>Email</c> when omitted.</summary>
+    /// <summary>Exactly one notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. Inferred from verification when omitted; defaults to <c>Email</c> when neither is specified.</summary>
     public string[]? NotificationMethods { get; set; }
 
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>

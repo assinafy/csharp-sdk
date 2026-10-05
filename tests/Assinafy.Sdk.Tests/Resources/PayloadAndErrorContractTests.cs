@@ -44,6 +44,37 @@ public sealed class PayloadAndErrorContractTests
         signers[1]["step"].Should().Be(2);
     }
 
+    [Fact]
+    public async Task NestedPayloads_RejectNullEntriesBeforeTransport()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var assignments = new AssignmentResource(Client(handler));
+        foreach (var request in new CreateAssignmentRequest[]
+        {
+            new() { Signers = [null!] },
+            new() { SignerIds = ["signer"], Entries = [null!] },
+            new() { SignerIds = ["signer"], Entries = [new() { PageId = "page", Fields = null! }] },
+            new() { SignerIds = ["signer"], Entries = [new() { PageId = "page", Fields = [null!] }] },
+        })
+        {
+            await ((Func<Task>)(() => assignments.CreateAsync("document", request)))
+                .Should().ThrowAsync<ValidationException>();
+            await ((Func<Task>)(() => assignments.EstimateCostAsync("document", request)))
+                .Should().ThrowAsync<ValidationException>();
+        }
+
+        var documents = new DocumentResource(Client(handler), "account");
+        await ((Func<Task>)(() => documents.CreateFromTemplateAsync("template", [null!])))
+            .Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => documents.EstimateCostFromTemplateAsync("template", [null!])))
+            .Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => documents.CreateFromTemplateAsync(
+            "template", [new() { Id = "signer", RoleId = "role" }],
+            new() { EditorFields = [null!] })))
+            .Should().ThrowAsync<ValidationException>();
+        handler.Requests.Should().BeEmpty();
+    }
+
     // ---- Resend / estimate-resend: URL + verb split ----
 
     [Fact]

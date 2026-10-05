@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.0
+
+### Added
+
+- `OAuthResource.ExchangeSubjectTokenAsync` and `OAuthTokenExchangeRequest` for the RFC 8693
+  grant restricted to provisioned internal-service clients; `OAuthTokenResult.IssuedTokenType`
+  exposes the issued token type.
+
+### Fixed
+
+- Reject null nested assignment/template payload entries before sending requests.
+- `UploadAndRequestSignaturesAsync` returns the ready document with its pages when waiting is enabled.
+- Signer field validation sends only the signer access code and rejects blank access codes.
+- Account deletion errors preserve top-level restrictions in `ApiException.Details`.
+- Malformed OAuth token metadata, missing userinfo subjects, and non-success envelope statuses
+  surface as `SerializationException`.
+- The SDK transport disables cookies to isolate workspace and signer sessions.
+
+### Documentation
+
+- Describe the complete document lifecycle, signer verification, certificate signing, and OAuth
+  callback handling in both READMEs.
+- Include complete request/response schemas and shared error payloads in the API reference.
+
 ## 2.3.0
 
 ### Added

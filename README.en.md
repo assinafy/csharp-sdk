@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.3.0
+dotnet add package Assinafy.Sdk --version 2.4.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -74,6 +74,9 @@ account-scoped method uses it; each of those methods also takes an optional `acc
 `Accounts.ListAsync()` discovers the IDs available to the current credential.
 
 ## Creating a client
+
+Use **.NET 10 LTS** for new applications. Every method's parameters, request bodies, responses,
+and errors are listed in [docs/API.md](docs/API.md#sdk-method-index).
 
 ```csharp
 using Assinafy.Sdk;
@@ -130,12 +133,14 @@ using var client = new AssinafyClient(
 ```
 
 `AssinafyClient.CreatePrimaryHandler()` returns exactly the handler the SDK uses for its own
-transport — redirects disabled, five-minute pooled connection lifetime, and TLS 1.2 or 1.3 only,
+transport — redirects and cookies disabled, five-minute pooled connection lifetime, and TLS 1.2 or 1.3 only,
 because Assinafy refuses older protocols during the handshake (a `NetworkException`, never an HTTP
 status).
 
-Credentials are attached per request, so a supplied `HttpClient`'s default headers are never
-mutated and the instance stays safe to share. Its `Timeout` is left untouched — set it yourself.
+Credentials are attached per request; the SDK never stores credentials in default headers.
+Keep `Authorization`, `X-Api-Key`, and cookies off a supplied transport: its default headers
+also reach public and signer endpoints. The SDK adds `Accept` and `User-Agent` when absent.
+Its `Timeout` is left untouched — set it yourself.
 
 ## OAuth 2.1 for multi-workspace apps
 
@@ -151,7 +156,7 @@ using an API key.
 
 The flow spans two hosts on purpose: the approval page belongs to the authorization server
 (`https://auth.assinafy.com.br`), while every call your code makes — the token exchange included —
-belongs to this API. Register the application under **Settings → OAuth applications** in the
+belongs to this API. Register the application under **Integrations → OAuth apps** in the
 Assinafy app; redirect URIs must be `https://` and are matched character for character, so
 `…/callback` and `…/callback/` are different URIs.
 
@@ -200,6 +205,10 @@ if (state is null ||
     iss != OAuthResource.DefaultIssuer)
     return BadRequest();
 
+var verifier = HttpContext.Session.GetString("assinafy_verifier");
+HttpContext.Session.Remove("assinafy_state");
+HttpContext.Session.Remove("assinafy_verifier");
+
 if (error is not null)          // access_denied, invalid_scope, invalid_request, …
     return View("ConnectionFailed", error);
 
@@ -207,7 +216,7 @@ var tokens = await oauth.OAuth.ExchangeCodeAsync(new OAuthCodeExchangeRequest
 {
     Code = code,
     RedirectUri = "https://myapp.example.com/oauth/callback",
-    CodeVerifier = HttpContext.Session.GetString("assinafy_verifier")!,
+    CodeVerifier = verifier!,
     ClientId = clientId,
     ClientSecret = clientSecret,    // omit entirely for a public application
 });
@@ -324,11 +333,11 @@ await oauth.OAuth.RevokeAsync(new OAuthRevokeRequest
 
 | `OAuthScopes` constant | Value | Lets your app |
 |---|---|---|
-| `DocumentsRead` | `documents:read` | Read documents, their signers, assignments, and activity |
+| `DocumentsRead` | `documents:read` | Read documents, their signers, assignments, activity, WhatsApp histories, and webhook types/history |
 | `DocumentsWrite` | `documents:write` | Create documents and send them for signature |
 | `TemplatesRead` | `templates:read` | Read templates |
 | `TemplatesWrite` | `templates:write` | Create and change templates |
-| `AccountRead` | `account:read` | Read the workspace profile, theme, and logo |
+| `AccountRead` | `account:read` | Read the workspace profile, theme, logo, and webhook subscription |
 | `WebhooksWrite` | `webhooks:write` | Configure and deactivate the workspace webhook subscription |
 | `OpenId` | `openid` | Receive an `id_token` identifying the user |
 | `Profile` | `profile` | Read the user's name |
@@ -368,11 +377,20 @@ var metadata = await client.OAuth.GetProtectedResourceMetadataAsync();
 | `invalid_grant` | Code expired or already used; wrong `code_verifier` or `redirect_uri`; refresh token spent, or the user reconnected with different permissions | Send the user through the flow again |
 | `invalid_client` | Wrong `client_id` or secret, or the application is disabled | Fix the configuration |
 | `invalid_target` | `resource` disagrees with the authorized value | Send the same `Resource` to both endpoints |
-| `unsupported_grant_type` | Only `authorization_code` and `refresh_token` exist | Fix the call |
+| `unsupported_grant_type` | Unknown grant; ordinary apps use `authorization_code` or `refresh_token` | Fix the call |
 | `insufficient_scope` | A `403` on an ordinary endpoint; the token lacks the permission in `Scope` | Reconnect requesting that scope |
 
 New applications are unverified: the approval screen says so and they connect to at most 25
 workspaces. The authorize and token endpoints accept 50 requests per minute per IP.
+
+### Internal-service token exchange
+
+`OAuth.ExchangeSubjectTokenAsync` implements the documented RFC 8693 grant for confidential
+internal-service clients provisioned by Assinafy. Ordinary marketplace, public, and confidential
+applications receive `invalid_client` for this grant and use the PKCE flow above. It accepts
+`OAuthTokenExchangeRequest` and returns `OAuthTokenResult`, including `IssuedTokenType`, without
+a refresh token. The issued token keeps the original client's identity. Full payloads are in
+[docs/API.md](docs/API.md#post-v1oauthtoken).
 
 ## Dependency injection
 
@@ -419,7 +437,11 @@ for example, upload the same document twice:
 using Microsoft.Extensions.Http.Resilience;   // 9.8+: older versions still retry timeouts
 
 builder.Services
-    .AddHttpClient("Assinafy", /* … */)
+    .AddHttpClient("Assinafy", http =>
+    {
+        http.BaseAddress = new Uri("https://api.assinafy.com.br/v1/");
+        http.Timeout = TimeSpan.FromSeconds(30);
+    })
     .ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)
     .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
 ```
@@ -466,23 +488,21 @@ Paging parameters are `page` (1-based) and `per-page` (max 100), alongside `sear
 where the endpoint supports them:
 
 ```csharp
-var page = await client.Documents.ListAsync(new Dictionary<string, string?>
+var filters = new Dictionary<string, string?>
 {
     ["status"] = "pending_signature",
     ["sort"] = "-created_at",
     ["page"] = "1",
     ["per-page"] = "50",
-});
+};
+var page = await client.Documents.ListAsync(filters);
 
 Console.WriteLine($"{page.Data.Count} of {page.Meta?.Total} documents");
 
 while (page.Meta is { CurrentPage: int current, LastPage: int last } && current < last)
 {
-    page = await client.Documents.ListAsync(new Dictionary<string, string?>
-    {
-        ["page"] = (current + 1).ToString(),
-        ["per-page"] = "50",
-    });
+    filters["page"] = (current + 1).ToString();
+    page = await client.Documents.ListAsync(filters);
     // …process page.Data
 }
 ```
@@ -539,6 +559,23 @@ catch (NetworkException ex)
 
 A signature request moves through five stages. Everything else in this SDK supports one of them.
 
+```mermaid
+flowchart TD
+    A[API key or workspace OAuth connection] --> B[Upload PDF]
+    B --> C[Wait for metadata_ready]
+    C --> D[Create signers and estimate cost]
+    D --> E[Create assignment and send invitations]
+    E --> M[Confirm signer data and accept terms]
+    M --> F{Signer verification}
+    F --> G[Email or WhatsApp OTP]
+    F --> H[A1 or A3 certificate through Web PKI]
+    G --> I[Sign]
+    H --> J[Start and complete certificate signing]
+    I --> K[document_ready webhook and certificated status]
+    J --> K
+    K --> L[Download signed PDF, PAdES or bundle]
+```
+
 1. **Upload** a PDF into a workspace, producing a document in `uploaded` status.
 2. **Wait** for the platform to normalize it and extract pages (`metadata_ready`).
 3. **Create signers** — reusable people records belonging to the workspace.
@@ -561,7 +598,7 @@ using var client = new AssinafyClient(new AssinafyClientOptions
 // 1–2. Upload and wait for the document to be ready.
 await using var pdf = File.OpenRead("contract.pdf");
 var document = await client.Documents.UploadAsync(pdf, "contract.pdf");
-await client.Documents.WaitUntilReadyAsync(document.Id);
+document = await client.Documents.WaitUntilReadyAsync(document.Id);
 
 // 3. Create the signer.
 var signer = await client.Signers.CreateAsync(new CreateSignerRequest
@@ -870,17 +907,21 @@ await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmS
     GovernmentId = "00000000000",
 });
 
-// Submit the field values.
+// For collect, select an item from toSign.Assignment.Items.
+var item = toSign.Assignment!.Items[0];
 await client.Signing.SignAsync(documentId, assignmentId, signerAccessCode,
 [
     new SignAssignmentValue
     {
         ItemId = item.Id,
-        FieldId = item.FieldId,
-        PageId = item.PageId,
+        FieldId = item.Field!.Id,
+        PageId = item.Page!.Id,
         Value = "John Doe",
     },
 ]);
+
+// For virtual, there are no fields: send an empty list after confirming data.
+// await client.Signing.SignAsync(documentId, assignmentId, signerAccessCode, []);
 
 // Or decline, with a reason.
 await client.Signing.DeclineAsync(documentId, assignmentId, signerAccessCode, "Wrong counterparty");
@@ -909,16 +950,31 @@ When an assignment's verification method is `DigitalCertificate`, signing is a t
 exchange instead of a field submission:
 
 ```csharp
+// Confirm identity and terms before Signing.GetAsync for certificate signers.
+await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmSignerDataRequest
+{
+    FullName = "John Doe",
+    GovernmentId = governmentId,   // CPF/CNPJ matching the signer's certificate
+    HasAcceptedTerms = true,
+});
+var toSignWithCertificate = await client.Signing.GetAsync(signerAccessCode);
 var operation = await client.Signing.StartCertificateAsync(signerAccessCode);
-var signedToken = await SignWithWebPkiAsync(operation.Token);   // your browser/Web PKI bridge
-var result = await client.Signing.CompleteCertificateAsync(signerAccessCode, signedToken);
+// Send operation.Token to the browser to sign with the Web PKI extension.
+```
 
-Console.WriteLine(result.SignerName);   // read from the certificate
+After the browser returns `signedToken`, complete the operation:
+
+```csharp
+var result = await client.Signing.CompleteCertificateAsync(signerAccessCode, signedToken);
+Console.WriteLine(result.SignerName);
 ```
 
 Both routes are production-only deployed extensions: the sandbox does not expose them and they are
 absent from the published OpenAPI document. They require a real production certificate assignment
 and a browser-signed Web PKI token.
+`Signing.GetAsync` returns `400` for certificate signers before data confirmation and terms
+acceptance; its `hasAcceptedTerms` parameter cannot replace those steps. Download `pades` after
+completion to receive the qualified PAdES signature.
 
 ## Signature images
 
@@ -1118,13 +1174,16 @@ await client.Authentication.DeleteApiKeyAsync();
 | `certificated` | The signed and certificated PDF (default) |
 | `certificate-page` | The standalone certificate page |
 | `pades` | The signed PDF in PAdES format |
-| `bundle` | The signed PDF bundled with the certificate page |
+| `bundle` | ZIP containing the original PDF, signed PDF, certificate page, and PAdES file when available |
 
 **Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
 only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 2 credits per signer
-on top of its notification). Values are capitalized exactly as shown. Verification and notification
-are coupled: `Email`↔`Email`, `Whatsapp`↔`Whatsapp`, and `DigitalCertificate` pairs with either.
-Only the notification is billed.
+on top of its notification). Values are capitalized exactly as shown. Assignments and templates accept exactly
+one notification channel per signer. Email verification requires Email notification, WhatsApp
+verification requires WhatsApp notification, and DigitalCertificate permits either. The API infers
+an omitted side from the supplied side; with neither supplied, both default to Email. Multiple
+channels or incompatible combinations return 400. Use the cost estimate for the exact configuration.
+
 
 **Assignment methods** (`AssignmentMethods`) — `virtual`, `collect`.
 
@@ -1187,12 +1246,12 @@ replacement named in the message.
 **Upgrading from 1.x:** `services.AddAssinafy(...)` was removed along with the SDK's
 `Microsoft.Extensions.*` dependencies. Replace it with the registration in
 [Dependency injection](#dependency-injection) — roughly ten lines in your composition root, using
-packages your ASP.NET Core app already references. No other API changed.
+packages your ASP.NET Core app already references.
 
 ## Further reading
 
 - **[docs/API.md](docs/API.md)** — the complete reference: every public SDK method with its full
-  signature, and all 89 production operations with request and response payloads, error bodies,
+  signature, and all 93 production operations with request and response payloads, error bodies,
   authentication, and the webhook contract.
 - **[docs/openapi.json](docs/openapi.json)** — the checked-in production OpenAPI snapshot. CI
   verifies it still matches the live document on every run.

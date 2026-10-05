@@ -14,7 +14,7 @@ public sealed class AssinafyClientOptions
     /// <summary>API key sent as the <c>X-Api-Key</c> header. Mutually exclusive with <see cref="Token"/>.</summary>
     public string? ApiKey { get; set; }
 
-    /// <summary>Bearer access token from the login flow. Mutually exclusive with <see cref="ApiKey"/>.</summary>
+    /// <summary>Bearer access token from login or OAuth. Captured when the client is constructed; create a new client after token refresh. Mutually exclusive with <see cref="ApiKey"/>.</summary>
     public string? Token { get; set; }
 
     /// <summary>Default workspace account ID, used by account-scoped resources when no override is passed.</summary>

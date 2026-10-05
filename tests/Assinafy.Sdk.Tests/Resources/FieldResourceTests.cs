@@ -103,4 +103,51 @@ public sealed class FieldResourceTests
 
         result.Should().ContainSingle(t => t.Type == "text");
     }
+
+    [Theory]
+    [InlineData(false, "access")]
+    [InlineData(true, "access")]
+    [InlineData(false, null)]
+    [InlineData(true, null)]
+    public async Task Validation_UsesOnlyTheSelectedCredential(bool multiple, string? accessCode)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/validate",
+            FakeHttpMessageHandler.ApiOk(new { type = "text", success = true }));
+        handler.AddJsonResponse(HttpMethod.Post, "/validate-multiple",
+            FakeHttpMessageHandler.ApiOk(new[] { new { field_id = "field-1", type = "text", success = true } }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        var resource = new FieldResource(http, "acc", request => request.Headers.Add("X-Api-Key", "key"));
+
+        if (multiple)
+            await resource.ValidateMultipleAsync([new ValidateFieldValueItem { FieldId = "field-1", Value = "value" }], accessCode);
+        else
+            await resource.ValidateAsync("field-1", new ValidateFieldValueRequest { Value = "value" }, accessCode);
+
+        var sent = handler.Requests.Should().ContainSingle().Subject;
+        sent.Method.Should().Be(HttpMethod.Post);
+        sent.RequestUri!.AbsolutePath.Should().Be(multiple
+            ? "/v1/accounts/acc/fields/validate-multiple"
+            : "/v1/accounts/acc/fields/field-1/validate");
+        sent.RequestUri.Query.Should().Be(accessCode is null ? "" : "?signer-access-code=access");
+        sent.Headers.Contains("X-Api-Key").Should().Be(accessCode is null);
+        using var body = JsonDocument.Parse(handler.RequestBodies.Single());
+        var value = multiple ? body.RootElement[0] : body.RootElement;
+        value.GetProperty("value").GetString().Should().Be("value");
+        if (multiple) value.GetProperty("field_id").GetString().Should().Be("field-1");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task Validation_RejectsBlankAccessCodesBeforeSending(string accessCode)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+        await ((Func<Task>)(() => resource.ValidateAsync("field-1", new ValidateFieldValueRequest { Value = "value" }, accessCode)))
+            .Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => resource.ValidateMultipleAsync([], accessCode)))
+            .Should().ThrowAsync<ValidationException>();
+        handler.Requests.Should().BeEmpty();
+    }
 }
