@@ -5,7 +5,7 @@ using Assinafy.Sdk.Models;
 namespace Assinafy.Sdk.Resources;
 
 /// <summary>
-/// Authenticated-user profile, notification-preference, and cross-account KPI endpoints.
+/// Authenticated-user profile, two-factor authentication, notification-preference, and cross-account KPI endpoints.
 /// </summary>
 public sealed class UserResource : BaseResource
 {
@@ -100,5 +100,102 @@ public sealed class UserResource : BaseResource
             path,
             HttpMethod.Get,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary><c>GET /users/self/mfa</c> — list the authenticated user's enrolled two-factor methods and how many recovery codes remain.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The enrolled methods and the unused recovery-code count.</returns>
+    public Task<MfaMethodList> ListMfaMethodsAsync(CancellationToken cancellationToken = default)
+    {
+        return CallAsync<MfaMethodList>(
+            "users/self/mfa",
+            HttpMethod.Get,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// <c>POST /users/self/mfa/totp</c> — create an unconfirmed authenticator method and return its shared secret,
+    /// which no other call returns. Two-factor authentication stays off until <see cref="ConfirmTotpEnrollmentAsync"/>.
+    /// </summary>
+    /// <param name="request">Optional device label; <see langword="null"/> sends an empty body.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The method ID, base32 secret, and <c>otpauth://</c> provisioning URI.</returns>
+    public Task<TotpEnrollment> StartTotpEnrollmentAsync(
+        StartTotpEnrollmentRequest? request = null,
+        CancellationToken cancellationToken = default)
+    {
+        return CallAsync<TotpEnrollment>(
+            "users/self/mfa/totp",
+            HttpMethod.Post,
+            request ?? new StartTotpEnrollmentRequest(),
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// <c>PUT /users/self/mfa/totp/confirm</c> — activate an enrollment with a live code from the new device. From
+    /// then on every login requires a second factor. Replacing an existing confirmed method also requires
+    /// <see cref="ConfirmTotpEnrollmentRequest.Password"/> or <see cref="ConfirmTotpEnrollmentRequest.ReauthCode"/>
+    /// and reissues the recovery codes.
+    /// </summary>
+    /// <param name="request">The enrollment ID, the new device's code, and re-authentication when replacing a method.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The recovery codes, shown only once.</returns>
+    public Task<MfaRecoveryCodes> ConfirmTotpEnrollmentAsync(
+        ConfirmTotpEnrollmentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Id);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Code);
+
+        return CallAsync<MfaRecoveryCodes>(
+            "users/self/mfa/totp/confirm",
+            HttpMethod.Put,
+            request,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary><c>POST /users/self/mfa/recovery-codes</c> — issue ten fresh recovery codes and invalidate the previous set.</summary>
+    /// <param name="request">The current password, a live authenticator code, or an existing recovery code (which is consumed).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The new recovery codes, shown only once.</returns>
+    public Task<MfaRecoveryCodes> RegenerateRecoveryCodesAsync(
+        MfaReauthenticationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        AssertReauthentication(request);
+        return CallAsync<MfaRecoveryCodes>(
+            "users/self/mfa/recovery-codes",
+            HttpMethod.Post,
+            request,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// <c>DELETE /users/self/mfa/{method_id}</c> — remove an enrolled two-factor method. Removing the last method
+    /// also discards the recovery codes.
+    /// </summary>
+    /// <param name="methodId">The <see cref="MfaMethod.Id"/> to remove.</param>
+    /// <param name="request">The current password, a live authenticator code, or an existing recovery code (which is consumed).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether two-factor authentication remains enabled.</returns>
+    public Task<MfaMethodRemoval> DeleteMfaMethodAsync(
+        string methodId,
+        MfaReauthenticationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        AssertReauthentication(request);
+        return CallAsync<MfaMethodRemoval>(
+            $"users/self/mfa/{PathSegment(methodId, "MFA method ID")}",
+            HttpMethod.Delete,
+            request,
+            cancellationToken: cancellationToken);
+    }
+
+    private static void AssertReauthentication(MfaReauthenticationRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Password) && string.IsNullOrWhiteSpace(request.Code))
+            throw new ValidationException("A password or a two-factor code is required.");
     }
 }

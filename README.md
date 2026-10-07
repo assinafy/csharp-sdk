@@ -38,7 +38,7 @@ corpos de requisição, respostas e erros, está em [docs/API.md](docs/API.md#sd
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.4.0
+dotnet add package Assinafy.Sdk --version 2.5.0
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
@@ -753,7 +753,7 @@ permite qualquer um desses dois canais. Dois canais ou uma combinação incompat
 | --- | --- | --- |
 | `Email` *(padrão)* | Código de uso único (OTP) por e-mail, exigido antes de assinar | 0 créditos |
 | `Whatsapp` | Código de uso único (OTP) por WhatsApp | 0,45 crédito (a notificação WhatsApp, que este método exige); só em planos pagos |
-| `DigitalCertificate` | O signatário assina com o **próprio certificado ICP-Brasil (A1/A3)**, pela extensão de navegador Web PKI, gerando uma assinatura **PAdES qualificada** | 2 créditos + a notificação |
+| `DigitalCertificate` | O signatário assina com o **próprio certificado ICP-Brasil (A1/A3)**, pela extensão de navegador Web PKI, gerando uma assinatura **PAdES qualificada** | 0,5 crédito + a notificação |
 
 O que é cobrado é a **notificação** — nenhum método de verificação tem preço próprio, exceto o
 certificado digital, que cobra a assinatura em si. Como os lados são acoplados, escolher verificação
@@ -909,24 +909,37 @@ var ok = await client.Fields.ValidateAsync(campo.Id,
 
 ## Webhooks
 
-Uma workspace tem uma assinatura de webhook. Prefira-a ao polling.
+Uma conta cadastra um endpoint de webhook, ou até três nos planos pagos. Todo endpoint ativo inscrito
+em um evento o recebe, de forma independente dos demais. Prefira webhooks ao polling.
 
 ```csharp
-var eventos = await client.Webhooks.ListEventTypesAsync();
+var tipos = await client.Webhooks.ListEventTypesAsync();
 
-await client.Webhooks.UpdateSubscriptionAsync(new UpdateWebhookSubscriptionRequest
+var endpoint = await client.Webhooks.CreateEndpointAsync(new CreateWebhookEndpointRequest
 {
+    Name = "ERP",
     Url = "https://example.com/webhooks/assinafy",
     Email = "ops@example.com",
-    IsActive = true,
     Events = ["document_ready", "signer_signed_document", "signer_rejected_document"],
+    SigningEnabled = true,
 });
 
-var assinatura = await client.Webhooks.GetAsync();
+// Guarde o segredo junto da configuração do receptor. Indisponível para aplicações OAuth.
+var segredo = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
 
-// Histórico de entregas e reenvio.
+var endpoints = await client.Webhooks.ListEndpointsAsync();          // do mais antigo ao mais novo
+await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpointRequest
+{
+    Events = ["document_ready"],                                      // só os campos enviados mudam
+});
+
+// A rotação vale na hora: as entregas passam a ser assinadas só com o novo segredo.
+var novo = await client.Webhooks.RotateEndpointSecretAsync(endpoint.Id);
+
+// Histórico de entregas (opcionalmente de um endpoint) e reenvio ao endpoint daquela entrada.
 var historico = await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams
 {
+    EndpointId = endpoint.Id,
     Delivered = false,
     From = DateTimeOffset.UtcNow.AddDays(-7).ToUnixTimeSeconds(),
     PerPage = 50,
@@ -935,17 +948,58 @@ var historico = await client.Webhooks.ListDispatchesAsync(new ListDispatchesPara
 foreach (var falha in historico.Data)
     await client.Webhooks.RetryDispatchAsync(falha.Id);
 
-// Pause as entregas sem perder a configuração.
-await client.Webhooks.InactivateAsync();
+await client.Webhooks.DeleteEndpointAsync(endpoint.Id);               // libera a vaga
 ```
 
-Não existe rota de exclusão — `InactivateAsync`, ou um update com `IsActive = false`, é como se
-param as entregas.
+Criar um endpoint além do limite do plano retorna 403, e cada endpoint precisa de uma URL distinta
+(400). `GetAsync`, `UpdateSubscriptionAsync` e `InactivateAsync` atuam sobre o endpoint mais antigo
+da conta; `UpdateSubscriptionAsync` o cria quando a conta não tem nenhum.
 
-As entregas chegam no mesmo envelope `{ status, message, data }`, e seu endpoint deve confirmá-las
-com `2xx`. `assignment_created` e `document_metadata_ready` não têm ordem garantida, e campos
-desconhecidos são adições compatíveis — ignore em vez de rejeitar. O catálogo completo de eventos e
-o contrato de entrega estão em [docs/API.md](docs/API.md#webhook-payloads).
+### Recebendo e verificando entregas
+
+Cada entrega é um `POST` com os cabeçalhos `webhook-id`, `webhook-timestamp` e — com assinatura
+habilitada — `webhook-signature`, no padrão [Standard Webhooks](https://www.standardwebhooks.com).
+Verifique a assinatura sobre o corpo **bruto** e então desserialize-o em `WebhookEvent`:
+
+```csharp
+using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Webhooks;
+using System.Text.Json;
+
+app.MapPost("/webhooks/assinafy", async (HttpRequest request) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var corpo = await reader.ReadToEndAsync();
+
+    if (!WebhookSignature.Verify(
+            segredoDoWebhook,                                // "whsec_…" de GetEndpointSecretAsync
+            request.Headers["webhook-id"],
+            request.Headers["webhook-timestamp"],
+            request.Headers["webhook-signature"],
+            corpo))
+        return Results.Unauthorized();
+
+    var evento = JsonSerializer.Deserialize<WebhookEvent>(corpo)!;
+    // Deduplique pelo cabeçalho webhook-id; ele se repete em toda tentativa ao mesmo endpoint.
+    if (evento.Event == "document_ready")
+    {
+        var documentId = evento.Object.GetProperty("id").GetString();
+        // baixe o artefato certificado…
+    }
+
+    return Results.Ok();
+});
+```
+
+`Verify` compara em tempo constante, aceita qualquer uma de várias assinaturas `v1,` separadas por
+espaço e rejeita timestamps a mais de cinco minutos do relógio local (ajuste com `tolerance`). O corpo
+é `{ id, event, message, payload, origin, created_at, subject, object, account_id }`, não o envelope
+REST. `subject` e `object` são polimórficos — leia a propriedade `type` — e trazem timestamps em
+segundos Unix. Responda `2xx` rápido: cada evento tem até duas tentativas, com três segundos de
+intervalo, e dez eventos seguidos com falha pausam as entregas até uma ter sucesso.
+`assignment_created` e `document_metadata_ready` não têm ordem garantida, e campos desconhecidos são
+adições compatíveis. O catálogo de eventos e o contrato de entrega estão em
+[docs/API.md](docs/API.md#webhook-payloads).
 
 ## Trilha de atividades e artefatos
 
@@ -988,6 +1042,38 @@ var eu = await client.Users.GetSelfAsync();
 var meusKpis = await client.Users.GetStatsAsync();
 var preferencias = await client.Users.GetNotificationPreferencesAsync();
 ```
+
+### Autenticação em dois fatores
+
+Quando o usuário tem dois fatores habilitados, `LoginAsync` devolve um `MfaToken` em vez do token de
+acesso. Conclua o login em até cinco minutos com um código do autenticador ou de recuperação:
+
+```csharp
+var login = await client.Authentication.LoginAsync(new LoginRequest { Email = "user@example.com", Password = senha });
+if (login.MfaToken is not null)
+    login = await client.Authentication.VerifyMfaAsync(new VerifyMfaRequest { MfaToken = login.MfaToken, Code = codigo });
+```
+
+O usuário logado gerencia os próprios métodos por `Users`. O segredo da inscrição e os códigos de
+recuperação são devolvidos uma única vez:
+
+```csharp
+var inscricao = await client.Users.StartTotpEnrollmentAsync(new StartTotpEnrollmentRequest { Label = "Meu celular" });
+// Exiba inscricao.ProvisioningUri como QR code e confirme com um código do aparelho.
+var codigos = await client.Users.ConfirmTotpEnrollmentAsync(new ConfirmTotpEnrollmentRequest
+{
+    Id = inscricao.Id,
+    Code = codigoDoAparelho,
+});
+
+var metodos = await client.Users.ListMfaMethodsAsync();     // métodos + códigos de recuperação restantes
+var novos = await client.Users.RegenerateRecoveryCodesAsync(new MfaReauthenticationRequest { Password = senha });
+await client.Users.DeleteMfaMethodAsync(metodos.Methods[0].Id, new MfaReauthenticationRequest { Code = codigoDoAparelho });
+```
+
+Substituir um método já confirmado também exige `Password` ou `ReauthCode` na confirmação. Regerar
+códigos e remover um método exigem a senha, um código atual ou um código de recuperação (que é
+consumido).
 
 ## Testes
 

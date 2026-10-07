@@ -1,5 +1,35 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+
+- Multiple webhook endpoints (one per account, up to three on paid plans): `WebhookResource`
+  `ListEndpointsAsync`, `GetEndpointAsync`, `CreateEndpointAsync`, `UpdateEndpointAsync`, and
+  `DeleteEndpointAsync`, with `WebhookEndpoint`, `CreateWebhookEndpointRequest`, and
+  `UpdateWebhookEndpointRequest`.
+- Webhook signing: `GetEndpointSecretAsync` and `RotateEndpointSecretAsync` return a
+  `WebhookEndpointSecret`, and `Assinafy.Sdk.Webhooks.WebhookSignature.Verify` checks the Standard
+  Webhooks `webhook-signature` header with a constant-time comparison and a replay window.
+- `WebhookEvent` for deserializing delivered webhook bodies.
+- `ListDispatchesParams.EndpointId` and `WebhookDispatch.EndpointId` to filter and attribute
+  deliveries per endpoint.
+- Two-factor authentication: `AuthenticationResource.VerifyMfaAsync`, `AuthenticationResult.MfaToken`,
+  and `UserResource` `ListMfaMethodsAsync`, `StartTotpEnrollmentAsync`, `ConfirmTotpEnrollmentAsync`,
+  `RegenerateRecoveryCodesAsync`, and `DeleteMfaMethodAsync`.
+- `CreateSignerRequest.GovernmentId` (CPF, or CNPJ that may be alphanumeric).
+
+### Changed
+
+- `WebhookResource.GetAsync`, `UpdateSubscriptionAsync`, and `InactivateAsync` act on the account's
+  oldest webhook endpoint.
+
+### Documentation
+
+- Webhook endpoint management, signature verification, and two-factor login in both READMEs.
+- Digital-certificate signatures cost 0.5 credits per signer.
+- Each signer takes exactly one notification method.
+
 ## 2.4.0
 
 ### Added

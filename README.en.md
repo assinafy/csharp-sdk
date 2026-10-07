@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.4.0
+dotnet add package Assinafy.Sdk --version 2.5.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -870,10 +870,14 @@ new SignerRef
 {
     Id = signer.Id,
     VerificationMethod = SignerChannels.Whatsapp,             // how identity is proven
-    NotificationMethods = [SignerChannels.Email, SignerChannels.Whatsapp],
+    NotificationMethods = [SignerChannels.Whatsapp],          // exactly one; must match the verification
     Step = 1,                                                 // signing order; same step signs in parallel
 }
 ```
+
+Each signer takes exactly one notification method; a second entry returns 400. `Email` verification
+pairs with `Email` notification, `Whatsapp` with `Whatsapp`, and `DigitalCertificate` with either.
+Send one side and the API infers the other.
 
 `Step` drives sequential signing: signers sharing a step are notified together, and the next step is
 notified only once the previous one completes. `SignerChannels.Whatsapp` is paid-only and costs
@@ -1070,24 +1074,37 @@ Deleting a field already used on a document fails.
 
 ## Webhooks
 
-A workspace has one subscription. Prefer it over polling for document state.
+An account registers one webhook endpoint, or up to three on paid plans. Every active endpoint
+subscribed to an event receives it, independently of the others. Prefer webhooks over polling.
 
 ```csharp
-var events = await client.Webhooks.ListEventTypesAsync();
+var eventTypes = await client.Webhooks.ListEventTypesAsync();
 
-await client.Webhooks.UpdateSubscriptionAsync(new UpdateWebhookSubscriptionRequest
+var endpoint = await client.Webhooks.CreateEndpointAsync(new CreateWebhookEndpointRequest
 {
+    Name = "ERP",
     Url = "https://example.com/webhooks/assinafy",
     Email = "ops@example.com",
-    IsActive = true,
     Events = ["document_ready", "signer_signed_document", "signer_rejected_document"],
+    SigningEnabled = true,
 });
 
-var subscription = await client.Webhooks.GetAsync();
+// Store the secret with your receiver configuration. Not available to OAuth applications.
+var secret = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
 
-// Delivery history and replay.
+var endpoints = await client.Webhooks.ListEndpointsAsync();          // oldest first
+await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpointRequest
+{
+    Events = ["document_ready"],                                      // only sent fields change
+});
+
+// Rotation takes effect at once: deliveries are signed only with the new secret.
+var rotated = await client.Webhooks.RotateEndpointSecretAsync(endpoint.Id);
+
+// Delivery history (optionally for one endpoint) and replay to that entry's endpoint.
 var history = await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams
 {
+    EndpointId = endpoint.Id,
     Delivered = false,
     From = DateTimeOffset.UtcNow.AddDays(-7).ToUnixTimeSeconds(),
     PerPage = 50,
@@ -1096,17 +1113,57 @@ var history = await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams
 foreach (var failed in history.Data)
     await client.Webhooks.RetryDispatchAsync(failed.Id);
 
-// Pause delivery without losing the configuration.
-await client.Webhooks.InactivateAsync();
+await client.Webhooks.DeleteEndpointAsync(endpoint.Id);               // frees the slot
 ```
 
-There is no delete endpoint — `InactivateAsync`, or an update with `IsActive = false`, is how you
-stop deliveries.
+Creating an endpoint past the plan's limit returns 403, and each endpoint needs a distinct URL (400).
+`GetAsync`, `UpdateSubscriptionAsync`, and `InactivateAsync` act on the account's oldest endpoint;
+`UpdateSubscriptionAsync` creates it when the account has none.
 
-Deliveries arrive as the same `{ status, message, data }` envelope your endpoint should acknowledge
-with a `2xx`. `assignment_created` and `document_metadata_ready` have no guaranteed ordering, and
-unknown fields are forward-compatible additions — ignore rather than reject them. The full event
-catalog, payload keys, and delivery contract are in
+### Receiving and verifying deliveries
+
+Each delivery is a `POST` with `webhook-id`, `webhook-timestamp`, and — when signing is enabled —
+`webhook-signature` headers, following [Standard Webhooks](https://www.standardwebhooks.com).
+Verify the signature against the **raw** body, then deserialize it into `WebhookEvent`:
+
+```csharp
+using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Webhooks;
+using System.Text.Json;
+
+app.MapPost("/webhooks/assinafy", async (HttpRequest request) =>
+{
+    using var reader = new StreamReader(request.Body);
+    var rawBody = await reader.ReadToEndAsync();
+
+    if (!WebhookSignature.Verify(
+            webhookSecret,                                   // "whsec_…" from GetEndpointSecretAsync
+            request.Headers["webhook-id"],
+            request.Headers["webhook-timestamp"],
+            request.Headers["webhook-signature"],
+            rawBody))
+        return Results.Unauthorized();
+
+    var evt = JsonSerializer.Deserialize<WebhookEvent>(rawBody)!;
+    // Deduplicate on the webhook-id header; it is identical on every attempt to the same endpoint.
+    if (evt.Event == "document_ready")
+    {
+        var documentId = evt.Object.GetProperty("id").GetString();
+        // download the certificated artifact…
+    }
+
+    return Results.Ok();
+});
+```
+
+`Verify` uses a constant-time comparison, accepts any of several space-separated `v1,` signatures,
+and rejects timestamps more than five minutes from the local clock (pass `tolerance` to change it).
+The body is `{ id, event, message, payload, origin, created_at, subject, object, account_id }`, not
+the REST envelope. `subject` and `object` are polymorphic — read their `type` property — and carry
+Unix-second timestamps. Answer with a `2xx` quickly: each event gets up to two attempts three seconds
+apart, and ten consecutive failed events pause delivery until one succeeds. `assignment_created` and
+`document_metadata_ready` have no guaranteed ordering, and unknown fields are forward-compatible
+additions. The event catalog and delivery contract are in
 [docs/API.md](docs/API.md#webhook-payloads).
 
 ## Accounts and users
@@ -1155,6 +1212,40 @@ foreach (var row in monthly)
     Console.WriteLine($"{row.Period}: {row.DocumentsSent} sent, {row.DocumentsCertified} certified");
 ```
 
+### Two-factor authentication
+
+When a user has two-factor authentication enabled, `LoginAsync` returns an `MfaToken` instead of an
+access token. Complete the login within five minutes with an authenticator or recovery code:
+
+```csharp
+var login = await client.Authentication.LoginAsync(new LoginRequest { Email = "user@example.com", Password = password });
+if (login.MfaToken is not null)
+    login = await client.Authentication.VerifyMfaAsync(new VerifyMfaRequest { MfaToken = login.MfaToken, Code = code });
+```
+
+A signed-in user manages their own methods through `Users`. The enrollment secret and the recovery
+codes are each returned only once:
+
+```csharp
+var enrollment = await client.Users.StartTotpEnrollmentAsync(new StartTotpEnrollmentRequest { Label = "My phone" });
+// Render enrollment.ProvisioningUri as a QR code, then confirm with a code from the device.
+var codes = await client.Users.ConfirmTotpEnrollmentAsync(new ConfirmTotpEnrollmentRequest
+{
+    Id = enrollment.Id,
+    Code = codeFromDevice,
+});
+
+var methods = await client.Users.ListMfaMethodsAsync();      // methods + recovery codes remaining
+var fresh = await client.Users.RegenerateRecoveryCodesAsync(new MfaReauthenticationRequest { Password = password });
+await client.Users.DeleteMfaMethodAsync(methods.Methods[0].Id, new MfaReauthenticationRequest { Code = codeFromDevice });
+```
+
+Replacing an already-confirmed method also needs `Password` or `ReauthCode` on the confirm request.
+Regenerating codes and removing a method need the password, a live code, or a recovery code (which
+is consumed).
+
+### API keys
+
 API keys are managed through the `Authentication` resource. Generating a new key replaces the
 previous one, and the full value is shown only once:
 
@@ -1177,7 +1268,7 @@ await client.Authentication.DeleteApiKeyAsync();
 | `bundle` | ZIP containing the original PDF, signed PDF, certificate page, and PAdES file when available |
 
 **Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
-only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 2 credits per signer
+only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 0.5 credits per signer
 on top of its notification). Values are capitalized exactly as shown. Assignments and templates accept exactly
 one notification channel per signer. Email verification requires Email notification, WhatsApp
 verification requires WhatsApp notification, and DigitalCertificate permits either. The API infers

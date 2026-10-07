@@ -70,12 +70,20 @@ public sealed record UserProfile
     public string? ToBeDeletedAt { get; init; }
 }
 
-/// <summary>Result of a successful login or social-login: an access token plus the authenticated user and the accounts they belong to.</summary>
+/// <summary>
+/// Result of a login, social login, or two-factor verification: an access token plus the authenticated
+/// user and the accounts they belong to — or, for a user with two-factor enabled, an <see cref="MfaToken"/>
+/// to complete with <c>VerifyMfaAsync</c>.
+/// </summary>
 public sealed record AuthenticationResult
 {
-    /// <summary>JWT access token to send as the bearer credential on subsequent requests.</summary>
+    /// <summary>JWT access token to send as the bearer credential on subsequent requests. Empty while a two-factor challenge is pending.</summary>
     [JsonPropertyName("access_token")]
     public string AccessToken { get; init; } = string.Empty;
+
+    /// <summary>Single-use two-factor challenge returned by login when the user has two-factor enabled; it expires five minutes after login. <see langword="null"/> otherwise.</summary>
+    [JsonPropertyName("mfa_token")]
+    public string? MfaToken { get; init; }
 
     /// <summary>The authenticated user, or <see langword="null"/> when not included in the response.</summary>
     [JsonPropertyName("user")]
@@ -110,6 +118,16 @@ public sealed class LoginRequest
 
     /// <summary>Account password.</summary>
     public required string Password { get; set; }
+}
+
+/// <summary>Body for <c>POST /authentication/mfa/verify</c> — complete a two-factor login.</summary>
+public sealed class VerifyMfaRequest
+{
+    /// <summary>The <see cref="AuthenticationResult.MfaToken"/> returned by login.</summary>
+    public required string MfaToken { get; set; }
+
+    /// <summary>A 6-digit authenticator code, or a recovery code such as <c>ABCD-EFGH-JKMN</c>.</summary>
+    public required string Code { get; set; }
 }
 
 /// <summary>Body for <c>POST /authentication/social-login</c> — exchange a social-provider token for an Assinafy access token.</summary>

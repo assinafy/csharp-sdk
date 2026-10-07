@@ -100,7 +100,7 @@ jobs:
             | .paths["/v1/authentication/social-login"].post.requestBody.content["application/json"].schema.properties.token.example = "example-provider-token"
             | .components.schemas.ApiKey.properties.api_key.example = "example-api-key"
             | .components.schemas.AuthSession.properties.access_token.example = "example-access-token"
-            | walk(if type == "string" then gsub("@(email|test|kemmer|yahoo)\\.com"; "@example.com") else . end)
+            | walk(if type == "string" then gsub("@((email|test|kemmer|yahoo)\\.com|acme\\.com\\.br)"; "@example.com") | gsub("whsec_[A-Za-z0-9+/]+=*"; "whsec_ZXhhbXBsZQ==") else . end)
           '
           jq -S . docs/openapi.json > "$RUNNER_TEMP/openapi.checked-in.json"
           jq -S "$snapshot_filter" "$RUNNER_TEMP/openapi.json" > "$RUNNER_TEMP/openapi.production.json"

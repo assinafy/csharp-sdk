@@ -60,6 +60,9 @@ public sealed class CreateSignerRequest
     /// <summary>Signer's email address, or <see langword="null"/> to omit.</summary>
     public string? Email { get; set; }
 
+    /// <summary>Signer's CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification. <see langword="null"/> to omit.</summary>
+    public string? GovernmentId { get; set; }
+
     /// <summary>Signer's WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> to omit.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
@@ -74,7 +77,7 @@ public sealed class UpdateSignerRequest
     /// <summary>New email address, or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified email on an in-flight (not yet certificated) document.</summary>
     public string? Email { get; set; }
 
-    /// <summary>New government-issued identity number, or <see langword="null"/> to leave unchanged.</summary>
+    /// <summary>New CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification. <see langword="null"/> to leave unchanged.</summary>
     public string? GovernmentId { get; set; }
 
     /// <summary>New WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified WhatsApp on an in-flight (not yet certificated) document.</summary>

@@ -239,7 +239,8 @@ public sealed class AssinafyClientTests
         handler.AddJsonResponse(HttpMethod.Get, "/documents/doc-1",
             FakeHttpMessageHandler.ApiOk(new
             {
-                id = "doc-1", status = "metadata_ready",
+                id = "doc-1",
+                status = "metadata_ready",
                 pages = new[] { new { id = "page-1", number = 1 } },
             }));
         handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/signers",
@@ -252,7 +253,8 @@ public sealed class AssinafyClientTests
 
         var result = await client.UploadAndRequestSignaturesAsync(new()
         {
-            FileStream = stream, FileName = "contract.pdf",
+            FileStream = stream,
+            FileName = "contract.pdf",
             Signers = [new() { FullName = "Signer" }],
         });
 

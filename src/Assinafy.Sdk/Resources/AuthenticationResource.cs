@@ -8,10 +8,10 @@ public sealed class AuthenticationResource : BaseResource
     internal AuthenticationResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
         : base(http, authenticate: authenticate) { }
 
-    /// <summary><c>POST /login</c> — exchange email and password for an access token and account list.</summary>
+    /// <summary><c>POST /login</c> — exchange email and password for an access token and account list. For a user with two-factor enabled the result carries <see cref="AuthenticationResult.MfaToken"/> instead; complete it with <see cref="VerifyMfaAsync"/>.</summary>
     /// <param name="request">The user's email and password credentials.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The access token, authenticated user, and associated accounts.</returns>
+    /// <returns>The access token, authenticated user, and associated accounts, or a pending two-factor challenge.</returns>
     public Task<AuthenticationResult> LoginAsync(
         LoginRequest request,
         CancellationToken cancellationToken = default)
@@ -22,6 +22,30 @@ public sealed class AuthenticationResource : BaseResource
 
         return CallAsync<AuthenticationResult>(
             "login",
+            HttpMethod.Post,
+            request,
+            cancellationToken: cancellationToken,
+            authenticate: false);
+    }
+
+    /// <summary>
+    /// <c>POST /authentication/mfa/verify</c> — exchange the <see cref="AuthenticationResult.MfaToken"/> from login
+    /// and an authenticator or recovery code for an access token. The challenge is single-use and expires five
+    /// minutes after login; 401 means it expired, was used, or too many codes were tried.
+    /// </summary>
+    /// <param name="request">The login's MFA token and the 6-digit or recovery code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The access token, authenticated user, and associated accounts.</returns>
+    public Task<AuthenticationResult> VerifyMfaAsync(
+        VerifyMfaRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.MfaToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(request.Code);
+
+        return CallAsync<AuthenticationResult>(
+            "authentication/mfa/verify",
             HttpMethod.Post,
             request,
             cancellationToken: cancellationToken,
