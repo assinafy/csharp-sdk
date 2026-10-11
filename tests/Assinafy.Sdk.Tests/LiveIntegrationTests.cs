@@ -356,11 +356,11 @@ public sealed class LiveIntegrationTests
             });
             field.Regex.Should().BeNull();
             (await client.Fields.ListAsync()).Data.Should().Contain(item => item.Id == field.Id);
-            (await client.Fields.ValidateAsync(field.Id, new ValidateFieldValueRequest
+            (await client.Fields.ValidateAsWorkspaceAsync(field.Id, new ValidateFieldValueRequest
             {
                 Value = "sdk-live",
             })).Success.Should().BeTrue();
-            (await client.Fields.ValidateMultipleAsync(
+            (await client.Fields.ValidateMultipleAsWorkspaceAsync(
             [
                 new ValidateFieldValueItem { FieldId = field.Id, Value = "sdk-live" },
             ])).Should().ContainSingle(result => result.Success);
@@ -410,6 +410,62 @@ public sealed class LiveIntegrationTests
             if (account is not null && !string.IsNullOrWhiteSpace(account.Id))
                 await RetryRateLimitedCleanupAsync(
                     () => bootstrap.Accounts.DeleteAsync(force: true, accountId: account.Id));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task AssignmentExpirationSignerDocumentsAndSendToken_FollowTheContract()
+    {
+        using var client = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        var email = $"signer-{suffix[..12]}@example.com";
+        Signer? signer = null;
+        DocumentDetails? document = null;
+
+        try
+        {
+            signer = await client.Signers.CreateAsync(new CreateSignerRequest
+            {
+                FullName = $"SDK Contract {suffix[..8]}",
+                Email = email,
+            });
+            using var pdf = new MemoryStream(BuildMinimalPdf());
+            document = await client.Documents.UploadAsync(pdf, $"sdk-contract-{suffix}.pdf");
+            await client.Documents.WaitUntilReadyAsync(document.Id, maxWait: TimeSpan.FromMinutes(2));
+
+            var assignment = await client.Assignments.CreateAsync(document.Id, new CreateAssignmentRequest
+            {
+                Method = AssignmentMethods.Virtual,
+                Signers = [new SignerRef { Id = signer.Id }],
+            });
+
+            var expiresAt = DateTimeOffset.UtcNow.AddDays(3).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
+            (await client.Assignments.ResetExpirationAsync(document.Id, assignment.Id, expiresAt))
+                .ExpiresAt.Should().NotBeNullOrWhiteSpace();
+            (await client.Assignments.ResetExpirationAsync(document.Id, assignment.Id, null))
+                .ExpiresAt.Should().BeNull();
+
+            (await client.Signing.ListDocumentsAsWorkspaceAsync(signer.Id)).Data
+                .Should().Contain(item => item.Id == document.Id);
+            (await client.Signing.SearchDocumentsAsWorkspaceAsync(signer.Id)).Data
+                .Should().Contain(item => item.Id == document.Id);
+
+            var sent = await client.PublicDocuments.SendTokenAsync(document.Id, new SendDocumentTokenRequest
+            {
+                Channel = SendDocumentTokenChannels.Email,
+                Recipient = email,
+            });
+            sent.Channel.Should().Be(SendDocumentTokenChannels.Email);
+            sent.Recipient.Should().Be(email);
+            sent.Document!.Id.Should().Be(document.Id);
+        }
+        finally
+        {
+            if (document is not null)
+                await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
+            if (signer is not null)
+                await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(signer.Id));
         }
     }
 

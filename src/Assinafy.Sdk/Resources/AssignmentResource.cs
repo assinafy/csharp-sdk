@@ -72,9 +72,15 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration</c> — set or clear the assignment's expiration date.</summary>
+    /// <remarks>
+    /// Request body: <c>{ "expires_at": "2026-12-31T23:59:59Z" }</c> or <c>{ "expires_at": null }</c>.
+    /// The key is always sent: a date must be at least one hour in the future, and <see langword="null"/>
+    /// removes the expiration. Not allowed once the document is closed (<c>400</c>).
+    /// Response <c>data</c>: the updated <see cref="Assignment"/>.
+    /// </remarks>
     /// <param name="documentId">Document that owns the assignment.</param>
     /// <param name="assignmentId">Assignment whose expiration to change.</param>
-    /// <param name="expiresAt">New expiration as an ISO-8601 date-time string, or <see langword="null"/> to clear the expiration.</param>
+    /// <param name="expiresAt">New expiration as an ISO-8601 date-time string, or <see langword="null"/> to clear the expiration. A blank string is rejected.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The assignment with its updated expiration.</returns>
     public Task<Assignment> ResetExpirationAsync(
@@ -85,6 +91,8 @@ public sealed class AssignmentResource : BaseResource
     {
         var document = PathSegment(documentId, "Document ID");
         var assignment = PathSegment(assignmentId, "Assignment ID");
+        if (expiresAt is not null)
+            ArgumentException.ThrowIfNullOrWhiteSpace(expiresAt);
 
         return CallAsync<Assignment>(
             $"documents/{document}/assignments/{assignment}/reset-expiration",

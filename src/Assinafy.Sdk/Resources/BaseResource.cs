@@ -343,12 +343,12 @@ public abstract class BaseResource
                 ? descriptionEl.GetString()
                 : null;
 
-            return new OAuthException(
+            return WithRateLimit(new OAuthException(
                 statusCode,
                 errorEl.GetString()!,
                 description,
                 BearerChallenge.Parse(response).GetValueOrDefault("scope"),
-                root.Clone());
+                root.Clone()), response);
         }
         catch (JsonException)
         {
@@ -370,15 +370,42 @@ public abstract class BaseResource
         JsonElement? details)
     {
         var challenge = BearerChallenge.Parse(response);
-        return challenge.TryGetValue("error", out var error)
+        return WithRateLimit(challenge.TryGetValue("error", out var error)
             ? new OAuthException(
                 statusCode,
                 error,
                 challenge.GetValueOrDefault("error_description") ?? message,
                 challenge.GetValueOrDefault("scope"),
                 details)
-            : new ApiException(statusCode, message, details);
+            : new ApiException(statusCode, message, details), response);
     }
+
+    /// <summary>
+    /// Copy the <c>X-Rate-Limit-Limit</c>, <c>X-Rate-Limit-Remaining</c>, <c>X-Rate-Limit-Reset</c>
+    /// (seconds), and <c>Retry-After</c> response headers onto the exception.
+    /// </summary>
+    private static ApiException WithRateLimit(ApiException exception, HttpResponseMessage response)
+    {
+        var headers = response.Headers;
+        exception.RateLimitLimit = ReadIntHeader(headers, "x-rate-limit-limit");
+        exception.RateLimitRemaining = ReadIntHeader(headers, "x-rate-limit-remaining");
+        exception.RateLimitReset = ReadIntHeader(headers, "x-rate-limit-reset") is int reset
+            ? TimeSpan.FromSeconds(reset)
+            : null;
+
+        var retryAfter = headers.RetryAfter;
+        exception.RetryAfter = retryAfter?.Delta ?? (retryAfter?.Date is { } date
+            ? TimeSpan.FromTicks(Math.Max(0, (date - DateTimeOffset.UtcNow).Ticks))
+            : null);
+        return exception;
+    }
+
+    private static int? ReadIntHeader(HttpResponseHeaders headers, string name) =>
+        headers.TryGetValues(name, out var values) &&
+        int.TryParse(values.FirstOrDefault(), System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var n)
+            ? n
+            : null;
 
     private async Task<T> SendEnvelopeAsync<T>(
         Func<HttpRequestMessage> requestFactory,
@@ -566,16 +593,10 @@ public abstract class BaseResource
 
     private static PaginationMeta? ParsePaginationMeta(HttpResponseHeaders headers)
     {
-        static int? TryRead(HttpResponseHeaders h, string key) =>
-            h.TryGetValues(key, out var values) &&
-            int.TryParse(values.FirstOrDefault(), out var n)
-                ? n
-                : null;
-
-        var currentPage = TryRead(headers, "x-pagination-current-page");
-        var perPage = TryRead(headers, "x-pagination-per-page");
-        var total = TryRead(headers, "x-pagination-total-count");
-        var lastPage = TryRead(headers, "x-pagination-page-count");
+        var currentPage = ReadIntHeader(headers, "x-pagination-current-page");
+        var perPage = ReadIntHeader(headers, "x-pagination-per-page");
+        var total = ReadIntHeader(headers, "x-pagination-total-count");
+        var lastPage = ReadIntHeader(headers, "x-pagination-page-count");
 
         if (currentPage is null && perPage is null && total is null && lastPage is null)
             return null;

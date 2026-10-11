@@ -359,4 +359,90 @@ public sealed class PayloadAndErrorContractTests
             HttpRequestMessage request, CancellationToken cancellationToken) =>
             throw new HttpRequestException("simulated transport failure");
     }
+
+    // ---- Rate limits ----
+
+    private static readonly Dictionary<string, string> RateLimitHeaders = new()
+    {
+        ["X-Rate-Limit-Limit"] = "60",
+        ["X-Rate-Limit-Remaining"] = "0",
+        ["X-Rate-Limit-Reset"] = "42",
+        ["Retry-After"] = "30",
+    };
+
+    [Fact]
+    public async Task TooManyRequests_ExposesRateLimitHeadersOnApiException()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/documents/doc-1",
+            new { status = 429, message = "Too Many Requests", data = (object?)null },
+            System.Net.HttpStatusCode.TooManyRequests,
+            RateLimitHeaders);
+
+        var act = () => new DocumentResource(Client(handler), "acc").GetAsync("doc-1");
+
+        var ex = (await act.Should().ThrowAsync<ApiException>()).Which;
+        ex.StatusCode.Should().Be(429);
+        ex.RateLimitLimit.Should().Be(60);
+        ex.RateLimitRemaining.Should().Be(0);
+        ex.RateLimitReset.Should().Be(TimeSpan.FromSeconds(42));
+        ex.RetryAfter.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public async Task TooManyRequests_OnOAuthTokenRoute_ExposesRetryAfter()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/oauth/token",
+            new { error = "slow_down", error_description = "Too many requests" },
+            System.Net.HttpStatusCode.TooManyRequests,
+            RateLimitHeaders);
+
+        var act = () => new OAuthResource(Client(handler)).RefreshTokenAsync(new OAuthRefreshRequest
+        {
+            RefreshToken = "refresh",
+            ClientId = "client-1",
+        });
+
+        var ex = (await act.Should().ThrowAsync<OAuthException>()).Which;
+        ex.StatusCode.Should().Be(429);
+        ex.RetryAfter.Should().Be(TimeSpan.FromSeconds(30));
+        ex.RateLimitRemaining.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ErrorWithoutRateLimitHeaders_LeavesRateLimitPropertiesNull()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var act = () => new DocumentResource(Client(handler), "acc").GetAsync("missing");
+
+        var ex = (await act.Should().ThrowAsync<ApiException>()).Which;
+        ex.RateLimitLimit.Should().BeNull();
+        ex.RateLimitRemaining.Should().BeNull();
+        ex.RateLimitReset.Should().BeNull();
+        ex.RetryAfter.Should().BeNull();
+    }
+
+    // ---- Reset expiration ----
+
+    [Fact]
+    public async Task ResetExpiration_AlwaysSendsTheRequiredKey()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/reset-expiration",
+            FakeHttpMessageHandler.ApiOk(new { id = "as-1", expires_at = "2026-12-31T23:59:59Z" }));
+        var resource = new AssignmentResource(Client(handler), "acc");
+
+        var result = await resource.ResetExpirationAsync("doc-1", "as-1", "2026-12-31T23:59:59Z");
+        await resource.ResetExpirationAsync("doc-1", "as-1", null);
+
+        result.ExpiresAt.Should().Be("2026-12-31T23:59:59Z");
+        handler.Requests.Should().OnlyContain(r => r.Method == HttpMethod.Put &&
+            r.RequestUri!.AbsolutePath == "/v1/documents/doc-1/assignments/as-1/reset-expiration");
+        handler.RequestBodies.Should().Equal(
+            """{"expires_at":"2026-12-31T23:59:59Z"}""",
+            """{"expires_at":null}""");
+        await ((Func<Task>)(() => resource.ResetExpirationAsync("doc-1", "as-1", " ")))
+            .Should().ThrowAsync<ArgumentException>();
+    }
 }

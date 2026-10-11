@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.5.0
+dotnet add package Assinafy.Sdk --version 2.5.1
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -513,7 +513,9 @@ timeout surfaces as `NetworkException`; a token you cancelled yourself propagate
 
 **Rate limiting.** The API returns `429` when a caller exceeds its quota. The SDK does not retry
 automatically — surface it, back off, and retry, or chain a resilience handler onto the
-`IHttpClientBuilder` shown in [Dependency injection](#dependency-injection).
+`IHttpClientBuilder` shown in [Dependency injection](#dependency-injection). `ApiException` carries
+`RetryAfter` (the `429` `Retry-After` header) and `RateLimitLimit`, `RateLimitRemaining`, and
+`RateLimitReset` (the `X-Rate-Limit-*` headers).
 `Documents.WaitUntilReadyAsync` is the one exception: it treats `404`, `429`, and `5xx` as transient
 while polling.
 
@@ -943,6 +945,8 @@ var mine    = await client.Signing.ListDocumentsAsync(signerId, signerAccessCode
                   new SignerDocumentListParams { PerPage = 25 });
 var found   = await client.Signing.SearchDocumentsAsync(signerId, signerAccessCode,
                   new SignerDocumentListParams { Search = "nda" });
+// With the workspace credential instead of an access code, use the explicit methods:
+var theirs  = await client.Signing.ListDocumentsAsWorkspaceAsync(signerId);
 
 var artifact = await client.Signing.DownloadPublicAsync(
     signerId, documentId, DocumentArtifactNames.Certificated);
@@ -1005,11 +1009,16 @@ Unauthenticated lookups for a recipient who has a document link.
 
 ```csharp
 var info = await client.PublicDocuments.GetDetailsAsync(documentId);
-await client.PublicDocuments.SendTokenAsync(documentId, "john@example.com");
+var sent = await client.PublicDocuments.SendTokenAsync(documentId, new SendDocumentTokenRequest
+{
+    Channel = SendDocumentTokenChannels.Email,
+    Recipient = "signer@example.com",
+});
 ```
 
-`SendTokenAsync` asks the API to email a signing access token; omit the address to use the
-document's configured recipient.
+`SendTokenAsync` emails a one-time access token to a signer of the document who has not signed
+yet; the document must be pending signature. Email is the only channel, and the recipient is
+required.
 
 ## Tags
 
@@ -1056,13 +1065,13 @@ var fields = await client.Fields.ListAsync(new FieldListParams { IncludeStandard
 await client.Fields.UpdateAsync(field.Id, new UpdateFieldDefinitionRequest { IsActive = false });
 await client.Fields.UpdateAsync(field.Id, new UpdateFieldDefinitionRequest { ClearRegex = true });
 
-// Validate before submitting, either as the account or on a signer's behalf.
+// Validate before submitting, on a signer's behalf (access code required) or as the account.
 var check = await client.Fields.ValidateAsync(
     field.Id,
     new ValidateFieldValueRequest { Value = "ACM-1234" },
     signerAccessCode);
 
-var checks = await client.Fields.ValidateMultipleAsync(
+var checks = await client.Fields.ValidateMultipleAsWorkspaceAsync(
 [
     new ValidateFieldValueItem { FieldId = field.Id, Value = "ACM-1234" },
 ]);

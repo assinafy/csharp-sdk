@@ -23,6 +23,31 @@ public class ApiException : AssinafyException
     /// <summary>Structured error details from <c>data</c>, or the full error object when it carries top-level deletion <c>restrictions</c>; <see langword="null"/> when absent.</summary>
     public JsonElement? Details { get; }
 
+    /// <summary>
+    /// Requests allowed in the current rate-limit window, from the <c>X-Rate-Limit-Limit</c> response
+    /// header; <see langword="null"/> when the response did not carry it.
+    /// </summary>
+    public int? RateLimitLimit { get; internal set; }
+
+    /// <summary>
+    /// Requests left in the current rate-limit window, from the <c>X-Rate-Limit-Remaining</c> response
+    /// header; <see langword="null"/> when the response did not carry it.
+    /// </summary>
+    public int? RateLimitRemaining { get; internal set; }
+
+    /// <summary>
+    /// Time until the rate-limit window resets, from the <c>X-Rate-Limit-Reset</c> response header
+    /// (seconds); <see langword="null"/> when the response did not carry it.
+    /// </summary>
+    public TimeSpan? RateLimitReset { get; internal set; }
+
+    /// <summary>
+    /// How long to wait before retrying, from the <c>Retry-After</c> header the API sends with
+    /// <c>429 Too Many Requests</c> (seconds, or an HTTP date converted to a delay);
+    /// <see langword="null"/> when the response did not carry it. The SDK never retries on its own.
+    /// </summary>
+    public TimeSpan? RetryAfter { get; internal set; }
+
     /// <summary>Creates a new <see cref="ApiException"/> for the given status code and optional API-supplied message.</summary>
     /// <param name="statusCode">HTTP or envelope status code reported by the API.</param>
     /// <param name="apiMessage">Optional human-readable message reported by the API.</param>

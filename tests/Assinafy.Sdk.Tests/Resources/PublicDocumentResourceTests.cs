@@ -55,54 +55,64 @@ public sealed class PublicDocumentResourceTests
         handler.Requests.Single().Headers.Contains("X-Api-Key").Should().BeFalse();
     }
 
+    private static object SendTokenData() => FakeHttpMessageHandler.ApiOk(new
+    {
+        document = new { resource = "document", id = "doc-1", name = "Contract.pdf", page_count = 3, created_by = "Jane Doe" },
+        channel = "email",
+        recipient = "signer@example.com",
+    });
+
     [Fact]
-    public async Task SendToken_PutsOptionalEmailAndAcceptsEnvelopeWithoutData()
+    public async Task SendToken_PutsChannelAndRecipientWithoutCredentialsAndReturnsData()
     {
         var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Put, "/public/documents/doc-1/send-token",
-            new { status = 200, message = "Token sent" });
+        handler.AddJsonResponse(HttpMethod.Put, "/public/documents/doc-1/send-token", SendTokenData());
 
         var resource = new PublicDocumentResource(
             FakeHttpMessageHandler.CreateClient(handler),
             request => request.Headers.Add("X-Api-Key", "must-not-leak"));
-        await resource.SendTokenAsync("doc-1", "john@example.com");
-
-        var body = System.Text.Json.JsonDocument.Parse(handler.RequestBodies.Single());
-        body.RootElement.GetProperty("email").GetString().Should().Be("john@example.com");
-        body.RootElement.EnumerateObject().Should().ContainSingle();
-        handler.Requests.Single().Headers.Contains("X-Api-Key").Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task SendToken_OmitsBodyWhenEmailIsNotProvided()
-    {
-        var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Put, "/public/documents/doc-1/send-token",
-            new { status = 200, message = "Token sent" });
-
-        await CreateResource(handler).SendTokenAsync("doc-1");
-
-        handler.RequestBodies.Single().Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task LegacySendToken_PreservesWhatsappPayload()
-    {
-        var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Put, "/public/documents/doc-1/send-token",
-            new { status = 200, message = "Token sent" });
-
-#pragma warning disable CS0618
-        var result = await CreateResource(handler).SendTokenAsync("doc-1", new SendDocumentTokenRequest
+        var result = await resource.SendTokenAsync("doc-1", new SendDocumentTokenRequest
         {
-            Recipient = "+5548999990000",
-            Channel = SignerChannels.Whatsapp,
+            Channel = SignerChannels.Email,
+            Recipient = "signer@example.com",
         });
-#pragma warning restore CS0618
 
-        var body = System.Text.Json.JsonDocument.Parse(handler.RequestBodies.Single());
-        body.RootElement.GetProperty("recipient").GetString().Should().Be("+5548999990000");
-        body.RootElement.GetProperty("channel").GetString().Should().Be(SignerChannels.Whatsapp);
-        result.Channel.Should().Be(SignerChannels.Whatsapp);
+        var sent = handler.Requests.Single();
+        sent.Method.Should().Be(HttpMethod.Put);
+        sent.RequestUri!.AbsolutePath.Should().Be("/v1/public/documents/doc-1/send-token");
+        sent.Headers.Contains("X-Api-Key").Should().BeFalse();
+        using var body = System.Text.Json.JsonDocument.Parse(handler.RequestBodies.Single());
+        body.RootElement.GetRawText().Should().Be("""{"channel":"email","recipient":"signer@example.com"}""");
+        result.Channel.Should().Be(SendDocumentTokenChannels.Email);
+        result.Recipient.Should().Be("signer@example.com");
+        result.Document!.Id.Should().Be("doc-1");
+        result.Document.PageCount.Should().Be("3");
+        result.Document.CreatedBy.Should().Be("Jane Doe");
+    }
+
+    [Fact]
+    public async Task SendToken_EmailOverloadSendsTheSameBody()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Put, "/public/documents/doc-1/send-token", SendTokenData());
+
+        await CreateResource(handler).SendTokenAsync("doc-1", "signer@example.com");
+
+        handler.RequestBodies.Single().Should().Be("""{"channel":"email","recipient":"signer@example.com"}""");
+    }
+
+    [Fact]
+    public async Task SendToken_RejectsMissingRecipientAndUnsupportedChannelBeforeSending()
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+
+        await ((Func<Task>)(() => resource.SendTokenAsync("doc-1"))).Should().ThrowAsync<ArgumentException>();
+        await ((Func<Task>)(() => resource.SendTokenAsync("doc-1", new SendDocumentTokenRequest
+        {
+            Channel = SignerChannels.Whatsapp,
+            Recipient = "+5548999990000",
+        }))).Should().ThrowAsync<Assinafy.Sdk.Exceptions.ValidationException>();
+        handler.Requests.Should().BeEmpty();
     }
 }

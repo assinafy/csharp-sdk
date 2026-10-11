@@ -62,7 +62,7 @@ public sealed class ReliabilityRegressionTests
         var cyclicValue = new List<object>();
         cyclicValue.Add(cyclicValue);
 
-        var act = () => resource.ValidateAsync(
+        var act = () => resource.ValidateAsWorkspaceAsync(
             "field",
             new ValidateFieldValueRequest { Value = cyclicValue });
 

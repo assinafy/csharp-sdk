@@ -181,9 +181,14 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary><c>GET /signers/{signer_id}/documents?signer-access-code={code}</c> — list all documents associated with the signer.</summary>
+    /// <summary><c>GET /signers/{signer_id}/documents?signer-access-code={code}</c> — list all documents associated with the signer, authenticating with the signer access code only.</summary>
+    /// <remarks>
+    /// Workspace credentials are never sent. A null or blank access code is rejected rather than
+    /// falling back to workspace access; use <see cref="ListDocumentsAsWorkspaceAsync"/> for that.
+    /// Response <c>data</c>: an array of <see cref="DocumentListItem"/>, with <c>X-Pagination-*</c> headers in <see cref="PaginatedResult{T}.Meta"/>.
+    /// </remarks>
     /// <param name="signerId">Signer whose documents to list.</param>
-    /// <param name="signerAccessCode">The signer's access code.</param>
+    /// <param name="signerAccessCode">Required. The signer's access code.</param>
     /// <param name="parameters">Optional pagination. The documented endpoint accepts <c>Page</c> and <c>PerPage</c>; explicitly set legacy filters are retained for compatibility.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A paginated collection of documents associated with the signer.</returns>
@@ -191,28 +196,36 @@ public sealed class SigningResource : BaseResource
         string signerId,
         string signerAccessCode,
         SignerDocumentListParams? parameters = null,
-        CancellationToken cancellationToken = default)
-    {
-        var signer = PathSegment(signerId, "Signer ID");
-        var code = RequireId(signerAccessCode, "Signer access code");
+        CancellationToken cancellationToken = default) =>
+        SignerDocumentsAsync(signerId, "documents", RequireId(signerAccessCode, "Signer access code"), parameters, cancellationToken);
 
-        var query = BuildDocumentQuery(parameters);
-        query[SignerAccessCodeParam] = code;
-
-        return CallListAsync<DocumentListItem>(
-            $"signers/{signer}/documents",
-            query,
-            cancellationToken,
-            authenticate: false);
-    }
+    /// <summary>
+    /// <c>GET /signers/{signer_id}/documents</c> — list a signer's documents with the client's
+    /// workspace credentials (API key or bearer token). The signer must belong to that workspace.
+    /// No signer access code is sent.
+    /// </summary>
+    /// <remarks>Response <c>data</c>: an array of <see cref="DocumentListItem"/>, with <c>X-Pagination-*</c> headers in <see cref="PaginatedResult{T}.Meta"/>.</remarks>
+    /// <param name="signerId">Signer whose documents to list.</param>
+    /// <param name="parameters">Optional pagination: <c>Page</c> and <c>PerPage</c> (max 100).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of documents associated with the signer.</returns>
+    public Task<PaginatedResult<DocumentListItem>> ListDocumentsAsWorkspaceAsync(
+        string signerId,
+        SignerDocumentListParams? parameters = null,
+        CancellationToken cancellationToken = default) =>
+        SignerDocumentsAsync(signerId, "documents", null, parameters, cancellationToken);
 
     /// <summary>
     /// <c>GET /signers/{signer_id}/documents/search?signer-access-code={code}</c> — search the signer's
     /// documents by name, returning a compact representation. Use <see cref="ListDocumentsAsync"/> when you
     /// need the full document shape or pagination.
     /// </summary>
+    /// <remarks>
+    /// Workspace credentials are never sent. A null or blank access code is rejected rather than
+    /// falling back to workspace access; use <see cref="SearchDocumentsAsWorkspaceAsync"/> for that.
+    /// </remarks>
     /// <param name="signerId">Signer whose documents to search.</param>
-    /// <param name="signerAccessCode">The signer's access code.</param>
+    /// <param name="signerAccessCode">Required. The signer's access code.</param>
     /// <param name="parameters">Optional search term. The documented endpoint accepts <c>Search</c>; explicitly set legacy filters and pagination are retained for compatibility.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A paginated collection of documents matching the search.</returns>
@@ -220,19 +233,46 @@ public sealed class SigningResource : BaseResource
         string signerId,
         string signerAccessCode,
         SignerDocumentListParams? parameters = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SignerDocumentsAsync(signerId, "documents/search", RequireId(signerAccessCode, "Signer access code"), parameters, cancellationToken);
+
+    /// <summary>
+    /// <c>GET /signers/{signer_id}/documents/search</c> — search a signer's documents with the client's
+    /// workspace credentials (API key or bearer token). The signer must belong to that workspace.
+    /// No signer access code is sent.
+    /// </summary>
+    /// <remarks>Response <c>data</c>: an array of compact <see cref="DocumentListItem"/> entries.</remarks>
+    /// <param name="signerId">Signer whose documents to search.</param>
+    /// <param name="parameters">Optional <c>Search</c> term.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A paginated collection of documents matching the search.</returns>
+    public Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsWorkspaceAsync(
+        string signerId,
+        SignerDocumentListParams? parameters = null,
+        CancellationToken cancellationToken = default) =>
+        SignerDocumentsAsync(signerId, "documents/search", null, parameters, cancellationToken);
+
+    /// <summary>
+    /// Shared signer-document list/search call. With an access code the request carries only that
+    /// code; without one it carries the workspace credential. Public callers decide which explicitly.
+    /// </summary>
+    private Task<PaginatedResult<DocumentListItem>> SignerDocumentsAsync(
+        string signerId,
+        string route,
+        string? accessCode,
+        SignerDocumentListParams? parameters,
+        CancellationToken cancellationToken)
     {
         var signer = PathSegment(signerId, "Signer ID");
-        var code = RequireId(signerAccessCode, "Signer access code");
-
         var query = BuildDocumentQuery(parameters);
-        query[SignerAccessCodeParam] = code;
+        if (accessCode is not null)
+            query[SignerAccessCodeParam] = accessCode;
 
         return CallListAsync<DocumentListItem>(
-            $"signers/{signer}/documents/search",
+            $"signers/{signer}/{route}",
             query,
             cancellationToken,
-            authenticate: false);
+            authenticate: accessCode is null);
     }
 
     /// <summary><c>PUT /signers/documents/sign-multiple?signer-access-code={code}</c> — sign multiple virtual-method documents in one request.</summary>

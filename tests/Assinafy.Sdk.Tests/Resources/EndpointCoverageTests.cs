@@ -164,7 +164,7 @@ public sealed class EndpointCoverageTests
             FakeHttpMessageHandler.ApiOk(new[] { new { field_id = "f1", type = "cpf", success = true } }));
         var resource = new FieldResource(Client(handler), "acc");
 
-        var result = await resource.ValidateMultipleAsync(
+        var result = await resource.ValidateMultipleAsWorkspaceAsync(
             [new ValidateFieldValueItem { FieldId = "f1", Value = "123" }]);
 
         result.Should().ContainSingle().Which.Success.Should().BeTrue();

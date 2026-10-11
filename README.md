@@ -38,7 +38,7 @@ corpos de requisição, respostas e erros, está em [docs/API.md](docs/API.md#sd
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.5.0
+dotnet add package Assinafy.Sdk --version 2.5.1
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
@@ -262,7 +262,9 @@ cliente vira `NetworkException`; um token que você cancelou propaga como `Opera
 inalterado.
 
 **Limite de requisições.** A API devolve `429` quando o chamador excede a cota. O SDK não repete
-automaticamente — trate, aguarde e repita, ou encadeie um handler de resiliência.
+automaticamente — trate, aguarde e repita, ou encadeie um handler de resiliência. A `ApiException`
+traz `RetryAfter` (cabeçalho `Retry-After` do `429`) e `RateLimitLimit`, `RateLimitRemaining` e
+`RateLimitReset` (cabeçalhos `X-Rate-Limit-*`).
 `Documents.WaitUntilReadyAsync` é a exceção: ele trata `404`, `429` e `5xx` como transitórios
 enquanto faz polling.
 
@@ -859,6 +861,8 @@ await client.Signing.DeclineMultipleAsync(signerAccessCode, [documentId3], "Não
 var atual = await client.Signing.GetCurrentDocumentAsync(signerId, signerAccessCode);
 var meus  = await client.Signing.ListDocumentsAsync(signerId, signerAccessCode,
                 new SignerDocumentListParams { PerPage = 25 });
+// Com a credencial do workspace (sem código de acesso), use o método explícito:
+var doSignatario = await client.Signing.ListDocumentsAsWorkspaceAsync(signerId);
 
 var artefato = await client.Signing.DownloadPublicAsync(
     signerId, documentId, DocumentArtifactNames.Certificated);
@@ -903,7 +907,7 @@ com validação do lado do servidor:
 ```csharp
 var tipos = await client.Fields.ListTypesAsync();
 var campo = await client.Fields.CreateAsync(new CreateFieldDefinitionRequest { Name = "CPF", Type = "cpf" });
-var ok = await client.Fields.ValidateAsync(campo.Id,
+var ok = await client.Fields.ValidateAsWorkspaceAsync(campo.Id,
     new ValidateFieldValueRequest { Value = "000.000.000-00" });
 ```
 

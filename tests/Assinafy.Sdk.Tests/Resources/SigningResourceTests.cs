@@ -183,4 +183,68 @@ public sealed class SigningResourceTests
             sent.RequestUri!.PathAndQuery == "/v1/signers/signer-1/documents/doc-1/download/pades" &&
             !sent.Headers.Contains("X-Api-Key"));
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SignerDocuments_AsWorkspace_SendWorkspaceCredentialAndNoAccessCode(bool search)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/signers/signer-1/documents",
+            FakeHttpMessageHandler.ApiOk(new[] { new { id = "doc-1", name = "c", status = "pending_signature" } }));
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "key"));
+
+        var parameters = new SignerDocumentListParams { Search = "c", Page = 1 };
+        var result = search
+            ? await resource.SearchDocumentsAsWorkspaceAsync("signer-1", parameters)
+            : await resource.ListDocumentsAsWorkspaceAsync("signer-1", parameters);
+
+        result.Data.Should().ContainSingle();
+        var sent = handler.Requests.Single();
+        sent.RequestUri!.AbsolutePath.Should().Be(search
+            ? "/v1/signers/signer-1/documents/search"
+            : "/v1/signers/signer-1/documents");
+        sent.RequestUri.Query.Should().NotContain("signer-access-code");
+        sent.Headers.Contains("X-Api-Key").Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, "")]
+    [InlineData(false, " ")]
+    [InlineData(true, null)]
+    [InlineData(true, "")]
+    public async Task SignerDocuments_WithAccessCode_RejectMissingCodeInsteadOfUsingWorkspaceCredentials(bool search, string? code)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "key"));
+
+        Func<Task> act = search
+            ? () => resource.SearchDocumentsAsync("signer-1", code!)
+            : () => resource.ListDocumentsAsync("signer-1", code!);
+
+        await act.Should().ThrowAsync<Assinafy.Sdk.Exceptions.ValidationException>();
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SignerDocuments_WithAccessCode_NeverSendWorkspaceCredential()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/signers/signer-1/documents",
+            FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        var resource = new SigningResource(
+            FakeHttpMessageHandler.CreateClient(handler),
+            request => request.Headers.Add("X-Api-Key", "key"));
+
+        await resource.ListDocumentsAsync("signer-1", "access");
+        await resource.SearchDocumentsAsync("signer-1", "access");
+
+        handler.Requests.Should().HaveCount(2).And.OnlyContain(r =>
+            !r.Headers.Contains("X-Api-Key") && r.RequestUri!.Query.Contains("signer-access-code=access"));
+    }
 }

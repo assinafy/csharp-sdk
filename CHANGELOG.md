@@ -1,5 +1,34 @@
 # Changelog
 
+## [2.5.1] - 2026-10-11
+
+### Added
+
+- `ApiException.RateLimitLimit`, `RateLimitRemaining`, `RateLimitReset`, and `RetryAfter`, read
+  from the `X-Rate-Limit-*` and `Retry-After` response headers (including `429` from
+  `POST /v1/oauth/token`).
+- `SigningResource.ListDocumentsAsWorkspaceAsync` and `SearchDocumentsAsWorkspaceAsync` list and
+  search a workspace signer's documents with the client's API key or bearer token.
+- `FieldResource.ValidateAsWorkspaceAsync` and `ValidateMultipleAsWorkspaceAsync` validate field
+  values with the client's credentials.
+- `SendDocumentTokenChannels.Email`.
+
+### Changed
+
+- `FieldResource.ValidateAsync` and `ValidateMultipleAsync` require a signer access code and throw
+  `ValidationException` when it is null or blank, instead of sending the workspace credential. Use
+  the new `AsWorkspace` methods to validate as the account.
+- `PublicDocumentResource.SendTokenAsync(documentId, SendDocumentTokenRequest)` is no longer
+  obsolete: it sends `{ "channel": "email", "recipient": … }` and returns the document, channel,
+  and recipient. Email is the only channel.
+- `AssignmentResource.ResetExpirationAsync` rejects a blank date; `null` still removes the
+  expiration.
+
+### Fixed
+
+- `PublicDocumentResource.SendTokenAsync(documentId, email)` sends the required `channel` and
+  `recipient` fields; the email address is now required.
+
 ## 2.5.0
 
 ### Added

@@ -119,10 +119,16 @@ public sealed class FieldResourceTests
         using var http = FakeHttpMessageHandler.CreateClient(handler);
         var resource = new FieldResource(http, "acc", request => request.Headers.Add("X-Api-Key", "key"));
 
-        if (multiple)
-            await resource.ValidateMultipleAsync([new ValidateFieldValueItem { FieldId = "field-1", Value = "value" }], accessCode);
-        else
-            await resource.ValidateAsync("field-1", new ValidateFieldValueRequest { Value = "value" }, accessCode);
+        IReadOnlyList<ValidateFieldValueItem> items = [new ValidateFieldValueItem { FieldId = "field-1", Value = "value" }];
+        var request = new ValidateFieldValueRequest { Value = "value" };
+        Task call = (multiple, accessCode) switch
+        {
+            (true, null) => resource.ValidateMultipleAsWorkspaceAsync(items),
+            (true, _) => resource.ValidateMultipleAsync(items, accessCode),
+            (false, null) => resource.ValidateAsWorkspaceAsync("field-1", request),
+            (false, _) => resource.ValidateAsync("field-1", request, accessCode),
+        };
+        await call;
 
         var sent = handler.Requests.Should().ContainSingle().Subject;
         sent.Method.Should().Be(HttpMethod.Post);
@@ -138,12 +144,14 @@ public sealed class FieldResourceTests
     }
 
     [Theory]
+    [InlineData(null)]
     [InlineData("")]
     [InlineData(" ")]
-    public async Task Validation_RejectsBlankAccessCodesBeforeSending(string accessCode)
+    public async Task Validation_RejectsMissingAccessCodesInsteadOfUsingWorkspaceCredentials(string? accessCode)
     {
         var handler = new FakeHttpMessageHandler();
-        var resource = CreateResource(handler);
+        var resource = new FieldResource(
+            FakeHttpMessageHandler.CreateClient(handler), "acc", request => request.Headers.Add("X-Api-Key", "key"));
         await ((Func<Task>)(() => resource.ValidateAsync("field-1", new ValidateFieldValueRequest { Value = "value" }, accessCode)))
             .Should().ThrowAsync<ValidationException>();
         await ((Func<Task>)(() => resource.ValidateMultipleAsync([], accessCode)))

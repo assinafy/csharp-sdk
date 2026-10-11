@@ -111,61 +111,120 @@ public sealed class FieldResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
-    /// <summary><c>POST /accounts/{accountId}/fields/{field_id}/validate</c> — validate a single value against a field definition. Pass a signer access code when calling on a signer's behalf.</summary>
+    /// <summary>
+    /// <c>POST /accounts/{accountId}/fields/{field_id}/validate?signer-access-code={code}</c> — validate a
+    /// single value against a field definition on a signer's behalf. Only the access code
+    /// authenticates the call; workspace credentials are never sent.
+    /// </summary>
+    /// <remarks>
+    /// Request body: <c>{ "value": … }</c>. Response <c>data</c>: <see cref="FieldValidationResult"/>.
+    /// A null or blank access code is rejected rather than falling back to workspace access; use
+    /// <see cref="ValidateAsWorkspaceAsync"/> to validate with the client's credentials.
+    /// </remarks>
     /// <param name="fieldId">Field definition to validate against.</param>
     /// <param name="request">The value to validate.</param>
-    /// <param name="signerAccessCode">Optional signer access code; when supplied, workspace credentials are not sent.</param>
+    /// <param name="signerAccessCode">Required. The signer's access code.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The validation result for the supplied value.</returns>
+    /// <exception cref="ValidationException"><paramref name="signerAccessCode"/> is null or blank.</exception>
     public Task<FieldValidationResult> ValidateAsync(
         string fieldId,
         ValidateFieldValueRequest request,
         string? signerAccessCode = null,
         string? accountId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ValidateCoreAsync(fieldId, request, RequireAccessCode(signerAccessCode), accountId, cancellationToken);
+
+    /// <summary>
+    /// <c>POST /accounts/{accountId}/fields/{field_id}/validate</c> — validate a single value against a
+    /// field definition with the client's workspace credentials (API key or bearer token).
+    /// </summary>
+    /// <remarks>Request body: <c>{ "value": … }</c>. Response <c>data</c>: <see cref="FieldValidationResult"/>.</remarks>
+    /// <param name="fieldId">Field definition to validate against.</param>
+    /// <param name="request">The value to validate.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The validation result for the supplied value.</returns>
+    public Task<FieldValidationResult> ValidateAsWorkspaceAsync(
+        string fieldId,
+        ValidateFieldValueRequest request,
+        string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        ValidateCoreAsync(fieldId, request, null, accountId, cancellationToken);
+
+    /// <summary>
+    /// <c>POST /accounts/{accountId}/fields/validate-multiple?signer-access-code={code}</c> — validate
+    /// multiple values at once on a signer's behalf. Only the access code authenticates the call;
+    /// workspace credentials are never sent.
+    /// </summary>
+    /// <remarks>
+    /// Request body: <c>[{ "field_id": "…", "value": … }]</c>. Response <c>data</c>: an array of
+    /// <see cref="FieldValidationResult"/>. A null or blank access code is rejected rather than falling
+    /// back to workspace access; use <see cref="ValidateMultipleAsWorkspaceAsync"/> for that.
+    /// </remarks>
+    /// <param name="values">Field-value pairs to validate; each references its field definition.</param>
+    /// <param name="signerAccessCode">Required. The signer's access code.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One validation result for each submitted field value.</returns>
+    /// <exception cref="ValidationException"><paramref name="signerAccessCode"/> is null or blank.</exception>
+    public Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(
+        IReadOnlyList<ValidateFieldValueItem> values,
+        string? signerAccessCode = null,
+        string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        ValidateMultipleCoreAsync(values, RequireAccessCode(signerAccessCode), accountId, cancellationToken);
+
+    /// <summary>
+    /// <c>POST /accounts/{accountId}/fields/validate-multiple</c> — validate multiple values at once with
+    /// the client's workspace credentials (API key or bearer token).
+    /// </summary>
+    /// <remarks>Request body: <c>[{ "field_id": "…", "value": … }]</c>. Response <c>data</c>: an array of <see cref="FieldValidationResult"/>.</remarks>
+    /// <param name="values">Field-value pairs to validate; each references its field definition.</param>
+    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>One validation result for each submitted field value.</returns>
+    public Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsWorkspaceAsync(
+        IReadOnlyList<ValidateFieldValueItem> values,
+        string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        ValidateMultipleCoreAsync(values, null, accountId, cancellationToken);
+
+    private Task<FieldValidationResult> ValidateCoreAsync(
+        string fieldId,
+        ValidateFieldValueRequest request,
+        string? accessCode,
+        string? accountId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         var id = AccountId(accountId);
         var field = PathSegment(fieldId, "Field ID");
 
-        var path = AppendQueryString(
-            $"accounts/{id}/fields/{field}/validate",
-            OptionalAccessCodeQuery(signerAccessCode));
-
         return CallAsync<FieldValidationResult>(
-            path,
+            AppendQueryString($"accounts/{id}/fields/{field}/validate", AccessCodeQueryOrNull(accessCode)),
             HttpMethod.Post,
             request,
             cancellationToken: cancellationToken,
-            authenticate: signerAccessCode is null);
+            authenticate: accessCode is null);
     }
 
-    /// <summary><c>POST /accounts/{accountId}/fields/validate-multiple</c> — validate multiple values at once.</summary>
-    /// <param name="values">Field-value pairs to validate; each references its field definition.</param>
-    /// <param name="signerAccessCode">Optional signer access code; when supplied, workspace credentials are not sent.</param>
-    /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>One validation result for each submitted field value.</returns>
-    public async Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(
+    private Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleCoreAsync(
         IReadOnlyList<ValidateFieldValueItem> values,
-        string? signerAccessCode = null,
-        string? accountId = null,
-        CancellationToken cancellationToken = default)
+        string? accessCode,
+        string? accountId,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(values);
         var id = AccountId(accountId);
 
-        var path = AppendQueryString(
-            $"accounts/{id}/fields/validate-multiple",
-            OptionalAccessCodeQuery(signerAccessCode));
-
-        return await CallListBodyAsync<FieldValidationResult>(
-            path,
+        return CallListBodyAsync<FieldValidationResult>(
+            AppendQueryString($"accounts/{id}/fields/validate-multiple", AccessCodeQueryOrNull(accessCode)),
             HttpMethod.Post,
             values,
             cancellationToken,
-            authenticate: signerAccessCode is null).ConfigureAwait(false);
+            authenticate: accessCode is null);
     }
 
     /// <summary><c>GET /field-types</c> — list the platform-supported field input types.</summary>
@@ -207,10 +266,12 @@ public sealed class FieldResource : BaseResource
         return body;
     }
 
-    private static IDictionary<string, string?>? OptionalAccessCodeQuery(string? signerAccessCode)
-    {
-        return signerAccessCode is null
-            ? null
-            : AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"));
-    }
+    private static string RequireAccessCode(string? signerAccessCode) =>
+        string.IsNullOrWhiteSpace(signerAccessCode)
+            ? throw new ValidationException(
+                "Signer access code is required. Use ValidateAsWorkspaceAsync or ValidateMultipleAsWorkspaceAsync to validate with the client's credentials.")
+            : signerAccessCode;
+
+    private static Dictionary<string, string?>? AccessCodeQueryOrNull(string? accessCode) =>
+        accessCode is null ? null : AccessCodeQuery(accessCode);
 }

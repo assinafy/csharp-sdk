@@ -2,7 +2,7 @@
     "openapi": "3.1.0",
     "info": {
         "title": "Assinafy API Reference",
-        "description": "The **Assinafy API** is RESTful and gives access to documents, users, workspaces and signers, authenticated with an API key or an access token.\n\n## REST API\n\nHTTP verbs are used according to the request type:\n\n- `GET` to retrieve data;\n- `POST` to create;\n- `PUT` to update;\n- `DELETE` to remove.\n\n### Content type\n\nThe default request and response format is JSON.\n\n### HTTPS and TLS\n\nAll requests must use HTTPS with **TLS 1.2 or higher**. Connections using TLS 1.0 or 1.1 are rejected during the handshake, before any HTTP response is sent, so they fail with a connection error rather than an HTTP status code. If your client reports errors such as `unsupported protocol` or `Could not create SSL/TLS secure channel`, update its runtime or HTTP library, or enable TLS 1.2 explicitly (older Java and .NET Framework versions may need this).\n\n### Response envelope\n\nEvery response is wrapped as `{ status, message, data }`. `status` mirrors the HTTP status code (`200` means success); `data` holds the payload on success and is `null` on error.\n\n### Authentication\n\nMost endpoints require authentication. There are two options: a fixed **API key** (`X-Api-Key` header) or an **access token** (`Authorization: Bearer ...`). See the Authentication section for details. Applications that act in *other people's* workspaces use OAuth instead — see **OAuth Integration Guide**.\n\n## Searching, paginating and sorting\n\nList endpoints accept these query parameters:\n\n| Parameter | Description |\n|-----------|-------------|\n| `search`  | Search term. |\n| `page`    | Page number. |\n| `per-page`| Records per page (max 100). |\n| `sort`    | Sort order, e.g. `name` or `-created_at`. |\n\n…and return pagination metadata in response headers: `X-Pagination-Current-Page`, `X-Pagination-Total-Count`, `X-Pagination-Page-Count`, `X-Pagination-Per-Page`.\n\n## Test and production environments\n\nDuring development use the **sandbox**:<br/>API: https://sandbox.assinafy.com.br/v1 · APP: https://app-sandbox.assinafy.com.br\n\nWhen ready, switch to **production**:<br/>API: https://api.assinafy.com.br/v1 · APP: https://app.assinafy.com.br\n\n## Error codes\n\nThe error code is returned in the `status` attribute.\n\n| Code | Type |\n|------|------|\n| 400 | Bad Request |\n| 401 | Unauthorized |\n| 403 | Forbidden |\n| 404 | Not Found |\n| 415 | Unsupported Media Type |\n| 429 | Too Many Requests |\n| 500 | Internal Server Error |\n\n## Client libraries and tools\n\nOfficial SDKs for eight languages, a CLI, an MCP server and an n8n node are listed under **SDKs & Tools**. To work from the spec directly — Postman, Insomnia or your own generated client — see **OpenAPI & API Clients**.",
+        "description": "The **Assinafy API** is RESTful and gives access to documents, users, workspaces and signers, authenticated with an API key or an access token.\n\n## REST API\n\nHTTP verbs are used according to the request type:\n\n- `GET` to retrieve data;\n- `POST` to create;\n- `PUT` to update;\n- `DELETE` to remove.\n\n### Content type\n\nThe default request and response format is JSON.\n\n### HTTPS and TLS\n\nAll requests must use HTTPS with **TLS 1.2 or higher**. Connections using TLS 1.0 or 1.1 are rejected during the handshake, before any HTTP response is sent, so they fail with a connection error rather than an HTTP status code. If your client reports errors such as `unsupported protocol` or `Could not create SSL/TLS secure channel`, update its runtime or HTTP library, or enable TLS 1.2 explicitly (older Java and .NET Framework versions may need this).\n\n### Response envelope\n\nEvery response is wrapped as `{ status, message, data }`. `status` mirrors the HTTP status code (`200` means success); `data` holds the payload on success and is `null` on error.\n\n### Authentication\n\nMost endpoints require authentication. There are two options: a fixed **API key** (`X-Api-Key` header) or an **access token** (`Authorization: Bearer ...`). See the Authentication section for details. Applications that act in *other people's* workspaces use OAuth instead — see **OAuth Integration Guide**.\n\n## Searching, paginating and sorting\n\nList endpoints accept these query parameters:\n\n| Parameter | Description |\n|-----------|-------------|\n| `search`  | Search term. |\n| `page`    | Page number. |\n| `per-page`| Records per page (max 100). |\n| `sort`    | Sort order, e.g. `name` or `-created_at`. |\n\n…and return pagination metadata in response headers: `X-Pagination-Current-Page`, `X-Pagination-Total-Count`, `X-Pagination-Page-Count`, `X-Pagination-Per-Page`.\n\n## Rate limits\n\nRequests are limited per minute: per user when authenticated, and per IP address otherwise. A few sensitive endpoints (payments, coupons, MFA, OAuth) have tighter limits of their own. Every limited response carries:\n\n| Header | Description |\n|--------|-------------|\n| `X-Rate-Limit-Limit` | Requests allowed in the current window. |\n| `X-Rate-Limit-Remaining` | Requests left in the current window. |\n| `X-Rate-Limit-Reset` | Seconds until the window resets. |\n\nPast the limit the API answers `429 Too Many Requests` with a `Retry-After` header (seconds). Wait that long before retrying.\n\n## Test and production environments\n\nDuring development use the **sandbox**:<br/>API: https://sandbox.assinafy.com.br/v1 · APP: https://app-sandbox.assinafy.com.br\n\nWhen ready, switch to **production**:<br/>API: https://api.assinafy.com.br/v1 · APP: https://app.assinafy.com.br\n\n## Error codes\n\nThe error code is returned in the `status` attribute.\n\n| Code | Type |\n|------|------|\n| 400 | Bad Request |\n| 401 | Unauthorized |\n| 403 | Forbidden |\n| 404 | Not Found |\n| 415 | Unsupported Media Type |\n| 429 | Too Many Requests |\n| 500 | Internal Server Error |\n\n## Client libraries and tools\n\nOfficial SDKs for eight languages, a CLI, an MCP server and an n8n node are listed under **SDKs & Tools**. To work from the spec directly — Postman, Insomnia or your own generated client — see **OpenAPI & API Clients**.",
         "version": "1.0.0"
     },
     "servers": [
@@ -1141,7 +1141,7 @@
                     "Assignments"
                 ],
                 "summary": "Reset assignment expiration",
-                "description": "Set a new expiration date for an assignment.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2F%7BassignmentId%7D%2Freset-expiration) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Freset-expiration%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Freset-expiration%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Set a new expiration date for an assignment, or remove its expiration by sending `expires_at: null`. Not allowed once the document is closed.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Fdocuments%2F%7BdocumentId%7D%2Fassignments%2F%7BassignmentId%7D%2Freset-expiration) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Freset-expiration%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fdocuments%252F%257BdocumentId%257D%252Fassignments%252F%257BassignmentId%257D%252Freset-expiration%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "50427eb689bff8f44a0c7301da693297",
                 "parameters": [
                     {
@@ -1162,10 +1162,16 @@
                     "content": {
                         "application/json": {
                             "schema": {
+                                "required": [
+                                    "expires_at"
+                                ],
                                 "properties": {
                                     "expires_at": {
-                                        "description": "New expiration date (ISO 8601). Must be at least one hour in the future.",
-                                        "type": "string",
+                                        "description": "New expiration date (ISO 8601). Must be at least one hour in the future. Send `null` to remove the expiration — the key itself is required.",
+                                        "type": [
+                                            "string",
+                                            "null"
+                                        ],
                                         "format": "date-time",
                                         "example": "2026-12-31T23:59:59Z"
                                     }
@@ -3782,6 +3788,9 @@
                             }
                         }
                     },
+                    "429": {
+                        "description": "Rate limit exceeded; wait the `Retry-After` seconds. Limited per caller IP."
+                    },
                     "500": {
                         "$ref": "#/components/responses/ServerError"
                     }
@@ -4066,7 +4075,7 @@
                     "Signing"
                 ],
                 "summary": "Send access token for public document",
-                "description": "Send a one-time access token (email/WhatsApp) to view a public document. Public endpoint.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Fpublic%2Fdocuments%2F%7BdocumentId%7D%2Fsend-token) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fpublic%252Fdocuments%252F%257BdocumentId%257D%252Fsend-token%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fpublic%252Fdocuments%252F%257BdocumentId%257D%252Fsend-token%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Send a one-time access token to a signer of a public document, so they can view it. The document must be pending signature, and `recipient` must belong to a signer of the document who has not signed yet. Only the `email` channel is supported. Public endpoint.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=put&path=%2Fv1%2Fpublic%2Fdocuments%2F%7BdocumentId%7D%2Fsend-token) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fpublic%252Fdocuments%252F%257BdocumentId%257D%252Fsend-token%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dput%26path%3D%252Fv1%252Fpublic%252Fdocuments%252F%257BdocumentId%257D%252Fsend-token%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "cfb52ef413176c9307a588f0fdf8237c",
                 "parameters": [
                     {
@@ -4080,13 +4089,27 @@
                     }
                 ],
                 "requestBody": {
+                    "required": true,
                     "content": {
                         "application/json": {
                             "schema": {
+                                "required": [
+                                    "channel",
+                                    "recipient"
+                                ],
                                 "properties": {
-                                    "email": {
+                                    "channel": {
+                                        "description": "Where to send the token. Only `email` is supported.",
                                         "type": "string",
-                                        "format": "email"
+                                        "enum": [
+                                            "email"
+                                        ],
+                                        "example": "email"
+                                    },
+                                    "recipient": {
+                                        "description": "The signer's address on that channel — for `email`, the signer's email address.",
+                                        "type": "string",
+                                        "example": "signer@example.com"
                                     }
                                 },
                                 "type": "object"
@@ -4100,10 +4123,64 @@
                         "content": {
                             "application/json": {
                                 "schema": {
-                                    "$ref": "#/components/schemas/Envelope"
+                                    "type": "object",
+                                    "allOf": [
+                                        {
+                                            "$ref": "#/components/schemas/Envelope"
+                                        },
+                                        {
+                                            "properties": {
+                                                "data": {
+                                                    "properties": {
+                                                        "document": {
+                                                            "properties": {
+                                                                "resource": {
+                                                                    "type": "string",
+                                                                    "example": "document"
+                                                                },
+                                                                "id": {
+                                                                    "type": "string",
+                                                                    "example": "a1b2c3d4e5f6a7b8c9d0"
+                                                                },
+                                                                "name": {
+                                                                    "type": "string",
+                                                                    "example": "Contract.pdf"
+                                                                },
+                                                                "page_count": {
+                                                                    "type": "integer",
+                                                                    "example": 3
+                                                                },
+                                                                "created_by": {
+                                                                    "type": "string",
+                                                                    "example": "Jane Doe"
+                                                                }
+                                                            },
+                                                            "type": "object"
+                                                        },
+                                                        "channel": {
+                                                            "type": "string",
+                                                            "example": "email"
+                                                        },
+                                                        "recipient": {
+                                                            "type": "string",
+                                                            "example": "signer@example.com"
+                                                        }
+                                                    },
+                                                    "type": "object"
+                                                }
+                                            },
+                                            "type": "object"
+                                        }
+                                    ]
                                 }
                             }
                         }
+                    },
+                    "400": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
                     },
                     "500": {
                         "$ref": "#/components/responses/ServerError"
@@ -5292,7 +5369,7 @@
                     "Signing"
                 ],
                 "summary": "List signer's documents",
-                "description": "List the documents a signer is party to. Uses the signer access code.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fsigners%2F%7BsignerId%7D%2Fdocuments) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "List the documents a signer is party to. Accepts either the signer access code or the account's own credentials (API key or bearer token) — with account credentials, the signer must belong to that account's workspace.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fsigners%2F%7BsignerId%7D%2Fdocuments) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "f98023cdbaac0f59f9be073cb0f3f873",
                 "parameters": [
                     {
@@ -5348,6 +5425,12 @@
                 "security": [
                     {
                         "signerAccessCode": []
+                    },
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "apiKeyAuth": []
                     }
                 ]
             }
@@ -5358,7 +5441,7 @@
                     "Signing"
                 ],
                 "summary": "Search signer's documents",
-                "description": "Search the documents a signer is party to (compact representation). Uses the signer access code.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fsigners%2F%7BsignerId%7D%2Fdocuments%2Fsearch) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%252Fsearch%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%252Fsearch%20and%20help%20me%20integrate%20this%20endpoint.)",
+                "description": "Search the documents a signer is party to (compact representation). Accepts either the signer access code or the account's own credentials (API key or bearer token) — with account credentials, the signer must belong to that account's workspace.\n\n[Copy as Markdown](https://api.assinafy.com.br/v1/docs/markdown?method=get&path=%2Fv1%2Fsigners%2F%7BsignerId%7D%2Fdocuments%2Fsearch) [Open in ChatGPT](https://chatgpt.com/?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%252Fsearch%20and%20help%20me%20integrate%20this%20endpoint.) [Open in Claude](https://claude.ai/new?q=Read%20the%20API%20documentation%20at%20https%3A%2F%2Fapi.assinafy.com.br%2Fv1%2Fdocs%2Fmarkdown%3Fmethod%3Dget%26path%3D%252Fv1%252Fsigners%252F%257BsignerId%257D%252Fdocuments%252Fsearch%20and%20help%20me%20integrate%20this%20endpoint.)",
                 "operationId": "f249c5e917662472dbb1c8bcfff1fa8f",
                 "parameters": [
                     {
@@ -5411,6 +5494,12 @@
                 "security": [
                     {
                         "signerAccessCode": []
+                    },
+                    {
+                        "bearerAuth": []
+                    },
+                    {
+                        "apiKeyAuth": []
                     }
                 ]
             }

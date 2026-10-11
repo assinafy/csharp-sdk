@@ -224,11 +224,11 @@ public sealed record SendDocumentTokenResult
     [JsonPropertyName("document")]
     public PublicDocumentInfo? Document { get; init; }
 
-    /// <summary>Delivery channel the token was sent over (<c>Email</c> or <c>Whatsapp</c> — see <see cref="SignerChannels"/>).</summary>
+    /// <summary>Delivery channel the token was sent over (<c>email</c>).</summary>
     [JsonPropertyName("channel")]
     public string Channel { get; init; } = string.Empty;
 
-    /// <summary>The address the token was sent to (email address or phone number).</summary>
+    /// <summary>The signer email address the token was sent to.</summary>
     [JsonPropertyName("recipient")]
     public string Recipient { get; init; } = string.Empty;
 }
@@ -343,9 +343,16 @@ public sealed class TemplateEditorField
 /// </summary>
 public sealed class SendDocumentTokenRequest
 {
-    /// <summary>The address to send the token to (email address or phone number).</summary>
+    /// <summary>Required. Email address of a signer of the document who has not signed yet.</summary>
     public required string Recipient { get; set; }
 
-    /// <summary>Delivery channel (<c>Email</c> or <c>Whatsapp</c> — see <see cref="SignerChannels"/>).</summary>
+    /// <summary>Required. Delivery channel; <see cref="SendDocumentTokenChannels.Email"/> is the only value the API accepts.</summary>
     public required string Channel { get; set; }
+}
+
+/// <summary>Channels accepted by <c>PUT /v1/public/documents/{document_id}/send-token</c>.</summary>
+public static class SendDocumentTokenChannels
+{
+    /// <summary>Email delivery, the only supported channel.</summary>
+    public const string Email = "email";
 }

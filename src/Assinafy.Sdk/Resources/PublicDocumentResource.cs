@@ -1,3 +1,4 @@
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
@@ -41,64 +42,67 @@ public sealed class PublicDocumentResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary><c>PUT /public/documents/{document_id}/send-token</c> — ask the API to email a signing access token.</summary>
-    /// <param name="documentId">Document whose signing token to send.</param>
-    /// <param name="email">Optional destination email. When omitted, the API uses the document's configured recipient.</param>
+    /// <summary>
+    /// <c>PUT /public/documents/{document_id}/send-token</c> — email a one-time access token to a
+    /// signer of a public document. Sends <c>{ "channel": "email", "recipient": email }</c> without
+    /// credentials; the response data is discarded. Use
+    /// <see cref="SendTokenAsync(string, SendDocumentTokenRequest, CancellationToken)"/> to receive it.
+    /// </summary>
+    /// <param name="documentId">Document whose access token to send; it must be pending signature.</param>
+    /// <param name="email">Required. Email address of a signer of the document who has not signed yet.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A task that completes when the token-delivery request has been accepted.</returns>
+    /// <returns>A task that completes when the token has been sent.</returns>
+    /// <exception cref="ArgumentException"><paramref name="email"/> is null or blank.</exception>
     public Task SendTokenAsync(
         string documentId,
         string? email = null,
         CancellationToken cancellationToken = default)
     {
-        var document = PathSegment(documentId, "Document ID");
-        if (email is not null)
-            ArgumentException.ThrowIfNullOrWhiteSpace(email);
-
-        object? body = email is null ? null : new { email };
-        return CallVoidAsync(
-            $"public/documents/{document}/send-token",
-            HttpMethod.Put,
-            body,
-            cancellationToken,
-            authenticate: false);
+        ArgumentException.ThrowIfNullOrWhiteSpace(email);
+        return SendTokenAsync(
+            documentId,
+            new SendDocumentTokenRequest { Channel = SendDocumentTokenChannels.Email, Recipient = email },
+            cancellationToken);
     }
 
-    /// <summary>Legacy send-token overload retained for compatibility. The current API accepts only an optional email and returns no data.</summary>
-    /// <param name="documentId">Document whose signing token to send.</param>
-    /// <param name="request">Recipient address and delivery channel (<see cref="SignerChannels"/>: <c>Email</c> or <c>Whatsapp</c>; WhatsApp is paid-only).</param>
+    /// <summary>
+    /// <c>PUT /public/documents/{document_id}/send-token</c> — send a one-time access token to a
+    /// signer of a public document, so they can view it. Public endpoint: no credentials are sent.
+    /// </summary>
+    /// <remarks>
+    /// Request body: <c>{ "channel": "email", "recipient": "signer@example.com" }</c>; both are
+    /// required and <c>email</c> is the only channel (sent lowercase whatever its casing in
+    /// <paramref name="request"/>). The document must be pending signature and the recipient must
+    /// belong to a signer who has not signed yet.
+    /// Response <c>data</c>: <c>{ "document": { "resource", "id", "name", "page_count", "created_by" }, "channel", "recipient" }</c>.
+    /// Errors: <c>400</c> validation, <c>404</c> unknown document.
+    /// </remarks>
+    /// <param name="documentId">Document whose access token to send.</param>
+    /// <param name="request">Channel (<see cref="SendDocumentTokenChannels.Email"/>) and the signer's email address.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A compatibility result containing the requested channel and recipient.</returns>
-    [Obsolete("Use SendTokenAsync(documentId, email, cancellationToken). The current API returns no data and does not accept a channel.")]
-    public async Task<SendDocumentTokenResult> SendTokenAsync(
+    /// <returns>The document summary, channel, and recipient the token was sent to.</returns>
+    /// <exception cref="ValidationException">The channel is not <c>email</c>.</exception>
+    public Task<SendDocumentTokenResult> SendTokenAsync(
         string documentId,
         SendDocumentTokenRequest request,
         CancellationToken cancellationToken = default)
     {
-        var document = RequireId(documentId, "Document ID");
+        var document = PathSegment(documentId, "Document ID");
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Recipient);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Channel);
+        if (!string.Equals(request.Channel, SendDocumentTokenChannels.Email, StringComparison.OrdinalIgnoreCase))
+            throw new ValidationException("Only the email channel is supported for public document tokens.");
 
-        if (string.Equals(request.Channel, SignerChannels.Email, StringComparison.OrdinalIgnoreCase))
-        {
-            await SendTokenAsync(document, request.Recipient, cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            document = PathSegment(document, "Document ID");
-            await CallVoidAsync(
-                $"public/documents/{document}/send-token",
-                HttpMethod.Put,
-                request,
-                cancellationToken,
-                authenticate: false).ConfigureAwait(false);
-        }
-
-        return new SendDocumentTokenResult
-        {
-            Channel = request.Channel,
-            Recipient = request.Recipient,
-        };
+        return CallAsync<SendDocumentTokenResult>(
+            $"public/documents/{document}/send-token",
+            HttpMethod.Put,
+            new Dictionary<string, string>
+            {
+                ["channel"] = SendDocumentTokenChannels.Email,
+                ["recipient"] = request.Recipient,
+            },
+            cancellationToken,
+            authenticate: false);
     }
 }

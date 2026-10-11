@@ -5,13 +5,15 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `91f787cee1db54e195f32acb0dac4ecbed9c3d3e17d5380145587a98655824fc`
+- Snapshot SHA-256: `1cfa96f23e95d9e85d965c663197b96a8b95f2b19fc98179bdf924c32bf2c105`
 - OpenAPI: `3.1.0`; API info version: `1.0.0`
 - API surface: 106 documented production operations across 81 paths, 44 component schemas, and 18 webhook event payloads.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
 
 Every request must use HTTPS with TLS 1.2 or higher. TLS 1.0 and 1.1 are rejected during the handshake, so they fail as a connection error (`NetworkException`), never as an HTTP status.
+
+Requests are rate-limited per minute: per user when authenticated, per IP address otherwise, with tighter limits on a few sensitive routes (payments, coupons, MFA, OAuth). Limited responses carry `X-Rate-Limit-Limit`, `X-Rate-Limit-Remaining`, and `X-Rate-Limit-Reset` (seconds until the window resets); past the limit the API answers `429 Too Many Requests` with `Retry-After` (seconds). The SDK does not retry; `ApiException` exposes `RateLimitLimit`, `RateLimitRemaining`, `RateLimitReset`, and `RetryAfter`.
 
 The four OAuth routes are the deliberate exception to the envelope: they implement the RFC 6749 §5.1/§5.2, OpenID Connect §5.3.2, and RFC 9728 body contracts as flat JSON objects, because no standard OAuth client library would look for `access_token` or `error` nested inside a `data` key. `/.well-known/oauth-protected-resource` is additionally served at the API host root, outside the `/v1` base path, per RFC 8615.
 
@@ -373,7 +375,7 @@ User account endpoints.
 | AssignmentResource | `ListAsync` | `Task<PaginatedResult<Assignment>> ListAsync(AssignmentListParams? parameters = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /assignments — list assignments for the authenticated user's current account. Passing accountId explicitly sends the legacy, undocumented accountId compatibility extension; the configured client default is not sent. |
 | AssignmentResource | `CreateAsync` | `Task<Assignment> CreateAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{document_id}/assignments — create a signature assignment binding signers to a document. |
 | AssignmentResource | `EstimateCostAsync` | `Task<AssignmentCostEstimate> EstimateCostAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/estimate-cost — preview the credit cost of CreateAsync before committing. |
-| AssignmentResource | `ResetExpirationAsync` | `Task<Assignment> ResetExpirationAsync(string documentId, string assignmentId, string? expiresAt, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration — set or clear the assignment's expiration date. |
+| AssignmentResource | `ResetExpirationAsync` | `Task<Assignment> ResetExpirationAsync(string documentId, string assignmentId, string? expiresAt, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration — set or clear the assignment's expiration date. Always sends the required `expires_at` key: an ISO-8601 date at least one hour ahead, or `null` to remove the expiration. Not allowed once the document is closed. |
 | AssignmentResource | `ResendNotificationAsync` | `Task<ResendNotificationResult> ResendNotificationAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend — resend the signature notification (email or WhatsApp) for a specific signer. |
 | AssignmentResource | `EstimateResendCostAsync` | `Task<ResendCostEstimate> EstimateResendCostAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost — preview the credit cost of ResendNotificationAsync. |
 | AssignmentResource | `ListWhatsAppNotificationsAsync` | `Task<IReadOnlyList<WhatsAppNotification>> ListWhatsAppNotificationsAsync(string documentId, string assignmentId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications — list the rendered WhatsApp template messages dispatched for an assignment. |
@@ -409,13 +411,15 @@ User account endpoints.
 | FieldResource | `GetAsync` | `Task<FieldDefinition> GetAsync(string fieldId, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{accountId}/fields/{field_id} — fetch a single field definition. |
 | FieldResource | `UpdateAsync` | `Task<FieldDefinition> UpdateAsync(string fieldId, UpdateFieldDefinitionRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/fields/{field_id} — update a field definition. |
 | FieldResource | `DeleteAsync` | `Task DeleteAsync(string fieldId, string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/fields/{field_id} — delete a field definition. Will fail if the field has already been used on a document. |
-| FieldResource | `ValidateAsync` | `Task<FieldValidationResult> ValidateAsync(string fieldId, ValidateFieldValueRequest request, string? signerAccessCode = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/{field_id}/validate — validate a single value against a field definition. Pass a signer access code when calling on a signer's behalf. |
-| FieldResource | `ValidateMultipleAsync` | `Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(IReadOnlyList<ValidateFieldValueItem> values, string? signerAccessCode = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/validate-multiple — validate multiple values at once. |
+| FieldResource | `ValidateAsync` | `Task<FieldValidationResult> ValidateAsync(string fieldId, ValidateFieldValueRequest request, string? signerAccessCode = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/{field_id}/validate?signer-access-code={code} — validate a single value on a signer's behalf. The access code is required (a null or blank code throws `ValidationException`) and workspace credentials are never sent. |
+| FieldResource | `ValidateAsWorkspaceAsync` | `Task<FieldValidationResult> ValidateAsWorkspaceAsync(string fieldId, ValidateFieldValueRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/{field_id}/validate — validate a single value with the client's workspace credentials. |
+| FieldResource | `ValidateMultipleAsync` | `Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsync(IReadOnlyList<ValidateFieldValueItem> values, string? signerAccessCode = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/validate-multiple?signer-access-code={code} — validate multiple values on a signer's behalf. The access code is required and workspace credentials are never sent. |
+| FieldResource | `ValidateMultipleAsWorkspaceAsync` | `Task<IReadOnlyList<FieldValidationResult>> ValidateMultipleAsWorkspaceAsync(IReadOnlyList<ValidateFieldValueItem> values, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/fields/validate-multiple — validate multiple values with the client's workspace credentials. |
 | FieldResource | `ListTypesAsync` | `Task<IReadOnlyList<FieldTypeInfo>> ListTypesAsync(CancellationToken cancellationToken = default)` | GET /field-types — list the platform-supported field input types. |
 | PublicDocumentResource | `GetAsync` | `Task<PublicDocumentInfo> GetAsync(string documentId, CancellationToken cancellationToken = default)` | Legacy GET /public/documents/{document_id} projection retained for compatibility. Use GetDetailsAsync for the complete documented DocumentDetails payload. |
 | PublicDocumentResource | `GetDetailsAsync` | `Task<DocumentDetails> GetDetailsAsync(string documentId, CancellationToken cancellationToken = default)` | GET /public/documents/{document_id} — fetch the complete public document payload (no authentication required). |
-| PublicDocumentResource | `SendTokenAsync` | `Task SendTokenAsync(string documentId, string? email = null, CancellationToken cancellationToken = default)` | PUT /public/documents/{document_id}/send-token — ask the API to email a signing access token. |
-| PublicDocumentResource | `SendTokenAsync` | `Task<SendDocumentTokenResult> SendTokenAsync(string documentId, SendDocumentTokenRequest request, CancellationToken cancellationToken = default)` | Legacy send-token overload retained for compatibility. The current API accepts only an optional email and returns no data. |
+| PublicDocumentResource | `SendTokenAsync` | `Task SendTokenAsync(string documentId, string? email = null, CancellationToken cancellationToken = default)` | PUT /public/documents/{document_id}/send-token — email a one-time access token to a signer; sends `{"channel":"email","recipient":email}` and discards the response data. The email is required. |
+| PublicDocumentResource | `SendTokenAsync` | `Task<SendDocumentTokenResult> SendTokenAsync(string documentId, SendDocumentTokenRequest request, CancellationToken cancellationToken = default)` | PUT /public/documents/{document_id}/send-token — send `{"channel":"email","recipient":"signer@example.com"}` (both required; `email` is the only channel) and return `{ document, channel, recipient }`. The document must be pending signature and the recipient a signer who has not signed yet. |
 | SignatureResource | `UploadAsync` | `Task UploadAsync(Stream imageStream, string signerAccessCode, string type = SignatureImageTypes.Signature, string contentType = "image/png", CancellationToken cancellationToken = default)` | POST /signature?signer-access-code={code}&type={type} — upload the signer's signature or initial image. |
 | SignatureResource | `UploadAsync` | `Task UploadAsync(Stream imageStream, string signerAccessCode, bool reuse, string type = SignatureImageTypes.Signature, string contentType = "image/png", CancellationToken cancellationToken = default)` | POST /signature?signer-access-code={code}&type={type}&reuse={reuse} — upload a signature or initial and choose whether it may be reused. |
 | SignatureResource | `DownloadAsync` | `Task<byte[]> DownloadAsync(string signerAccessCode, string type = SignatureImageTypes.Signature, CancellationToken cancellationToken = default)` | GET /signature/{type}?signer-access-code={code} — download the signer's signature or initial image. |
@@ -437,8 +441,10 @@ User account endpoints.
 | SigningResource | `CompleteCertificateAsync` | `Task<CertificateCompleteResult> CompleteCertificateAsync(string signerAccessCode, string token, CancellationToken cancellationToken = default)` | Production-only deployed extension: POST /signers/certificate/complete?signer-access-code={code} — submit the signed Web PKI token and return the certificate signer name. This route is absent from the sandbox and published OpenAPI document. |
 | SigningResource | `DeclineAsync` | `Task DeclineAsync(string documentId, string assignmentId, string signerAccessCode, string declineReason, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/reject?signer-access-code={code} — signer-facing endpoint: decline an assignment with a reason. |
 | SigningResource | `GetCurrentDocumentAsync` | `Task<DocumentDetails> GetCurrentDocumentAsync(string signerId, string signerAccessCode, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/document?signer-access-code={code} — fetch the signer's current document. |
-| SigningResource | `ListDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents?signer-access-code={code} — list all documents associated with the signer. |
-| SigningResource | `SearchDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/search?signer-access-code={code} — search the signer's documents by name, returning a compact representation. Use ListDocumentsAsync when you need the full document shape or pagination. |
+| SigningResource | `ListDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> ListDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents?signer-access-code={code} — list all documents associated with the signer. The access code is required; workspace credentials are never sent. |
+| SigningResource | `ListDocumentsAsWorkspaceAsync` | `Task<PaginatedResult<DocumentListItem>> ListDocumentsAsWorkspaceAsync(string signerId, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents — list a workspace signer's documents with the client's API key or bearer token; no access code is sent. |
+| SigningResource | `SearchDocumentsAsync` | `Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsync(string signerId, string signerAccessCode, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/search?signer-access-code={code} — search the signer's documents by name, returning a compact representation. The access code is required; workspace credentials are never sent. Use ListDocumentsAsync when you need the full document shape or pagination. |
+| SigningResource | `SearchDocumentsAsWorkspaceAsync` | `Task<PaginatedResult<DocumentListItem>> SearchDocumentsAsWorkspaceAsync(string signerId, SignerDocumentListParams? parameters = null, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/search — search a workspace signer's documents with the client's API key or bearer token; no access code is sent. |
 | SigningResource | `SignMultipleAsync` | `Task SignMultipleAsync(string signerAccessCode, IReadOnlyList<string> documentIds, CancellationToken cancellationToken = default)` | PUT /signers/documents/sign-multiple?signer-access-code={code} — sign multiple virtual-method documents in one request. |
 | SigningResource | `DeclineMultipleAsync` | `Task DeclineMultipleAsync(string signerAccessCode, IReadOnlyList<string> documentIds, string declineReason, CancellationToken cancellationToken = default)` | PUT /signers/documents/decline-multiple?signer-access-code={code} — decline multiple documents at once with a single reason. |
 | SigningResource | `DownloadPublicAsync` | `Task<byte[]> DownloadPublicAsync(string signerId, string documentId, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name} — public download of a signer document artifact. |
@@ -507,7 +513,7 @@ Every constructed client exposes `Authentication`, `Accounts`, `Users`, `Documen
 
 - Malformed credentials and SDK-validated request values throw `ValidationException` before transport; required .NET arguments use `ArgumentNullException` or `ArgumentException`.
 - A request body that cannot be encoded as JSON throws `SerializationException` before transport.
-- HTTP/API-envelope failures throw `ApiException`, with status, message, and structured details when supplied.
+- HTTP/API-envelope failures throw `ApiException`, with status, message, and structured details when supplied, plus `RateLimitLimit`, `RateLimitRemaining`, `RateLimitReset`, and `RetryAfter` from the rate-limit headers (`429` carries `Retry-After`).
 - Transport failures and client-side request timeouts throw `NetworkException`.
 - A successful response with an invalid envelope, missing required data, or incompatible JSON throws `SerializationException`.
 
@@ -809,7 +815,7 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Documents | GET | `/v1/documents/{documentId}/thumbnail` | none | image/*: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
 | Documents | GET | `/v1/documents/{documentId}/pages/{pageId}/download` | none | image/*: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
 | Signing | GET | `/v1/public/documents/{documentId}` | none | application/json: object | public | 404, 500 |
-| Signing | PUT | `/v1/public/documents/{documentId}/send-token` | application/json: object (optional) | application/json: Envelope | public | 500 |
+| Signing | PUT | `/v1/public/documents/{documentId}/send-token` | application/json: object (required) | application/json: object | public | 400, 404, 500 |
 | Signers | GET | `/v1/accounts/{accountId}/signers` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Signers | POST | `/v1/accounts/{accountId}/signers` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Signers | GET | `/v1/accounts/{accountId}/signers/{signerId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
@@ -827,8 +833,8 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Signing | PUT | `/v1/signers/accept-terms` | none | application/json: Envelope | signerAccessCode | 401, 500 |
 | Signing | POST | `/v1/signature` | image/png: string (required) | application/json: Envelope | signerAccessCode | 401, 500 |
 | Signing | GET | `/v1/signature/{signatureType}` | none | image/*: string | signerAccessCode | 401, 404, 500 |
-| Signing | GET | `/v1/signers/{signerId}/documents` | none | application/json: object | signerAccessCode | 401, 500 |
-| Signing | GET | `/v1/signers/{signerId}/documents/search` | none | application/json: object | signerAccessCode | 401, 500 |
+| Signing | GET | `/v1/signers/{signerId}/documents` | none | application/json: object | signerAccessCode or bearerAuth or apiKeyAuth | 401, 500 |
+| Signing | GET | `/v1/signers/{signerId}/documents/search` | none | application/json: object | signerAccessCode or bearerAuth or apiKeyAuth | 401, 500 |
 | Signing | GET | `/v1/signers/{signerId}/documents/{documentId}/download/{artifactName}` | none | application/pdf: string | public | 404, 500 |
 | Authentication | POST | `/v1/authentication/social-login` | application/json: object (required) | application/json: object | public | 400, 500 |
 | Authentication | POST | `/v1/auth/link-social-login` | application/json: object (required) | application/json: Envelope | bearerAuth or apiKeyAuth | 400, 401, 500 |
@@ -859,7 +865,7 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
 | Webhooks | POST | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret/rotate` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
 | Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| OAuth | POST | `/v1/oauth/token` | application/x-www-form-urlencoded or application/json: OAuthTokenRequest (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 500 |
+| OAuth | POST | `/v1/oauth/token` | application/x-www-form-urlencoded or application/json: OAuthTokenRequest (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 429, 500 |
 | OAuth | POST | `/v1/oauth/revoke` | application/x-www-form-urlencoded or application/json: OAuthRevokeRequest (required) | 200, empty body | none (client credentials in the body) | 401, 500 |
 | OAuth | GET | `/v1/oauth/userinfo` | none | application/json: object (flat, no envelope) | bearerAuth or apiKeyAuth | 401, 403, 500 |
 | OAuth | GET | `/.well-known/oauth-protected-resource` | none | application/json: object (flat, no envelope) | none | 500 |
@@ -2317,7 +2323,7 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Reset assignment expiration. Security: **bearerAuth or apiKeyAuth**.
 
-Set a new expiration date for an assignment.
+Set a new expiration date for an assignment, or remove its expiration by sending `expires_at: null`. Not allowed once the document is closed.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -2329,10 +2335,16 @@ Request body: required.
 
 ```json
 {
+  "required": [
+    "expires_at"
+  ],
   "properties": {
     "expires_at": {
-      "description": "New expiration date (ISO 8601). Must be at least one hour in the future.",
-      "type": "string",
+      "description": "New expiration date (ISO 8601). Must be at least one hour in the future. Send `null` to remove the expiration — the key itself is required.",
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time",
       "example": "2026-12-31T23:59:59Z"
     }
@@ -6039,21 +6051,34 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Send access token for public document. Security: **public**.
 
-Send a one-time access token (email/WhatsApp) to view a public document. Public endpoint.
+Send a one-time access token to a signer of a public document, so they can view it. The document must be pending signature, and `recipient` must belong to a signer of the document who has not signed yet. Only the `email` channel is supported. Public endpoint.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `documentId` | path | yes | `{"type":"string"}` | The document ID. |
 
-Request body: optional.
+Request body: required.
 `application/json` schema:
 
 ```json
 {
+  "required": [
+    "channel",
+    "recipient"
+  ],
   "properties": {
-    "email": {
+    "channel": {
+      "description": "Where to send the token. Only `email` is supported.",
       "type": "string",
-      "format": "email"
+      "enum": [
+        "email"
+      ],
+      "example": "email"
+    },
+    "recipient": {
+      "description": "The signer's address on that channel — for `email`, the signer's email address.",
+      "type": "string",
+      "example": "signer@example.com"
     }
   },
   "type": "object"
@@ -6064,7 +6089,8 @@ Example payload:
 
 ```json
 {
-  "email": "user@example.com"
+  "channel": "email",
+  "recipient": "signer@example.com"
 }
 ```
 
@@ -6075,7 +6101,55 @@ Token sent
 
 ```json
 {
-  "$ref": "#/components/schemas/Envelope"
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "properties": {
+            "document": {
+              "properties": {
+                "resource": {
+                  "type": "string",
+                  "example": "document"
+                },
+                "id": {
+                  "type": "string",
+                  "example": "a1b2c3d4e5f6a7b8c9d0"
+                },
+                "name": {
+                  "type": "string",
+                  "example": "Contract.pdf"
+                },
+                "page_count": {
+                  "type": "integer",
+                  "example": 3
+                },
+                "created_by": {
+                  "type": "string",
+                  "example": "Jane Doe"
+                }
+              },
+              "type": "object"
+            },
+            "channel": {
+              "type": "string",
+              "example": "email"
+            },
+            "recipient": {
+              "type": "string",
+              "example": "signer@example.com"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  ]
 }
 ```
 
@@ -6084,11 +6158,30 @@ Example payload:
 ```json
 {
   "status": 200,
-  "message": ""
+  "message": "",
+  "data": {
+    "document": {
+      "resource": "document",
+      "id": "a1b2c3d4e5f6a7b8c9d0",
+      "name": "Contract.pdf",
+      "page_count": 3,
+      "created_by": "Jane Doe"
+    },
+    "channel": "email",
+    "recipient": "signer@example.com"
+  }
 }
 ```
 
 Error responses:
+
+#### 400
+
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
+
+#### 404
+
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
 
 #### 500
 
@@ -7624,9 +7717,9 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/documents
 
-List signer's documents. Security: **signerAccessCode**.
+List signer's documents. Security: **signerAccessCode or bearerAuth or apiKeyAuth**.
 
-List the documents a signer is party to. Uses the signer access code.
+List the documents a signer is party to. Accepts either the signer access code or the account's own credentials (API key or bearer token) — with account credentials, the signer must belong to that account's workspace.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -7795,9 +7888,9 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/signers/{signerId}/documents/search
 
-Search signer's documents. Security: **signerAccessCode**.
+Search signer's documents. Security: **signerAccessCode or bearerAuth or apiKeyAuth**.
 
-Search the documents a signer is party to (compact representation). Uses the signer access code.
+Search the documents a signer is party to (compact representation). Accepts either the signer access code or the account's own credentials (API key or bearer token) — with account credentials, the signer must belong to that account's workspace.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -13892,6 +13985,7 @@ Errors are flat as well, and the SDK maps them to `OAuthException` with `Error` 
 | 400 | `invalid_target` | A `resource` this server does not issue tokens for, or one disagreeing with the authorized value. |
 | 400 | `unsupported_grant_type` | An unsupported grant. Ordinary applications use `authorization_code` or `refresh_token`; RFC 8693 is restricted to internal-service clients. |
 | 401 | `invalid_client` | Unknown or disabled client, or failed client authentication. The description never reveals whether the `client_id` exists. |
+| 429 | — | Rate limit exceeded; limited per caller IP. Wait the `Retry-After` seconds (`ApiException.RetryAfter`). Never resend a refresh token automatically. |
 
 ### POST /v1/oauth/revoke
 
