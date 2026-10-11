@@ -33,7 +33,7 @@
     <PackageTags>assinafy;esignature;digital-signature;signature;contracts;brazil;sdk</PackageTags>
     <RepositoryUrl>https://github.com/assinafy/csharp-sdk</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageProjectUrl>https://api.assinafy.com.br/v1/docs</PackageProjectUrl>
+    <PackageProjectUrl>https://www.assinafy.com.br</PackageProjectUrl>
     <!-- Embed debug symbols and SourceLink metadata directly in the assembly so source-stepping
          works from any feed (GitHub Packages has no symbol server), without a separate .snupkg. -->
     <DebugType>embedded</DebugType>
