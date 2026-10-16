@@ -42,6 +42,22 @@ public sealed class AssignmentResourceTests
         signers[0]["id"].Should().Be("a");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AssignmentPayload_PreservesExplicitEmptyNotificationMethods(bool estimate)
+    {
+        var request = new CreateAssignmentRequest
+        {
+            Signers = [new SignerRef { Id = "signer", NotificationMethods = [] }],
+        };
+
+        var payload = estimate ? AssignmentResource.BuildEstimatePayload(request) : AssignmentResource.BuildPayload(request);
+
+        var signer = JsonSerializer.SerializeToElement(payload).GetProperty("signers")[0];
+        signer.GetProperty("notification_methods").GetArrayLength().Should().Be(0);
+    }
+
     [Fact]
     public void BuildEstimatePayload_UsesOnlyDocumentedFields()
     {

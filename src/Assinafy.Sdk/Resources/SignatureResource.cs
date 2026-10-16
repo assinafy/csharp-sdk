@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Support;
 
@@ -65,7 +64,7 @@ public sealed class SignatureResource : BaseResource
         ArgumentNullException.ThrowIfNull(imageStream);
         var code = RequireId(signerAccessCode, "Signer access code");
         var imageType = RequireId(type, "Signature image type");
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        var mediaType = ParseContentType(contentType);
 
         var query = AccessCodeQuery(code);
         query["type"] = imageType;
@@ -74,7 +73,7 @@ public sealed class SignatureResource : BaseResource
         var path = AppendQueryString("signature", query);
 
         var content = new NonDisposingStreamContent(imageStream);
-        content.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        content.Headers.ContentType = mediaType;
 
         return CallContentVoidAsync(
             path,

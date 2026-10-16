@@ -5,9 +5,9 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `1cfa96f23e95d9e85d965c663197b96a8b95f2b19fc98179bdf924c32bf2c105`
+- Snapshot SHA-256: `5e0b468d233af024deecb6fc9a44a7ca5f42844cfceb0252c4a431f6f3a252ae`
 - OpenAPI: `3.1.0`; API info version: `1.0.0`
-- API surface: 106 documented production operations across 81 paths, 44 component schemas, and 18 webhook event payloads.
+- API surface: 112 documented production operations across 85 paths, 45 component schemas, and 23 webhook event payloads.
 
 The API wraps JSON successes and errors as `{"status": number, "message": string|null, "data": ...}`. Binary routes return raw bytes. Authenticated routes accept a bearer token or `X-Api-Key`; signer routes use the `signer-access-code` query parameter; public routes deliberately receive no configured SDK credential.
 
@@ -41,7 +41,7 @@ curl -X POST "https://api.assinafy.com.br/v1/accounts/{account_id}/documents" \
   -F 'file=@/tmp/document.pdf'
 ```
 
-Save the returned document `id` and wait for `metadata_ready` before requesting signatures.
+Save the returned document `id` for the next steps.
 
 ### 4. Create signers
 
@@ -75,69 +75,346 @@ Authentication can be done in three ways:
 
 The **recommended** method is an API key, which you create from the settings page in the Assinafy app. An access token is obtained through login with email and password; it is a JWT that usually expires in one hour.
 
-Avoid query-string access tokens in server integrations because URLs may be retained in browser history, proxy logs, and monitoring systems. The SDK sends API keys and bearer tokens in request headers.
-
-Building an application that **other people** connect to their own workspace? Do not ask for their API key: use OAuth, which gives the application a token limited to what that user approved.
+Building an application that **other people** connect to their own workspace? Don't ask for their API key: use OAuth, which gives your app a token limited to what the user approved. See **OAuth Integration Guide**.
 
 ### OAuth Integration Guide
 
-OAuth 2.1 authorization code with mandatory PKCE (S256), for applications acting in a user's workspace with that user's permission — as opposed to `apiKeyAuth`/`bearerAuth`, which authenticate the workspace or user directly. A token carries only the scopes the user approved and works for exactly one workspace.
+Build an application that **other people connect to their own Assinafy workspace**, without ever handling their password or API key. The user approves your app once; you receive tokens limited to the permissions they approved and to one workspace. Standard OAuth 2.1 and OpenID Connect libraries work unchanged.
+
+### Do you need OAuth?
 
 | | API key | OAuth |
 |---|---|---|
 | Acts on | **Your own** workspace | **Someone else's** workspace, with their permission |
 | Can do | Everything your account can do | Only what the user approved |
 | The user can switch it off | No | Yes, at any time |
+| Choose it when | You automate your own account | You build an app that other people connect |
 
-The flow spans two hosts on purpose: the browser-facing authorization page lives on the authorization server, and everything the integration's code calls lives on this API.
+Automating your own workspace? Keep using your API key; nothing in this guide applies.
 
-1. The application sends the user's browser to `https://auth.assinafy.com.br/oauth/authorize`.
-2. The user signs in, picks **one** workspace, and approves the application.
-3. The browser returns to the application's redirect URI with a one-time code, plus `state` and `iss`.
-4. The application's server exchanges the code at `https://api.assinafy.com.br/v1/oauth/token`.
-5. The application calls this API with `Authorization: Bearer {access_token}`.
+### How it works
 
-Discovery documents are published by the authorization server at `https://auth.assinafy.com.br/.well-known/oauth-authorization-server` (RFC 8414) and its keys at `https://auth.assinafy.com.br/.well-known/jwks.json`. This API publishes its own protected-resource metadata at `https://api.assinafy.com.br/.well-known/oauth-protected-resource` (RFC 9728).
+1. Your app sends the user's browser to the authorization server, `https://auth.assinafy.com.br`.
+2. The user signs in, picks **one** workspace and approves your app.
+3. The browser comes back to your site with a one-time code.
+4. Your server exchanges the code for tokens at `https://api.assinafy.com.br/v1/oauth/token`.
+5. Your server calls this API with `Authorization: Bearer <access_token>`.
 
-| Endpoint | Host |
+Two hosts on purpose: the browser page lives on the authorization server, and everything your code calls lives on this API.
+
+### Create your application
+
+You must be an **owner** of the workspace that will own the application, and the workspace's plan must include OAuth applications. In the Assinafy app (https://app.assinafy.com.br), open **Settings → OAuth applications → New application**.
+
+| Field | What to put |
 |---|---|
-| `authorization_endpoint` | `https://auth.assinafy.com.br/oauth/authorize` |
-| `token_endpoint` | `https://api.assinafy.com.br/v1/oauth/token` |
-| `revocation_endpoint` | `https://api.assinafy.com.br/v1/oauth/revoke` |
-| `userinfo_endpoint` | `https://api.assinafy.com.br/v1/oauth/userinfo` |
-| `jwks_uri` | `https://auth.assinafy.com.br/.well-known/jwks.json` |
+| Name | What users see on the approval screen |
+| Description | One sentence on what the app does with their documents |
+| Logo URL | Optional, an `https://` image |
+| Redirect URIs | Where users return after approving, e.g. `https://myapp.com/oauth/callback`. Must be `https://`, without `#`, and is matched **exactly**: `…/callback` and `…/callback/` are different. Add one per environment you run. For local development use an https tunnel; `http://localhost` is not accepted |
+| Permissions | The **most** your app will ever request. You can ask for less at connect time, never more |
+| Type | **Confidential** if your code runs on a server you control; **Public** if it runs on the user's device and cannot keep a secret. Cannot be changed later |
 
-**Registration.** Workspace-owned applications are created by an owner in the Assinafy app under *Integrations → OAuth apps* when the plan includes OAuth applications. Verified marketplace applications can be registered by Assinafy for multiple customers. Redirect URIs must be `https://`, carry no `#`, and are matched **exactly**: `…/callback` and `…/callback/` are different URIs. A **Confidential** application runs on a server the integrator controls and receives a `client_secret`; a **Public** application runs on the user's device and authenticates with PKCE alone. The type cannot be changed later.
+You get a `client_id` (public) and, for Confidential apps, a `client_secret`.
 
-**Scopes.**
+> **The secret is shown once.** Store it in your server's secret storage straight away. If it is lost, rotate it: the old secret stops working immediately, so deploy the new one at once. Deleting the application disconnects every user immediately.
 
-| Scope | Grants |
+Building one product that **many different Assinafy customers** will connect? Talk to us first: we can register it as a verified application owned by no single workspace, with one `client_id` for every customer.
+
+### Discovery
+
+Most OAuth libraries only need the issuer, `https://auth.assinafy.com.br`, and read the rest from its metadata document. If you configure URLs by hand, copy them from there:
+
+```shell
+curl "https://auth.assinafy.com.br/.well-known/oauth-authorization-server"
+```
+
+```json
+{
+  "issuer": "https://auth.assinafy.com.br",
+  "authorization_endpoint": "https://auth.assinafy.com.br/oauth/authorize",
+  "token_endpoint": "https://api.assinafy.com.br/v1/oauth/token",
+  "revocation_endpoint": "https://api.assinafy.com.br/v1/oauth/revoke",
+  "userinfo_endpoint": "https://api.assinafy.com.br/v1/oauth/userinfo",
+  "jwks_uri": "https://auth.assinafy.com.br/.well-known/jwks.json",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "none"]
+}
+```
+
+The metadata and key documents are served **only** by the authorization server. This API serves its own protected-resource metadata at `https://api.assinafy.com.br/.well-known/oauth-protected-resource`.
+
+### Connect a user
+
+#### 1. Create a PKCE pair and a state
+
+PKCE is required for **every** application, Confidential ones included. Create a new pair for each connection attempt:
+
+```js
+import crypto from 'node:crypto';
+
+const b64url = (buf) => buf.toString('base64url');
+
+const codeVerifier  = b64url(crypto.randomBytes(32));
+const codeChallenge = b64url(crypto.createHash('sha256').update(codeVerifier).digest());
+const state         = b64url(crypto.randomBytes(16));
+
+// Keep codeVerifier and state in the user's session: step 3 and 4 need them.
+```
+
+The verifier must be 43 to 128 characters from `A-Z a-z 0-9 - . _ ~`.
+
+#### 2. Send the browser to the authorization server
+
+Use a full page navigation (a link or a redirect), not an AJAX call. Shown unencoded for readability; URL-encode every value:
+
+```
+https://auth.assinafy.com.br/oauth/authorize
+  ?response_type=code
+  &client_id=YOUR_CLIENT_ID
+  &redirect_uri=https://myapp.com/oauth/callback
+  &scope=documents:read documents:write offline_access
+  &state=STATE
+  &code_challenge=CODE_CHALLENGE
+  &code_challenge_method=S256
+  &resource=https://api.assinafy.com.br
+```
+
+| Parameter | Notes |
 |---|---|
-| `documents:read` | Read documents, their pages, tags, signers, assignments, activity, WhatsApp notifications, and webhook event types and delivery history. |
-| `documents:write` | Create, update and delete documents, and manage their signers, assignments and activity. |
-| `templates:read` | Read reusable document templates, their pages, roles, fields and tags. |
-| `templates:write` | Create, update and delete templates, their pages, roles, fields and tags. |
-| `account:read` | Read the workspace's profile, theme, logo, and webhook subscription. |
-| `webhooks:write` | Configure and deactivate the workspace webhook subscription. |
-| `openid` | Receive a signed `id_token` identifying the user. |
-| `profile` | Read the user's name. |
-| `email` | Read the user's email and whether it is verified. |
-| `offline_access` | Receive a refresh token. A request-time signal, not a permission: it never appears in a granted access token's `scope`. |
+| `redirect_uri` | One of your registered URIs, character for character |
+| `scope` | Space-separated, within what the application is registered for |
+| `state` | Random per attempt; your CSRF protection |
+| `code_challenge_method` | Only `S256` |
+| `resource` | `https://api.assinafy.com.br`, naming the API the token is for. Recommended |
+| `nonce` | Optional, echoed in the `id_token` when you request `openid` |
 
-Billing and subscriptions, workspace membership, credential management and administration are **never** reachable with an OAuth token, whatever its scopes.
+If the `client_id` or `redirect_uri` is wrong, the user is **not** sent back to you: the authorization server shows an error on its own page, because redirecting to an unverified address would be unsafe. Users reporting that they are stuck on an Assinafy error page usually means one of those two values is wrong.
 
-**Constraints.**
+#### 3. Handle the return
 
-- The authorization code is single-use and expires **60 seconds** after approval.
-- Access tokens last **1 hour**. A refresh token is valid for **30 days**, and every refresh returns a new one with a fresh 30 days, so a connection expires only after 30 days without a refresh; the user must then reconnect.
-- Every refresh returns a **new** refresh token and retires the old one. Replaying a retired refresh token cannot be distinguished from a stolen one, so it terminates the entire connection.
-- Token and revoke requests are never resent automatically, by the caller's code or by an HTTP retry or hedging handler. After a failed refresh, unless the failure provably happened before the request was sent (DNS resolution, a refused connection, the TLS handshake), never send the same refresh token again: continue only if another worker has stored a different one; otherwise treat the connection as uncertain and ask the user to reconnect.
-- Refresh one at a time per connection, and revoke the refresh token read from storage immediately before the call, under the same lock: the revoke endpoint also answers `200` for a token a refresh has already retired.
-- A token is bound to one workspace; calling any other workspace returns `403`, even another the same user belongs to.
-- A missing scope answers `403` with `WWW-Authenticate: Bearer error="insufficient_scope", scope="…", resource_metadata="…"`. Treat it as a prompt to reconnect with that scope, not as a request to retry.
-- The `code_verifier` must be 43–128 characters from `A-Za-z0-9-._~`; anything else is rejected with `invalid_grant`.
-- The authorize and token endpoints accept **50 requests per minute per IP**.
-- Unverified applications connect to at most **25 workspaces**.
+Approved:
+
+```
+https://myapp.com/oauth/callback?code=…&state=…&iss=https://auth.assinafy.com.br
+```
+
+Declined or invalid:
+
+```
+https://myapp.com/oauth/callback?error=access_denied&error_description=…&state=…&iss=https://auth.assinafy.com.br
+```
+
+Before anything else, check that `state` equals what you stored and that `iss` equals `https://auth.assinafy.com.br`. If either differs, stop: the response is not yours.
+
+#### 4. Exchange the code for tokens
+
+From your server. The code is single-use and expires **60 seconds** after approval.
+
+```shell
+curl -X POST "https://api.assinafy.com.br/v1/oauth/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d grant_type=authorization_code \
+  -d code=THE_CODE \
+  -d redirect_uri=https://myapp.com/oauth/callback \
+  -d client_id=YOUR_CLIENT_ID \
+  -d client_secret=YOUR_CLIENT_SECRET \
+  -d code_verifier=THE_CODE_VERIFIER \
+  -d resource=https://api.assinafy.com.br
+```
+
+Public applications send the same request without `client_secret`.
+
+```json
+{
+  "access_token": "…",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "documents:read documents:write",
+  "refresh_token": "…",
+  "id_token": "…"
+}
+```
+
+- `refresh_token` is present only when you requested `offline_access`; `id_token` only when you requested `openid`. `offline_access` itself never appears in `scope`: it only asks for a refresh token and isn't a permission the access token carries.
+- `scope` is what you **actually** received. Read it instead of assuming.
+- OAuth token responses are plain JSON objects, not wrapped in the `{ status, message, data }` envelope the rest of this API uses.
+
+#### 5. Find the workspace, then call the API
+
+A token belongs to the one workspace the user picked. With an OAuth token, the workspace list returns exactly that workspace:
+
+```shell
+curl "https://api.assinafy.com.br/v1/accounts" \
+  -H 'Authorization: Bearer ACCESS_TOKEN'
+```
+
+Store `data[0].id` next to the tokens, then call the API:
+
+```shell
+curl "https://api.assinafy.com.br/v1/accounts/WORKSPACE_ID/documents" \
+  -H 'Authorization: Bearer ACCESS_TOKEN'
+```
+
+Always send the token in the `Authorization: Bearer` header. A token sent as `X-Api-Key` or in the query string is refused.
+
+### Permissions (scopes)
+
+| Scope | Lets your app |
+|---|---|
+| `documents:read` | Read documents, their signers, assignments and activity, the WhatsApp notifications sent for an assignment, and webhook event types and delivery history |
+| `documents:write` | Create documents and send them for signature |
+| `templates:read` | Read templates |
+| `templates:write` | Create and change templates |
+| `account:read` | Read the workspace's profile, theme and logo, and read the workspace's webhook subscription |
+| `webhooks:write` | Change where and which webhook events are delivered, and deactivate the webhook subscription |
+| `openid` | Receive an `id_token` identifying the user |
+| `profile` | Read the user's name |
+| `email` | Read the user's email and whether it is verified |
+| `offline_access` | Receive a refresh token, to keep working while the user is away |
+
+- Request the minimum. Every permission is another line the user reads before deciding.
+- `documents:write` can spend the workspace's notification credits, since sending for signature notifies signers.
+- The user approves everything you requested, or nothing. If a feature needs more later, run the flow again requesting the larger set.
+- Billing and subscriptions, workspace membership, credentials and administration are **never** available to an OAuth token, whatever its scopes.
+
+Calling an endpoint without the scope it requires returns `403` with a challenge naming the missing scope:
+
+```
+WWW-Authenticate: Bearer error="insufficient_scope", scope="documents:write", resource_metadata="https://api.assinafy.com.br/.well-known/oauth-protected-resource"
+```
+
+Treat it as a prompt to reconnect with that scope added, not as a request to retry. A `403` without this header has another cause: a different workspace, the user's own role, or an area OAuth tokens can never reach.
+
+### Resource indicators
+
+`resource` (RFC 8707) names **which service** a token is for. Omit it and you get a token for
+this API — that is what every direct integration wants, and nothing about it has changed.
+
+Assinafy also runs a separate MCP server, which is its own protected resource. A token minted
+for it authenticates against *that* server and is refused here, and the reverse is also true.
+If you are calling this API directly, send `https://api.assinafy.com.br` or omit the parameter.
+
+A refresh may repeat the original `resource` but never change it; a different value is
+rejected with `invalid_target`.
+
+> **Operator note.** The confidential client backing Assinafy's own MCP server is an
+> **internal-service client** (`is_internal_service`), provisioned outside this
+> self-serve flow. It has no `redirect_uris` and cannot pass through the ordinary
+> secret-rotation endpoint — that write requires `redirect_uris` under the client's
+> default validation scenario, which an internal-service client deliberately has none
+> of. If its secret leaks, the recovery path is **disable the client and provision a
+> new one**, then reconfigure the MCP server with the new credentials — not "rotate the
+> secret."
+
+### One connection, one workspace
+
+The integration mistake we see most often. A token works only for the workspace the user chose; calling any other workspace returns `403`, even one the same user belongs to. If your customer uses several workspaces, connect each one separately and keep tokens per workspace.
+
+### Refresh tokens
+
+Access tokens last **1 hour**. With `offline_access`, renew them without the user:
+
+```shell
+curl -X POST "https://api.assinafy.com.br/v1/oauth/token" \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d grant_type=refresh_token \
+  -d refresh_token=CURRENT_REFRESH_TOKEN \
+  -d client_id=YOUR_CLIENT_ID \
+  -d client_secret=YOUR_CLIENT_SECRET
+```
+
+Every refresh returns a **new** refresh token and retires the old one.
+
+> **Using an old refresh token disconnects the user.** A reused refresh token cannot be told apart from a stolen one being replayed, so it ends the whole connection: every token stops working and the user must connect again.
+>
+> 1. Save the new refresh token before doing anything else with the response.
+> 2. Treat a timeout as "maybe it worked": re-read your saved token before retrying, never retry blindly with the old one.
+> 3. Refresh one at a time per connection.
+
+- A refresh token is valid for **30 days**, and every refresh returns a new one with a fresh 30 days. A connection only expires if your app goes 30 days without refreshing; after that, the user has to reconnect.
+- If the user approves your app again with different permissions, the previous tokens stop working immediately.
+
+### Disconnecting
+
+When a user disconnects in your product, revoke the token instead of only deleting it. The endpoint always answers `200`:
+
+```shell
+curl -X POST "https://api.assinafy.com.br/v1/oauth/revoke" \
+  -d token=THE_REFRESH_OR_ACCESS_TOKEN \
+  -d client_id=YOUR_CLIENT_ID \
+  -d client_secret=YOUR_CLIENT_SECRET
+```
+
+Users can also revoke your app themselves under **Connected apps** in their Assinafy profile. Deleting or disabling your application has the same effect. In every case your tokens stop working at once: handle the `401` by asking the user to connect again.
+
+> **Revoking a token requires the `client_id` that owns it.** `/oauth/revoke` only revokes a token issued to the client authenticating the call. This matters for an RFC 8693 exchanged token specifically: it carries the *original* (front-end resource) client's id, not the service client that exchanged it — so a back-channel service client can never revoke a token it derived, and the call still answers `200` per RFC 7009's always-succeed contract, giving no indication that nothing happened. That derived token is inherently short-lived (bounded by the exchanged-token TTL), so it ages out on its own; do not build a cleanup call expecting revoke to work on it.
+
+### Verification and limits
+
+- New applications are **unverified**: the approval screen warns that Assinafy has not reviewed the app, and it can be connected to at most **25 workspaces**. Before launching beyond a pilot, ask us to verify it, telling us what the app does and why it needs each permission.
+- The authorize and token endpoints accept **50 requests per minute per IP**. Normal traffic stays far below that; hitting it usually means a refresh loop.
+- Applications are created in the Assinafy app, not through an API.
+
+### Errors
+
+On your redirect URI (`?error=…`):
+
+| `error` | Meaning |
+|---|---|
+| `access_denied` | The user declined |
+| `invalid_scope` | A scope your application is not registered for, or none |
+| `invalid_request` | Missing or malformed PKCE parameters |
+| `unsupported_response_type` | Anything other than `response_type=code` |
+| `invalid_target` | A `resource` other than `https://api.assinafy.com.br` |
+
+From the token endpoint (`{ "error": "…", "error_description": "…" }`):
+
+| `error` | Usual causes |
+|---|---|
+| `invalid_grant` | Code expired or already used, wrong `code_verifier` or `redirect_uri`; refresh token already used or expired, or the user reconnected with different permissions |
+| `invalid_client` | Wrong `client_id` or secret, or the application is disabled |
+| `invalid_target` | `resource` does not match what was authorized |
+| `unsupported_grant_type` | Only `authorization_code` and `refresh_token` exist |
+
+From API calls:
+
+| Status | Meaning |
+|---|---|
+| `401` | Token expired, revoked, or not sent as `Bearer`. Refresh; if that fails, ask the user to reconnect |
+| `403` with `insufficient_scope` | Missing permission. Reconnect requesting the scope in `WWW-Authenticate` |
+| `403` otherwise | Another workspace, or an area OAuth tokens cannot reach |
+| `429` | Too many requests. Back off and retry later |
+
+### Signing users in (OpenID Connect)
+
+Request `openid`, plus `profile` and/or `email`, to receive an `id_token`: a signed JWT saying who approved. Validate it with any OpenID Connect library:
+
+- signature `RS256`, keys at `https://auth.assinafy.com.br/.well-known/jwks.json` (match the `kid`);
+- `iss` equals `https://auth.assinafy.com.br`;
+- `aud` equals your `client_id`;
+- `exp` is in the future, and `nonce` matches the one you sent, if any.
+
+`sub` is the user's stable identifier. For their name and email, call **OpenID Connect userinfo** (`GET https://api.assinafy.com.br/v1/oauth/userinfo`).
+
+### AI assistants
+
+Claude, Claude Code and ChatGPT connect to Assinafy on their own through their connector settings. Your users do not need you to build or register anything for them.
+
+### Before you go live
+
+- A new PKCE verifier and `state` for every connection attempt
+- `state` and `iss` checked on your redirect URI
+- `client_secret` only on your server, never in a mobile app, browser code or a repository
+- The new refresh token saved before use, and one refresh at a time per connection
+- `401` handled: refresh, and if that fails, ask the user to reconnect
+- The workspace id stored per connection, and the returned `scope` read
+- Every production redirect URI registered, `https://` and exact
+- Only the permissions you need
+- Tokens revoked when a user disconnects
+- Verification requested
 
 ### Accounts
 
@@ -279,7 +556,7 @@ Your endpoint must respond within a reasonable time and return a `2xx` status. N
 
 ### Verifying signatures
 
-Enable signing on an endpoint (`signing_enabled: true`) and every delivery carries a signature that proves it came from us and was not altered or replayed. Signatures follow the [Standard Webhooks](https://www.standardwebhooks.com) specification, so any Standard Webhooks library can verify them; get the endpoint's secret from **Get webhook endpoint signing secret**.
+Enable signing on an endpoint (`signing_enabled: true`) and every delivery carries a signature that proves it came from us and was not altered or replayed. Signatures follow the [Standard Webhooks](https://www.standardwebhooks.com) specification, so any Standard Webhooks library can verify them; the secret is returned once, as `secret`, in the **Create webhook endpoint** response, and can be read again with **Get webhook endpoint signing secret**. OAuth applications cannot call that endpoint: store the secret from the create response, and if it is lost, delete the endpoint and create a new one.
 
 To verify by hand:
 
@@ -289,19 +566,17 @@ To verify by hand:
 4. `webhook-signature` holds one or more space-separated `v1,<signature>` entries; accept the request if any of them equals your value (use a constant-time comparison).
 5. Reject requests whose `webhook-timestamp` is more than a few minutes away from your clock, to prevent replays.
 
-```csharp
-using Assinafy.Sdk.Webhooks;
+```php
+$secret = base64_decode(substr($endpointSecret, strlen('whsec_')));
+$signedContent = $headers['webhook-id'] . '.' . $headers['webhook-timestamp'] . '.' . $rawBody;
+$expected = 'v1,' . base64_encode(hash_hmac('sha256', $signedContent, $secret, true));
 
-// Read the body as the raw string received; never re-serialize parsed JSON before verifying.
-bool valid = WebhookSignature.Verify(
-    endpointSecret,                          // "whsec_..." from GetEndpointSecretAsync
-    request.Headers["webhook-id"],
-    request.Headers["webhook-timestamp"],
-    request.Headers["webhook-signature"],
-    rawBody);                                // optional: tolerance (default 5 minutes), timeProvider
+$valid = false;
+foreach (explode(' ', $headers['webhook-signature']) as $signature) {
+    $valid = $valid || hash_equals($expected, $signature);
+}
+$fresh = abs(time() - (int) $headers['webhook-timestamp']) <= 300;
 ```
-
-`WebhookSignature.Verify` compares every `v1,` entry in constant time and rejects timestamps outside the tolerance window.
 
 Rotating the secret (**Rotate webhook endpoint signing secret**) takes effect immediately: deliveries sent after the rotation are signed only with the new secret.
 
@@ -329,7 +604,7 @@ For `document_ready`, `document_processing_failed` and `template_processing_fail
 
 ### Event catalog
 
-Each event also has its own entry under [Webhook event payloads](#webhook-event-payloads) with a complete example body.
+Each event also has its own entry under **Webhooks** with a complete example body.
 
 | Event | Subject | Object | `payload` keys | Description |
 |-------|---------|--------|----------------|-------------|
@@ -345,6 +620,11 @@ Each event also has its own entry under [Webhook event payloads](#webhook-event-
 | `signer_whatsapp_verified` | Signer | Document | `signer_full_name`, `signer_whatsapp_phone_number` | The signer's WhatsApp number was verified through a code linked to the document. |
 | `signer_data_confirmed` | Signer | Document | `signer_full_name`, `signer_email`, `signer_whatsapp_phone_number`, `verification_method` | The signer confirmed their data before signing. |
 | `signer_viewed_document` | Signer | Document | `signer_full_name` | The signer opened the document for the first time. |
+| `signer_identity_verified` | Signer | Document | `signer_full_name`, `evidence` (when available) | The signer passed identity-document verification, directly or after the account's review. |
+| `signer_identity_verification_failed` | Signer | Document | `signer_full_name`, `reason` | The identity-document verification ended without approval. |
+| `signer_identity_review_required` | Signer | Document | `signer_full_name`, `reason_codes` | The verification awaits the account's review. The signer can still sign; the document is certificated only after the account approves (status `pending_identity_review` once every signer has signed). |
+| `signer_identity_review_approved` | Signer | Document | `signer_full_name`, `reviewer_id`, `reviewer_name`, `reason_codes` | A user of the account approved the signer's identity after review. |
+| `signer_identity_review_rejected` | Signer | Document | `signer_full_name`, `reviewer_id`, `reviewer_name`, `note` | A user of the account rejected the signer's identity after review. The document is cancelled; `user_rejected_document` follows. |
 | `signer_signed_document` | Signer | Document | `signer_full_name` | The signer signed the document. |
 | `signer_rejected_document` | Signer | Document | `signer_full_name` | The signer refused to sign the document. |
 | `user_rejected_document` | User | Document | `user_name` | The document was cancelled by a user of the account. |
@@ -379,6 +659,9 @@ User account endpoints.
 | AssignmentResource | `ResendNotificationAsync` | `Task<ResendNotificationResult> ResendNotificationAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend — resend the signature notification (email or WhatsApp) for a specific signer. |
 | AssignmentResource | `EstimateResendCostAsync` | `Task<ResendCostEstimate> EstimateResendCostAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost — preview the credit cost of ResendNotificationAsync. |
 | AssignmentResource | `ListWhatsAppNotificationsAsync` | `Task<IReadOnlyList<WhatsAppNotification>> ListWhatsAppNotificationsAsync(string documentId, string assignmentId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications — list the rendered WhatsApp template messages dispatched for an assignment. |
+| AssignmentResource | `GetIdentityReviewAsync` | `Task<SignerIdentityReview> GetIdentityReviewAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification — get the account-facing identity review, evidence summary, checks, and available image names. |
+| AssignmentResource | `DownloadIdentityReviewImageAsync` | `Task<byte[]> DownloadIdentityReviewImageAsync(string documentId, string assignmentId, string signerId, string name, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name} — fetch evidence directly from the provider while the verification is InReview. Returns 404 after a decision. |
+| AssignmentResource | `DecideIdentityReviewAsync` | `Task<SignerIdentityReview> DecideIdentityReviewAsync(string documentId, string assignmentId, string signerId, DecideIdentityReviewRequest request, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review — approve or reject an InReview verification on a pending_signature or pending_identity_review document. |
 | AuthenticationResource | `LoginAsync` | `Task<AuthenticationResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)` | POST /login — exchange email and password for an access token and account list. When the user has two-factor authentication enabled, the result carries `MfaToken` instead; complete the login with `VerifyMfaAsync`. |
 | AuthenticationResource | `SocialLoginAsync` | `Task<AuthenticationResult> SocialLoginAsync(SocialLoginRequest request, CancellationToken cancellationToken = default)` | POST /authentication/social-login — exchange a third-party provider token (e.g. Google) for an Assinafy access token. |
 | AuthenticationResource | `VerifyMfaAsync` | `Task<AuthenticationResult> VerifyMfaAsync(VerifyMfaRequest request, CancellationToken cancellationToken = default)` | POST /authentication/mfa/verify — exchange the `mfa_token` returned by a two-factor login, plus a 6-digit authenticator code or a recovery code, for an access token. Sends no workspace credential. The challenge is single-use and expires 5 minutes after login. |
@@ -449,6 +732,8 @@ User account endpoints.
 | SigningResource | `DeclineMultipleAsync` | `Task DeclineMultipleAsync(string signerAccessCode, IReadOnlyList<string> documentIds, string declineReason, CancellationToken cancellationToken = default)` | PUT /signers/documents/decline-multiple?signer-access-code={code} — decline multiple documents at once with a single reason. |
 | SigningResource | `DownloadPublicAsync` | `Task<byte[]> DownloadPublicAsync(string signerId, string documentId, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name} — public download of a signer document artifact. |
 | SigningResource | `DownloadAsync` | `Task<byte[]> DownloadAsync(string signerId, string documentId, string? signerAccessCode = null, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | Retained public-download overload; its signer-access-code argument is not sent because this endpoint is public. |
+| SigningResource | `GetIdentityVerificationAsync` | `Task<IdentityVerificationStatus> GetIdentityVerificationAsync(string signerAccessCode, CancellationToken cancellationToken = default)` | GET /signers/identity-verification?signer-access-code={code} — get the current biometric verification state, backfilling a pending provider decision. Sends no workspace credential. |
+| SigningResource | `StartIdentityVerificationAsync` | `Task<IdentityVerificationSession> StartIdentityVerificationAsync(string signerAccessCode, bool consent, CancellationToken cancellationToken = default)` | POST /signers/identity-verification?signer-access-code={code} — record explicit biometric-processing consent and open a hosted capture session. Sends no workspace credential. |
 | TagResource | `ListAsync` | `Task<IReadOnlyList<Tag>> ListAsync(string? search = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/tags — list workspace tags ordered alphabetically, optionally filtered by a case-insensitive search substring. |
 | TagResource | `CreateAsync` | `Task<Tag> CreateAsync(CreateTagRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/tags — create a tag. The API returns 409 Conflict if the name already exists (case-insensitive). |
 | TagResource | `UpdateAsync` | `Task<Tag> UpdateAsync(string tagId, UpdateTagRequest request, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{account_id}/tags/{tag_id} — update a tag's name and/or color. The API returns 409 Conflict if the new name collides with another tag. |
@@ -487,6 +772,8 @@ User account endpoints.
 | WebhookResource | `ListEventTypesAsync` | `Task<IReadOnlyList<WebhookEventTypeInfo>> ListEventTypesAsync(CancellationToken cancellationToken = default)` | GET /webhooks/event-types — list all event types supported by the platform. |
 | WebhookResource | `ListDispatchesAsync` | `Task<PaginatedResult<WebhookDispatch>> ListDispatchesAsync(ListDispatchesParams? parameters = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks — list webhook delivery history across the account's endpoints with optional filters (endpoint_id, event, delivered, from, to, page, per-page). Each `WebhookDispatch` carries its `EndpointId`. |
 | WebhookResource | `RetryDispatchAsync` | `Task<WebhookDispatch> RetryDispatchAsync(string dispatchId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/{dispatch_id}/retry — re-attempt delivery of a previous webhook dispatch, only to that entry's endpoint. |
+| WebhookResource | `ListEndpointsByUrlAsync` | `Task<IReadOnlyList<WebhookEndpoint>> ListEndpointsByUrlAsync(string url, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/webhooks/endpoints?url={url} — list only the endpoint registered with exactly this URL. OAuth scope account:read. |
+| WebhookResource | `DeleteEndpointByUrlAsync` | `Task DeleteEndpointByUrlAsync(string url, string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/webhooks/endpoints?url={url} — delete the endpoint whose registered URL matches exactly and free its slot. Returns 404 when no endpoint matches. OAuth scope webhooks:write. |
 | OAuthResource | `CreatePkcePair` | `static OAuthPkcePair CreatePkcePair()` | Local: generate an RFC 7636 PKCE verifier (256 bits from a cryptographic RNG) and its S256 challenge. Create one per connection attempt. |
 | OAuthResource | `CreateState` | `static string CreateState()` | Local: generate an opaque 128-bit `state` value for CSRF protection on one connection attempt. |
 | OAuthResource | `BuildAuthorizationUrl` | `static Uri BuildAuthorizationUrl(OAuthAuthorizationRequest request)` | Local: build the authorization URL the browser is sent to, with `response_type=code`, space-joined scopes, `code_challenge_method=S256`, and the RFC 8707 `resource` indicator. Defaults to the production authorization endpoint. |
@@ -507,9 +794,11 @@ User account endpoints.
 
 The package has no NuGet dependencies and ships no container adapter. For dependency injection, register a named `HttpClient` with `ConfigurePrimaryHttpMessageHandler(AssinafyClient.CreatePrimaryHandler)` and `SetHandlerLifetime(Timeout.InfiniteTimeSpan)`, then register `AssinafyClient` as a singleton over `IHttpClientFactory.CreateClient`. `AssinafyClient.CreatePrimaryHandler()` is public and returns the SDK's own handler: automatic redirects disabled, five-minute pooled connection lifetime, TLS 1.2 or 1.3 only. See the README for the full registration. Limit any retry policy on that client to safe methods, and make OAuth token and revoke calls through a separate client constructed without an `HttpClient`: its transport is `CreatePrimaryHandler()` alone, outside `IHttpClientFactory`, so no retry or hedging handler — one registered with `ConfigureHttpClientDefaults` included — can resend them.
 
-Every constructed client exposes `Authentication`, `Accounts`, `Users`, `Documents`, `Signers`, `Assignments`, `Templates`, `Tags`, `Fields`, `PublicDocuments`, `Signing`, `Signatures`, and `Webhooks`.
+Every constructed client exposes `Authentication`, `OAuth`, `Accounts`, `Users`, `Documents`, `Signers`, `Assignments`, `Templates`, `Tags`, `Fields`, `PublicDocuments`, `Signing`, `Signatures`, and `Webhooks`.
 
 ### SDK errors
+
+A supplied `HttpClient` must keep `Authorization`, `X-Api-Key`, and `Cookie` out of its default headers. Requests reject these inherited credentials with `ValidationException`; configure credentials through `AssinafyClientOptions`.
 
 - Malformed credentials and SDK-validated request values throw `ValidationException` before transport; required .NET arguments use `ArgumentNullException` or `ArgumentException`.
 - A request body that cannot be encoded as JSON throws `SerializationException` before transport.
@@ -530,7 +819,7 @@ new UploadAndRequestSignaturesOptions
     WaitForReady = true,                      // default true
     Method = AssignmentMethods.Virtual,       // virtual or collect
     Message = "Please sign",                 // optional
-    ExpiresAt = "2026-09-30T23:59:59Z",      // optional ISO-8601
+    ExpiresAt = "2026-12-31T23:59:59Z",      // optional ISO-8601
     CopyReceivers = [copyReceiverSignerId],   // optional existing signer IDs
     Entries = null,                           // collect entries with known signer IDs
     EntriesFactory = signerIds =>             // or build entries from new signer IDs
@@ -554,6 +843,7 @@ new UploadAndRequestSignaturesOptions
         {
             FullName = "Example Signer",
             Email = "signer@example.com",
+            GovernmentId = null,                  // CPF for biometrics; CPF/CNPJ for certificates
             WhatsAppPhoneNumber = null,
             VerificationMethod = SignerChannels.Email,
             NotificationMethods = [SignerChannels.Email],
@@ -563,7 +853,7 @@ new UploadAndRequestSignaturesOptions
 }
 ```
 
-The response is `UploadAndRequestSignaturesResult`: `Document` is the uploaded `DocumentDetails`, `SignerIds` contains every created signer ID in request order, and `Assignment` is the created `Assignment`. The API has no transaction across these calls; successful earlier resources remain when a later request fails.
+The response is `UploadAndRequestSignaturesResult`: `Document` is the ready `DocumentDetails` when waiting is enabled, otherwise the upload response; `SignerIds` contains every created signer ID in request order, and `Assignment` is the created `Assignment`. The API has no transaction across these calls; successful earlier resources remain when a later request fails.
 
 ### Local convenience methods
 
@@ -576,6 +866,14 @@ The response is `UploadAndRequestSignaturesResult`: `Document` is the uploaded `
 | `WebhookEvent` (`Assinafy.Sdk.Models`) | a verified delivery body, deserialized with `System.Text.Json` | `Id` (long), `Event`, `Message`, `Payload` (`JsonElement?`; an event without parameters may send `[]`), `Origin` (`JsonElement?`), `CreatedAt` (Unix seconds), `Subject` and `Object` (`JsonElement`, each with a `type` discriminator), `AccountId`. |
 | `Signers.FindByEmailAsync` | email and optional account ID | First exact case-insensitive `Signer`, or `null`; follows every server page. |
 | `Dispose` | none | Disposes only an SDK-owned `HttpClient`; a supplied client remains usable. |
+
+## Identity verification flow
+
+`SignerChannels.IdDocumentFaceMatchBasic` selects hosted government-document, face-match, and liveness verification. It requires the account feature and a valid CPF in `GovernmentId`, plus exactly one Email or Whatsapp notification. Assignment and template cost estimates include the per-signer fee; restarting an expired capture session does not charge again.
+
+The signer calls `Signing.GetIdentityVerificationAsync(code)`, then `StartIdentityVerificationAsync(code, consent)` only after explicit biometric-processing consent. Both use only `signer-access-code`. Capture URLs are bearer links: preserve the full URL and fragment, open them as-is, and never log or persist them in browser storage. Only an absent or Expired session can start; Pending, InReview, Approved, Declined, and Abandoned cannot. Declined or Abandoned requires a new document and assignment.
+
+InReview permits signing but holds certification. When all signers have signed, the document remains `pending_identity_review` until every review is approved. The workspace uses `Assignments.GetIdentityReviewAsync`, `DownloadIdentityReviewImageAsync`, and `DecideIdentityReviewAsync`; images exist only during InReview and must not be cached or logged. Decisions are Approved or Rejected, with an optional private note of at most 2000 Unicode characters. Rejection cancels the document as `rejected_by_user` and notifies signers and copy receivers. The five `signer_identity_*` webhook events below report verification and review outcomes.
 
 ## Template and digital-certificate payloads
 
@@ -763,11 +1061,11 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 
 | Tag | Method | Path | Request body | 2xx response | Security | Errors |
 |---|---|---|---|---|---|---|
-| Accounts | GET | `/v1/accounts/{accountId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Accounts | GET | `/v1/accounts/{accountId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Accounts | PUT | `/v1/accounts/{accountId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
-| Accounts | DELETE | `/v1/accounts/{accountId}` | application/json: object (optional) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Accounts | DELETE | `/v1/accounts/{accountId}` | application/json: object (optional) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Accounts | GET | `/v1/accounts/{accountId}/theme` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Accounts | GET | `/v1/accounts/{accountId}/logo` | none | image/*: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Accounts | GET | `/v1/accounts/{accountId}/logo` | none | image/*: string | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Accounts | POST | `/v1/accounts/{accountId}/logo` | multipart/form-data: object (required) | application/json: Envelope | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Accounts | DELETE | `/v1/accounts/{accountId}/logo` | none | application/json: Envelope | bearerAuth or apiKeyAuth | 401, 500 |
 | Accounts | GET | `/v1/accounts` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
@@ -778,7 +1076,10 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Assignments | POST | `/v1/documents/{documentId}/assignments/estimate-cost` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Assignments | PUT | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Assignments | POST | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Assignments | PUT | `/v1/documents/{documentId}/assignments/{assignmentId}/reset-expiration` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Assignments | PUT | `/v1/documents/{documentId}/assignments/{assignmentId}/reset-expiration` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}` | none | image/jpeg: string or image/png: string or application/pdf: string | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Assignments | POST | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Authentication | POST | `/v1/login` | application/json: object (required) | application/json: object | public | 400, 500 |
 | Authentication | PUT | `/v1/authentication/request-password-reset` | application/json: object (required) | application/json: object | public | 500 |
 | Authentication | PUT | `/v1/authentication/reset-password` | application/json: object (required) | application/json: object | public | 400, 500 |
@@ -788,10 +1089,10 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Documents | POST | `/v1/accounts/{accountId}/documents` | multipart/form-data: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Documents | GET | `/v1/accounts/{accountId}/documents/search` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Documents | GET | `/v1/documents/statuses` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Documents | GET | `/v1/documents/{documentId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Documents | DELETE | `/v1/documents/{documentId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Documents | PATCH | `/v1/documents/{documentId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
-| Documents | GET | `/v1/documents/{documentId}/download/{artifactName}` | none | application/pdf: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Documents | GET | `/v1/documents/{documentId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Documents | DELETE | `/v1/documents/{documentId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Documents | PATCH | `/v1/documents/{documentId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Documents | GET | `/v1/documents/{documentId}/download/{artifactName}` | none | application/pdf: string | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Documents | GET | `/v1/documents/{documentSignatureHash}/verify` | none | application/json: object | public | 500 |
 | Documents | GET | `/v1/accounts/{accountId}/documents/{documentId}/tags` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Documents | PUT | `/v1/accounts/{accountId}/documents/{documentId}/tags` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
@@ -799,32 +1100,34 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Documents | DELETE | `/v1/accounts/{accountId}/documents/{documentId}/tags/{tagId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Fields | GET | `/v1/accounts/{accountId}/fields` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Fields | POST | `/v1/accounts/{accountId}/fields` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
-| Fields | GET | `/v1/accounts/{accountId}/fields/{fieldId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Fields | PUT | `/v1/accounts/{accountId}/fields/{fieldId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Fields | DELETE | `/v1/accounts/{accountId}/fields/{fieldId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Fields | GET | `/v1/accounts/{accountId}/fields/{fieldId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Fields | PUT | `/v1/accounts/{accountId}/fields/{fieldId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Fields | DELETE | `/v1/accounts/{accountId}/fields/{fieldId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Fields | POST | `/v1/accounts/{accountId}/fields/{fieldId}/validate` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Fields | POST | `/v1/accounts/{accountId}/fields/validate-multiple` | application/json: object[] (required) | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Fields | GET | `/v1/field-types` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Authentication | GET | `/v1/users/self/mfa` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Authentication | POST | `/v1/users/self/mfa/totp` | application/json: object (optional) | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Authentication | PUT | `/v1/users/self/mfa/totp/confirm` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Authentication | PUT | `/v1/users/self/mfa/totp/confirm` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Authentication | POST | `/v1/users/self/mfa/recovery-codes` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
-| Authentication | DELETE | `/v1/users/self/mfa/{customId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Authentication | DELETE | `/v1/users/self/mfa/{customId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Users | GET | `/v1/users/self/notification-preferences` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Users | PUT | `/v1/users/self/notification-preferences` | application/json: NotificationPreferences (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
-| Documents | GET | `/v1/documents/{documentId}/thumbnail` | none | image/*: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Documents | GET | `/v1/documents/{documentId}/pages/{pageId}/download` | none | image/*: string | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Documents | GET | `/v1/documents/{documentId}/thumbnail` | none | image/*: string | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Documents | GET | `/v1/documents/{documentId}/pages/{pageId}/download` | none | image/*: string | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Signing | GET | `/v1/public/documents/{documentId}` | none | application/json: object | public | 404, 500 |
 | Signing | PUT | `/v1/public/documents/{documentId}/send-token` | application/json: object (required) | application/json: object | public | 400, 404, 500 |
 | Signers | GET | `/v1/accounts/{accountId}/signers` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Signers | POST | `/v1/accounts/{accountId}/signers` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
-| Signers | GET | `/v1/accounts/{accountId}/signers/{signerId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Signers | PUT | `/v1/accounts/{accountId}/signers/{signerId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
-| Signers | DELETE | `/v1/accounts/{accountId}/signers/{signerId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Signers | GET | `/v1/accounts/{accountId}/signers/{signerId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Signers | PUT | `/v1/accounts/{accountId}/signers/{signerId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Signers | DELETE | `/v1/accounts/{accountId}/signers/{signerId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Signing | GET | `/v1/signers/self` | none | application/json: object | signerAccessCode | 401, 500 |
-| Signing | GET | `/v1/signers/{signerId}/document` | none | application/json: object | signerAccessCode | 401, 404, 500 |
-| Signing | GET | `/v1/sign` | none | application/json: object | signerAccessCode | 400, 401, 409, 500 |
-| Signing | POST | `/v1/documents/{documentId}/assignments/{assignmentId}` | application/json: object[] (required) | application/json: object | signerAccessCode | 400, 401, 409, 500 |
+| Signing | GET | `/v1/signers/identity-verification` | none | application/json: object | signerAccessCode | 401, 500 |
+| Signing | POST | `/v1/signers/identity-verification` | application/json: object (required) | application/json: object | signerAccessCode | 400, 401, 500 |
+| Signing | GET | `/v1/signers/{signerId}/document` | none | application/json: object | signerAccessCode | 404, 401, 500 |
+| Signing | GET | `/v1/sign` | none | application/json: object | signerAccessCode | 400, 409, 401, 500 |
+| Signing | POST | `/v1/documents/{documentId}/assignments/{assignmentId}` | application/json: object[] (required) | application/json: object | signerAccessCode | 400, 409, 401, 500 |
 | Signing | PUT | `/v1/documents/{documentId}/assignments/{assignmentId}/reject` | application/json: object (required) | application/json: object | signerAccessCode | 401, 500 |
 | Signing | PUT | `/v1/signers/documents/sign-multiple` | application/json: object (required) | application/json: object | signerAccessCode | 401, 500 |
 | Signing | PUT | `/v1/signers/documents/decline-multiple` | application/json: object (required) | application/json: object | signerAccessCode | 401, 500 |
@@ -832,7 +1135,7 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Signing | PUT | `/v1/documents/{documentId}/signers/confirm-data` | application/json: object (required) | application/json: object | signerAccessCode | 401, 500 |
 | Signing | PUT | `/v1/signers/accept-terms` | none | application/json: Envelope | signerAccessCode | 401, 500 |
 | Signing | POST | `/v1/signature` | image/png: string (required) | application/json: Envelope | signerAccessCode | 401, 500 |
-| Signing | GET | `/v1/signature/{signatureType}` | none | image/*: string | signerAccessCode | 401, 404, 500 |
+| Signing | GET | `/v1/signature/{signatureType}` | none | image/*: string | signerAccessCode | 404, 401, 500 |
 | Signing | GET | `/v1/signers/{signerId}/documents` | none | application/json: object | signerAccessCode or bearerAuth or apiKeyAuth | 401, 500 |
 | Signing | GET | `/v1/signers/{signerId}/documents/search` | none | application/json: object | signerAccessCode or bearerAuth or apiKeyAuth | 401, 500 |
 | Signing | GET | `/v1/signers/{signerId}/documents/{documentId}/download/{artifactName}` | none | application/pdf: string | public | 404, 500 |
@@ -841,9 +1144,9 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Accounts | GET | `/v1/accounts/{accountId}/stats` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Users | GET | `/v1/users/self/stats` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Tags | GET | `/v1/accounts/{accountId}/tags` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Tags | POST | `/v1/accounts/{accountId}/tags` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 409, 500 |
-| Tags | PUT | `/v1/accounts/{accountId}/tags/{tagId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
-| Tags | DELETE | `/v1/accounts/{accountId}/tags/{tagId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
+| Tags | POST | `/v1/accounts/{accountId}/tags` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 409, 401, 500 |
+| Tags | PUT | `/v1/accounts/{accountId}/tags/{tagId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Tags | DELETE | `/v1/accounts/{accountId}/tags/{tagId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
 | Templates | GET | `/v1/accounts/{accountId}/templates` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Documents | POST | `/v1/accounts/{accountId}/templates/{templateId}/documents` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 500 |
 | Documents | POST | `/v1/accounts/{accountId}/templates/{templateId}/documents/estimate-cost` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
@@ -856,14 +1159,15 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Webhooks | PUT | `/v1/accounts/{accountId}/webhooks/inactivate` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Webhooks | GET | `/v1/webhooks/event-types` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | Webhooks | GET | `/v1/accounts/{accountId}/webhooks` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/{historyId}/retry` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/{historyId}/retry` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
-| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/endpoints` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 403, 500 |
-| Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Webhooks | PUT | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
-| Webhooks | DELETE | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 404, 500 |
-| Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
-| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret/rotate` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 401, 404, 500 |
+| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/endpoints` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 403, 401, 500 |
+| Webhooks | DELETE | `/v1/accounts/{accountId}/webhooks/endpoints` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Webhooks | PUT | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | application/json: object (required) | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Webhooks | DELETE | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}` | none | application/json: object | bearerAuth or apiKeyAuth | 404, 401, 500 |
+| Webhooks | GET | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
+| Webhooks | POST | `/v1/accounts/{accountId}/webhooks/endpoints/{endpointId}/secret/rotate` | none | application/json: object | bearerAuth or apiKeyAuth | 400, 404, 401, 500 |
 | Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/whatsapp-notifications` | none | application/json: object | bearerAuth or apiKeyAuth | 401, 500 |
 | OAuth | POST | `/v1/oauth/token` | application/x-www-form-urlencoded or application/json: OAuthTokenRequest (required) | application/json: object (flat, no envelope) | none (client credentials in the body) | 400, 401, 429, 500 |
 | OAuth | POST | `/v1/oauth/revoke` | application/x-www-form-urlencoded or application/json: OAuthRevokeRequest (required) | 200, empty body | none (client credentials in the body) | 401, 500 |
@@ -871,6 +1175,609 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | OAuth | GET | `/.well-known/oauth-protected-resource` | none | application/json: object (flat, no envelope) | none | 500 |
 
 ## Full operation request and response payloads
+
+### DELETE /v1/accounts/{accountId}/webhooks/endpoints
+
+Delete webhook endpoint by URL. Security: **bearerAuth or apiKeyAuth**.
+
+Stop delivering events to the endpoint registered with `url` and free its slot, for integrations that keep the URL they registered rather than the endpoint ID. The URL must match exactly as it was registered. Returns `404` when no endpoint of the workspace uses it. Requires the `webhooks:write` OAuth scope.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `accountId` | path | yes | `{"type":"string"}` | Workspace account ID. |
+| `url` | query | yes | `{"type":"string","format":"uri"}` | The endpoint's URL. |
+
+Request body: none.
+
+Success response (200):
+Endpoint deleted
+
+`application/json` schema:
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "type": "array",
+          "items": [],
+          "example": []
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": []
+}
+```
+
+Error responses:
+
+#### 400
+
+See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
+
+`url` is missing.
+
+#### 404
+
+See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
+
+### POST /v1/signers/identity-verification
+
+Start identity document verification. Security: **signerAccessCode**.
+
+Records the signer's biometric-processing consent and opens a provider session. Returns the hosted verification URL to redirect to. Uses the signer access code.
+
+**One live session per signer:** this succeeds when no session exists yet, or when the last one Expired (the capture link lapsed before anything was submitted); the expired session is replaced by a new one. Otherwise -- Pending, In Review, Approved, Declined or Abandoned -- it returns `400`. A resend never destroys or replaces a live provider session, and the account is billed once per signer at assignment creation, never again on a restart. Recovering from a Declined or Abandoned verification means the account must start a whole new process (new document, new assignment).
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
+
+Request body: required.
+`application/json` schema:
+
+```json
+{
+  "required": [
+    "consent"
+  ],
+  "properties": {
+    "consent": {
+      "description": "Must be true. Explicit consent to biometric processing.",
+      "type": "boolean",
+      "example": true
+    }
+  },
+  "type": "object"
+}
+```
+
+Example payload:
+
+```json
+{
+  "consent": true
+}
+```
+
+Success response (200):
+Session created
+
+`application/json` schema:
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "properties": {
+            "id": {
+              "type": "string",
+              "example": "6152120297080d55bdd13197"
+            },
+            "url": {
+              "description": "The provider's capture URL for the session just opened. A bearer link: open it as-is (including any `#t=` fragment); never log it or store it in the browser.",
+              "type": "string",
+              "example": "https://verify.assinafy.com.br/c/01a0ed77-2afe-7f4b-bca9-349edcf4bb99#t=token"
+            },
+            "expires_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "example": "2026-10-07T21:18:47Z"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "id": "6152120297080d55bdd13197",
+    "url": "https://verify.assinafy.com.br/c/01a0ed77-2afe-7f4b-bca9-349edcf4bb99#t=token",
+    "expires_at": "2026-10-07T21:18:47Z"
+  }
+}
+```
+
+Error responses:
+
+#### 400
+
+Consent missing, or this signer already has a verification session that is not Expired.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
+
+### GET /v1/signers/identity-verification
+
+Identity document verification status. Security: **signerAccessCode**.
+
+Current state of the signer's identity document verification. Backfills a pending decision from the provider. Uses the signer access code.
+
+**One live session per signer:** `can_start` is true before a provider session exists, and again once that session is Expired -- the capture link lapsed before anything was submitted, so the signer may open a new one. Once a session is Pending, In Review, Approved, Declined or Abandoned it is false. A signer who reaches Declined or Abandoned cannot restart here; the account must start a whole new process (new document, new assignment).
+
+**In review:** the signer continues -- views, confirms their data and signs -- while the account reviews the result. The document is certificated only after the account approves every signer under review; if it rejects one, the document is cancelled and every signer receives the cancellation notice.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
+
+Request body: none.
+
+Success response (200):
+Verification state
+
+`application/json` schema:
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "properties": {
+            "can_start": {
+              "description": "True when no session exists yet, or the last one Expired.",
+              "type": "boolean",
+              "example": false
+            },
+            "status": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "example": "Pending"
+            },
+            "url": {
+              "description": "The provider's capture URL while the session is Pending; null otherwise. A bearer link: open it as-is (including any `#t=` fragment); never log it or store it in the browser.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "example": "https://verify.assinafy.com.br/c/01a0ed77-2afe-7f4b-bca9-349edcf4bb99#t=token"
+            },
+            "expires_at": {
+              "description": "When the capture link stops working. Verification may still be processed or reviewed after it. Null for providers that do not report it.",
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "example": "2026-10-07T21:18:47Z"
+            },
+            "completed_at": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "date-time",
+              "example": "2026-08-10T20:32:00Z"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "can_start": false,
+    "status": "Pending",
+    "url": "https://verify.assinafy.com.br/c/01a0ed77-2afe-7f4b-bca9-349edcf4bb99#t=token",
+    "expires_at": "2026-10-07T21:18:47Z",
+    "completed_at": "2026-08-10T20:32:00Z"
+  }
+}
+```
+
+Error responses:
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
+
+### POST /v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review
+
+Decide signer identity review. Security: **bearerAuth or apiKeyAuth**.
+
+Approves or rejects a signer whose identity verification is `InReview`, while the document is `pending_signature` or `pending_identity_review`. Approved: once every signer has signed and no other signer is under review, the document is certificated; the certificate states the approval by review and every difference found. Rejected: the document is cancelled (`rejected_by_user`, with the reviewer as the user) and every signer and copy receiver gets the cancellation notice; the note is never shown to them. The signer gets no message about the decision itself. The decision is also reported to the verification provider.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `documentId` | path | yes | `{"type":"string"}` | Document ID. |
+| `assignmentId` | path | yes | `{"type":"string"}` | The assignment ID. |
+| `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
+
+Request body: required.
+`application/json` schema:
+
+```json
+{
+  "required": [
+    "decision"
+  ],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": [
+        "Approved",
+        "Rejected"
+      ],
+      "example": "Approved"
+    },
+    "note": {
+      "description": "Optional. Recorded in the activity log and sent to the provider; never shown to the signer.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "maxLength": 2000,
+      "example": "Conferido por videochamada."
+    }
+  },
+  "type": "object"
+}
+```
+
+Example payload:
+
+```json
+{
+  "decision": "Approved",
+  "note": "Conferido por videochamada."
+}
+```
+
+Success response (200):
+Decided
+
+`application/json` schema:
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/SignerIdentityReview"
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "id": "104c267f8e1e8c6855d7788b76a8",
+    "status": "Approved",
+    "provider": "AssinafyVerify",
+    "verification_method": "IdDocumentFaceMatchBasic",
+    "reason_codes": [
+      {
+        "code": "NAME_MISMATCH",
+        "description": "Nome no documento difere do cadastrado (similaridade 52%)"
+      }
+    ],
+    "evidence_available": true,
+    "expected": {
+      "name": "Maria da Silva",
+      "cpf": "52998224725"
+    },
+    "document": {
+      "type": "CNH",
+      "name": "MARIA SILVA",
+      "cpf": "52998224725"
+    },
+    "matches": {
+      "cpf": true,
+      "name": 0.5217,
+      "birth_date": null
+    },
+    "checks": [
+      {
+        "name": "name",
+        "result": "review",
+        "score": 0.5217,
+        "reasons": [
+          "NAME_MISMATCH"
+        ]
+      }
+    ],
+    "images": [],
+    "ruleset_version": "2026-10-12.2",
+    "evidence_sha256": "9f2c0d6e4b1a8c3f5e7d9b0a2c4e6f8a1b3d5f7091e2c4a6b8d0f2e4a6c8e0b2",
+    "reviewed_by": {
+      "id": "Kx9pQ2",
+      "name": "Ana Souza"
+    },
+    "reviewed_at": "2026-10-13T21:05:00Z",
+    "review_note": "Conferido por videochamada.",
+    "completed_at": "2026-10-13T21:05:00Z"
+  }
+}
+```
+
+Error responses:
+
+#### 400
+
+Invalid decision, the verification is not `InReview`, or the document is no longer awaiting signatures.
+
+#### 404
+
+Assignment, signer or verification not found.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
+
+### GET /v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}
+
+Signer identity review image. Security: **bearerAuth or apiKeyAuth**.
+
+One evidence image of a signer identity verification that is `InReview`, for the account's reviewer: the document photos (or the digital document PDF) and the face photo. Fetched from the verification provider on each request and never stored by Assinafy. Available only while the review is open; once it is decided, every image returns 404. `name` must be one of the review's `images`.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `documentId` | path | yes | `{"type":"string"}` | Document ID. |
+| `assignmentId` | path | yes | `{"type":"string"}` | The assignment ID. |
+| `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
+| `name` | path | yes | `{"type":"string","enum":["document_front","document_back","document_pdf","face"]}` | The image, as listed in the review's `images`. |
+
+Request body: none.
+
+Success response (200):
+The image bytes (`image/jpeg`, `image/png`) or the document PDF (`application/pdf`). Sent with `Cache-Control: no-store`.
+
+`image/jpeg` schema:
+
+```json
+{
+  "type": "string",
+  "format": "binary"
+}
+```
+
+`image/png` schema:
+
+```json
+{
+  "type": "string",
+  "format": "binary"
+}
+```
+
+`application/pdf` schema:
+
+```json
+{
+  "type": "string",
+  "format": "binary"
+}
+```
+
+Error responses:
+
+#### 404
+
+Assignment, signer or verification not found, the review is not open, or there is no such image.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
+
+### GET /v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification
+
+Signer identity review. Security: **bearerAuth or apiKeyAuth**.
+
+The signer's identity-document verification as the account's reviewer sees it. When the provider sends a verification to review, the account decides it with **Decide signer identity review**. The signer can still view and sign meanwhile; the review holds the document's certification instead (status `pending_identity_review` once every signer has signed).
+Evidence is a summary kept by Assinafy (no images or biometrics). `evidence_available` is false when the provider keeps none or it could not be fetched yet. While the review is open, `images` lists the evidence images the reviewer can open with **Signer identity review image**. A verification the provider approved directly, without a review, shows no evidence here (`evidence_available` is false); its evidence is on the `signer_identity_verified` activity.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `documentId` | path | yes | `{"type":"string"}` | Document ID. |
+| `assignmentId` | path | yes | `{"type":"string"}` | The assignment ID. |
+| `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
+
+Request body: none.
+
+Success response (200):
+Identity review
+
+`application/json` schema:
+
+```json
+{
+  "type": "object",
+  "allOf": [
+    {
+      "$ref": "#/components/schemas/Envelope"
+    },
+    {
+      "properties": {
+        "data": {
+          "$ref": "#/components/schemas/SignerIdentityReview"
+        }
+      },
+      "type": "object"
+    }
+  ]
+}
+```
+
+Example payload:
+
+```json
+{
+  "status": 200,
+  "message": "",
+  "data": {
+    "id": "104c267f8e1e8c6855d7788b76a8",
+    "status": "InReview",
+    "provider": "AssinafyVerify",
+    "verification_method": "IdDocumentFaceMatchBasic",
+    "reason_codes": [
+      {
+        "code": "NAME_MISMATCH",
+        "description": "Nome no documento difere do cadastrado (similaridade 52%)"
+      }
+    ],
+    "evidence_available": true,
+    "expected": {
+      "name": "Maria da Silva",
+      "cpf": "52998224725"
+    },
+    "document": {
+      "type": "CNH",
+      "name": "MARIA SILVA",
+      "cpf": "52998224725"
+    },
+    "matches": {
+      "cpf": true,
+      "name": 0.5217,
+      "birth_date": null
+    },
+    "checks": [
+      {
+        "name": "name",
+        "result": "review",
+        "score": 0.5217,
+        "reasons": [
+          "NAME_MISMATCH"
+        ]
+      }
+    ],
+    "images": [
+      "document_front",
+      "document_back",
+      "face"
+    ],
+    "ruleset_version": "2026-10-12.2",
+    "evidence_sha256": "9f2c0d6e4b1a8c3f5e7d9b0a2c4e6f8a1b3d5f7091e2c4a6b8d0f2e4a6c8e0b2",
+    "reviewed_by": null,
+    "reviewed_at": null,
+    "review_note": null,
+    "completed_at": null
+  }
+}
+```
+
+Error responses:
+
+#### 404
+
+Assignment, signer or verification not found.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+
+#### 500
+
+See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 ### GET /v1/accounts/{accountId}
 
@@ -1596,12 +2503,12 @@ List the assignments belonging to the authenticated user's current account.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
-| `page` | query | no | `{"type":"integer","minimum":1}` | Page number. |
-| `per-page` | query | no | `{"type":"integer","maximum":100}` | Records per page (max 100). |
+| `page` | query | no | `{"type":"integer","minimum":1,"example":1}` | Page number. |
+| `per-page` | query | no | `{"type":"integer","maximum":100,"example":25}` | Records per page (max 100). |
 
 Request body: none.
 
-Success response:
+Success response (200):
 A page of assignments
 
 `application/json` schema:
@@ -1640,7 +2547,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -1657,6 +2564,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -1665,7 +2573,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -1685,8 +2593,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -1762,17 +2670,18 @@ Request body: required.
             "example": "615605f50e968054a5b7c9b8"
           },
           "verification_method": {
-            "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 0.5 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. Omit to default to `Email`.",
+            "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, and is charged 0.5 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Omit to default to `Email`.",
             "type": "string",
             "enum": [
               "Email",
               "Whatsapp",
-              "DigitalCertificate"
+              "DigitalCertificate",
+              "IdDocumentFaceMatchBasic"
             ],
             "example": "Email"
           },
           "notification_methods": {
-            "description": "How the signer is told a signature is being requested. **Exactly one method per signer** — the array shape is historical, and sending two returns `400`. The method must also be compatible with `verification_method`: `Email` verification takes `Email`, `Whatsapp` verification takes `Whatsapp`, and `DigitalCertificate` takes either. WhatsApp incurs an additional cost and is available only on paid subscriptions. Omit it to have it inferred from `verification_method`, or `{\"Email\"}` when neither is sent. See **Verification & Notification Methods** for the full pairing table.",
+            "description": "How the signer is told a signature is being requested. **Exactly one method per signer** — the array shape is historical, and sending two returns `400`. The method must also be compatible with `verification_method`: `Email` verification takes `Email`, `Whatsapp` verification takes `Whatsapp`, and `DigitalCertificate` and `IdDocumentFaceMatchBasic` take either. WhatsApp incurs an additional cost and is available only on paid subscriptions. Omit it to have it inferred from `verification_method`, or `{\"Email\"}` when neither is sent. See **Verification & Notification Methods** for the full pairing table.",
             "type": "array",
             "items": {
               "type": "string",
@@ -1856,37 +2765,21 @@ Example payload:
         "Email"
       ],
       "step": 1
-    }
-  ],
-  "entries": [
+    },
     {
-      "page_id": "string",
-      "fields": [
-        {
-          "signer_id": "string",
-          "field_id": "string",
-          "display_settings": {
-            "left": 69,
-            "top": 282,
-            "width": 421,
-            "height": 45.86,
-            "fontFamily": "Arial",
-            "fontSize": 22,
-            "backgroundColor": "#D5EBFF"
-          }
-        }
-      ]
+      "id": "615605f50e968054a5b7c9b9",
+      "verification_method": "Whatsapp",
+      "notification_methods": [
+        "Whatsapp"
+      ],
+      "step": 2
     }
   ],
-  "message": "string",
-  "expires_at": "2026-08-19T12:00:00Z",
-  "copy_receivers": [
-    "string"
-  ]
+  "expires_at": "2021-09-30T21:00:00Z"
 }
 ```
 
-Success response:
+Success response (200):
 The created assignment
 
 `application/json` schema:
@@ -1918,70 +2811,83 @@ Example payload:
   "message": "",
   "data": {
     "resource": "assignment",
-    "id": "615606ef81d199996981dbce",
+    "id": "615605f8f0cc742d680c62c5",
     "sender_email": "sender@example.com",
     "method": "virtual",
-    "expires_at": "2026-08-19T12:00:00Z",
-    "message": "string",
+    "expires_at": "2021-09-30T21:00:00Z",
+    "message": null,
     "signers": [
       {
-        "resource": "signer",
-        "id": "62d6ee35c7741ca4006b9e11",
-        "full_name": "John Signer",
-        "email": "john@example.com",
-        "whatsapp_phone_number": "+5548999990000",
-        "government_id": "39053344705",
-        "has_accepted_terms": false,
+        "id": "615605f50e968054a5b7c9b8",
+        "full_name": "John Dove",
+        "email": "joe@example.com",
         "verification_method": "Email",
         "notification_methods": [
           "Email"
         ],
         "step": 1,
+        "notified": true,
+        "completed": false
+      },
+      {
+        "id": "615605f50e968054a5b7c9b9",
+        "full_name": "Jane Doe",
+        "email": "jane@example.com",
+        "verification_method": "Whatsapp",
+        "notification_methods": [
+          "Whatsapp"
+        ],
+        "step": 2,
         "notified": false,
-        "completed": false,
-        "notification_history": [
-          {
-            "event": "signature_request",
-            "status": "sent",
-            "error_code": "string",
-            "error_message": "string",
-            "sent_at": "2026-07-07T12:00:00Z",
-            "failed_at": "2026-08-19T12:00:00Z"
-          }
-        ]
+        "completed": false
       }
     ],
-    "copy_receivers": [
-      {}
-    ],
+    "copy_receivers": [],
     "items": [
       {
-        "id": "string",
-        "page": {
-          "id": "615601faf166d6d1d8e7dc30",
-          "number": 1,
-          "height": 2100,
-          "width": 1275,
-          "download_url": "https://api.assinafy.com.br/v1/documents/doc1/pages/1a/download"
+        "id": "615605f8e4a097c44247bd8e",
+        "page": null,
+        "signer": {
+          "id": "615605f50e968054a5b7c9b8",
+          "full_name": "John Dove",
+          "email": "joe@example.com"
         },
-        "signer": {},
-        "field": {},
-        "display_settings": {},
-        "value": {},
+        "field": {
+          "id": "61521202f2f86152752c6a1b",
+          "name": "Virtual",
+          "type": "virtual"
+        },
+        "display_settings": [],
+        "value": null,
         "completed": false
       }
     ],
     "summary": {
-      "signer_count": 0,
+      "signer_count": 2,
       "completed_count": 0,
       "signers": [
-        {}
+        {
+          "id": "615605f50e968054a5b7c9b8",
+          "full_name": "John Dove",
+          "email": "joe@example.com",
+          "completed": false
+        },
+        {
+          "id": "615605f50e968054a5b7c9b9",
+          "full_name": "Jane Doe",
+          "email": "jane@example.com",
+          "completed": false
+        }
       ]
     },
     "signing_urls": [
       {
-        "signer_id": "string",
-        "url": "https://api.assinafy.com.br/v1/sign/doc1?email=joe@example.com"
+        "signer_id": "615605f50e968054a5b7c9b8",
+        "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=joe@example.com"
+      },
+      {
+        "signer_id": "615605f50e968054a5b7c9b9",
+        "url": "https://api.assinafy.com.br/v1/sign/615213edf8a58f132e1b2384?email=jane@example.com"
       }
     ]
   }
@@ -2045,12 +2951,13 @@ Request body: required.
       "items": {
         "properties": {
           "verification_method": {
-            "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification.",
+            "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification. `IdDocumentFaceMatchBasic` requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged a per-signer fee.",
             "type": "string",
             "enum": [
               "Email",
               "Whatsapp",
-              "DigitalCertificate"
+              "DigitalCertificate",
+              "IdDocumentFaceMatchBasic"
             ],
             "example": "Whatsapp"
           },
@@ -2100,7 +3007,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 Cost estimate and balances
 
 `application/json` schema:
@@ -2148,7 +3055,7 @@ Example payload:
     "document_balance": 0,
     "credit_balance": 0,
     "has_sufficient_resources": false,
-    "blocking_reason": "PendingPayment",
+    "blocking_reason": null,
     "message": "string"
   }
 }
@@ -2361,7 +3268,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 The updated assignment
 
 `application/json` schema:
@@ -2396,7 +3303,7 @@ Example payload:
     "id": "615606ef81d199996981dbce",
     "sender_email": "sender@example.com",
     "method": "virtual",
-    "expires_at": "2026-08-19T12:00:00Z",
+    "expires_at": null,
     "message": "string",
     "signers": [
       {
@@ -2413,6 +3320,7 @@ Example payload:
         ],
         "step": 1,
         "notified": false,
+        "identity_verification_status": "InReview",
         "completed": false,
         "notification_history": [
           {
@@ -2421,7 +3329,7 @@ Example payload:
             "error_code": "string",
             "error_message": "string",
             "sent_at": "2026-07-07T12:00:00Z",
-            "failed_at": "2026-08-19T12:00:00Z"
+            "failed_at": null
           }
         ]
       }
@@ -2441,8 +3349,8 @@ Example payload:
         },
         "signer": {},
         "field": {},
-        "display_settings": {},
-        "value": {},
+        "display_settings": null,
+        "value": null,
         "completed": false
       }
     ],
@@ -2469,13 +3377,13 @@ Error responses:
 
 See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -3013,12 +3921,12 @@ List documents of the workspace.
 | `search` | query | no | `{"type":"string"}` | Partial match on document.name, signer.full_name, signer.email. |
 | `tags` | query | no | `{"type":"string"}` | Comma-separated tag IDs; returns documents having ALL listed tags. |
 | `sort` | query | no | `{"type":"string"}` | Sort by `name` or `updated_at`. |
-| `page` | query | no | `{"type":"integer","minimum":1}` | Page number. |
-| `per-page` | query | no | `{"type":"integer","maximum":100}` | Records per page (max 100). |
+| `page` | query | no | `{"type":"integer","minimum":1,"example":1}` | Page number. |
+| `per-page` | query | no | `{"type":"integer","maximum":100,"example":25}` | Records per page (max 100). |
 
 Request body: none.
 
-Success response:
+Success response (200):
 A page of documents
 
 `application/json` schema:
@@ -3056,7 +3964,7 @@ Example payload:
       "resource": "document",
       "id": "615601fab04c0a3147bb1246",
       "account_id": "d199996981dbd199996981db",
-      "template_id": "string",
+      "template_id": null,
       "name": "document.pdf",
       "status": "metadata_ready",
       "artifacts": {
@@ -3064,7 +3972,7 @@ Example payload:
       },
       "is_closed": false,
       "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-      "decline_reason": "string",
+      "decline_reason": null,
       "declined_by": {
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
@@ -3085,7 +3993,7 @@ Example payload:
         "id": "615606ef81d199996981dbce",
         "sender_email": "sender@example.com",
         "method": "virtual",
-        "expires_at": "2026-08-19T12:00:00Z",
+        "expires_at": null,
         "message": "string",
         "signers": [
           {
@@ -3102,15 +4010,16 @@ Example payload:
             ],
             "step": 1,
             "notified": false,
+            "identity_verification_status": "InReview",
             "completed": false,
             "notification_history": [
               {
-                "event": "signature_request",
-                "status": "sent",
-                "error_code": "string",
-                "error_message": "string",
-                "sent_at": "2026-07-07T12:00:00Z",
-                "failed_at": "2026-08-19T12:00:00Z"
+                "event": null,
+                "status": null,
+                "error_code": null,
+                "error_message": null,
+                "sent_at": null,
+                "failed_at": null
               }
             ]
           }
@@ -3130,8 +4039,8 @@ Example payload:
             },
             "signer": {},
             "field": {},
-            "display_settings": {},
-            "value": {},
+            "display_settings": null,
+            "value": null,
             "completed": false
           }
         ],
@@ -3204,7 +4113,15 @@ Request body: required.
 }
 ```
 
-Success response:
+Example payload:
+
+```json
+{
+  "file": "string"
+}
+```
+
+Success response (200):
 The created document
 
 `application/json` schema:
@@ -3238,7 +4155,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -3246,7 +4163,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -3267,7 +4184,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -3284,6 +4201,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -3292,7 +4210,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -3312,8 +4230,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -3371,12 +4289,12 @@ Search documents of the workspace, returning a compact representation (no expand
 | `accountId` | path | yes | `{"type":"string"}` | Workspace account ID. |
 | `search` | query | no | `{"type":"string"}` | Search term. |
 | `status` | query | no | `{"type":"string"}` |  |
-| `page` | query | no | `{"type":"integer","minimum":1}` | Page number. |
-| `per-page` | query | no | `{"type":"integer","maximum":100}` | Records per page (max 100). |
+| `page` | query | no | `{"type":"integer","minimum":1,"example":1}` | Page number. |
+| `per-page` | query | no | `{"type":"integer","maximum":100,"example":25}` | Records per page (max 100). |
 
 Request body: none.
 
-Success response:
+Success response (200):
 Matching documents
 
 `application/json` schema:
@@ -3414,7 +4332,7 @@ Example payload:
       "resource": "document",
       "id": "615601fab04c0a3147bb1246",
       "account_id": "d199996981dbd199996981db",
-      "template_id": "string",
+      "template_id": null,
       "name": "document.pdf",
       "status": "metadata_ready",
       "artifacts": {
@@ -3422,7 +4340,7 @@ Example payload:
       },
       "is_closed": false,
       "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-      "decline_reason": "string",
+      "decline_reason": null,
       "declined_by": {
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
@@ -3443,7 +4361,7 @@ Example payload:
         "id": "615606ef81d199996981dbce",
         "sender_email": "sender@example.com",
         "method": "virtual",
-        "expires_at": "2026-08-19T12:00:00Z",
+        "expires_at": null,
         "message": "string",
         "signers": [
           {
@@ -3460,15 +4378,16 @@ Example payload:
             ],
             "step": 1,
             "notified": false,
+            "identity_verification_status": "InReview",
             "completed": false,
             "notification_history": [
               {
-                "event": "signature_request",
-                "status": "sent",
-                "error_code": "string",
-                "error_message": "string",
-                "sent_at": "2026-07-07T12:00:00Z",
-                "failed_at": "2026-08-19T12:00:00Z"
+                "event": null,
+                "status": null,
+                "error_code": null,
+                "error_message": null,
+                "sent_at": null,
+                "failed_at": null
               }
             ]
           }
@@ -3488,8 +4407,8 @@ Example payload:
             },
             "signer": {},
             "field": {},
-            "display_settings": {},
-            "value": {},
+            "display_settings": null,
+            "value": null,
             "completed": false
           }
         ],
@@ -3550,6 +4469,7 @@ The supported document statuses and whether a document in each status can be del
 | `certificated` | no | The document is certificated. |
 | `rejected_by_signer` | yes | A signer declined signing the document. |
 | `pending_signature` | yes | The document is waiting for signatures. |
+| `pending_identity_review` | yes | Every signer has signed; the document waits for the account to review a signer's identity before it is certificated. Deleting it cancels it and notifies the signers. |
 | `rejected_by_user` | yes | The signature process was cancelled by a user. |
 | `failed` | yes | The document processing has failed. |
 
@@ -3557,7 +4477,7 @@ Parameters: none.
 
 Request body: none.
 
-Success response:
+Success response (200):
 Supported statuses
 
 `application/json` schema:
@@ -3621,7 +4541,7 @@ Get a document by its ID. `decline_reason` is only present when the access token
 
 Request body: none.
 
-Success response:
+Success response (200):
 The document
 
 `application/json` schema:
@@ -3655,7 +4575,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -3663,7 +4583,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -3684,7 +4604,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -3701,6 +4621,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -3709,7 +4630,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -3729,8 +4650,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -3765,13 +4686,13 @@ Example payload:
 
 Error responses:
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -3876,7 +4797,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 The updated document
 
 `application/json` schema:
@@ -3910,7 +4831,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -3918,7 +4839,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -3939,7 +4860,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -3956,6 +4877,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -3964,7 +4886,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -3984,8 +4906,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -4024,13 +4946,13 @@ Error responses:
 
 See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -5895,7 +6817,7 @@ Retrieve a publicly shared document by ID. Public endpoint.
 
 Request body: none.
 
-Success response:
+Success response (200):
 The public document
 
 `application/json` schema:
@@ -5929,7 +6851,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -5937,7 +6859,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -5958,7 +6880,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -5975,6 +6897,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -5983,7 +6906,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -6003,8 +6926,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -6293,7 +7216,7 @@ Request body: required.
       "example": "+5548999990000"
     },
     "government_id": {
-      "description": "Signer's CPF (11 digits) or CNPJ (14 characters; may be alphanumeric). Formatting is accepted and the value is normalized on save.",
+      "description": "Signer's CPF (11 digits) or CNPJ (14 characters; may be alphanumeric). Formatting is accepted and the value is normalized on save. Required before the signer can use a verification method that identifies them by CPF.",
       "type": "string",
       "example": "390.533.447-05"
     }
@@ -6313,7 +7236,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 The created signer
 
 `application/json` schema:
@@ -6619,13 +7542,15 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Get current signer. Security: **signerAccessCode**.
 
-Return the signer identified by the signer access code, including the `has_signature`/`has_initial`/`is_signature_reusable` flags.
+Return the signer identified by the signer access code, including the `has_signature`/`has_initial`/`is_signature_reusable` flags and the `verification_method` of this signature request. Available before verification, so the signing page can pick the right first step.
 
-Parameters: none.
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 The signer
 
 `application/json` schema:
@@ -6665,7 +7590,8 @@ Example payload:
     "has_accepted_terms": false,
     "has_signature": true,
     "has_initial": false,
-    "is_signature_reusable": false
+    "is_signature_reusable": false,
+    "verification_method": "Email"
   }
 }
 ```
@@ -6689,10 +7615,11 @@ Return the document and the signer's assignment items, scoped to the signer acce
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 The document with the signer's items
 
 `application/json` schema:
@@ -6726,7 +7653,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -6734,7 +7661,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -6755,7 +7682,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -6772,6 +7699,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -6780,7 +7708,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -6800,8 +7728,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -6836,13 +7764,13 @@ Example payload:
 
 Error responses:
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -6859,10 +7787,11 @@ Retrieve the document a signer has been invited to sign, using the signer access
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `has_accepted_terms` | query | no | `{"type":"boolean"}` | Set true to record terms acceptance. |
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 The document with the signer's assignment
 
 `application/json` schema:
@@ -6896,7 +7825,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -6904,7 +7833,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -6925,7 +7854,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -6942,6 +7871,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -6950,7 +7880,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -6970,8 +7900,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -7010,17 +7940,13 @@ Error responses:
 
 A digital-certificate signer has not yet confirmed their data or accepted the terms.
 
-No response payload documented.
-
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 409
 
 The document is not ready to be viewed yet.
 
-No response payload documented.
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -7502,6 +8428,7 @@ The signer confirms or updates their data before signing. Uses the signer access
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `documentId` | path | yes | `{"type":"string"}` | Document ID. |
+| `signer-access-code` | query | yes | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: required.
 `application/json` schema:
@@ -7517,7 +8444,9 @@ Request body: required.
       "format": "email"
     },
     "government_id": {
-      "type": "string"
+      "description": "Signer's CPF/CNPJ; digits only on save.",
+      "type": "string",
+      "example": "39053344705"
     }
   },
   "type": "object"
@@ -7529,12 +8458,12 @@ Example payload:
 ```json
 {
   "full_name": "string",
-  "email": "user@example.com",
-  "government_id": "string"
+  "email": "signer@example.com",
+  "government_id": "39053344705"
 }
 ```
 
-Success response:
+Success response (200):
 Data confirmed
 
 `application/json` schema:
@@ -7724,12 +8653,13 @@ List the documents a signer is party to. Accepts either the signer access code o
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
-| `page` | query | no | `{"type":"integer","minimum":1}` | Page number. |
-| `per-page` | query | no | `{"type":"integer","maximum":100}` | Records per page (max 100). |
+| `page` | query | no | `{"type":"integer","minimum":1,"example":1}` | Page number. |
+| `per-page` | query | no | `{"type":"integer","maximum":100,"example":25}` | Records per page (max 100). |
+| `signer-access-code` | query | no | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 The signer's documents
 
 `application/json` schema:
@@ -7767,7 +8697,7 @@ Example payload:
       "resource": "document",
       "id": "615601fab04c0a3147bb1246",
       "account_id": "d199996981dbd199996981db",
-      "template_id": "string",
+      "template_id": null,
       "name": "document.pdf",
       "status": "metadata_ready",
       "artifacts": {
@@ -7775,7 +8705,7 @@ Example payload:
       },
       "is_closed": false,
       "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-      "decline_reason": "string",
+      "decline_reason": null,
       "declined_by": {
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
@@ -7796,7 +8726,7 @@ Example payload:
         "id": "615606ef81d199996981dbce",
         "sender_email": "sender@example.com",
         "method": "virtual",
-        "expires_at": "2026-08-19T12:00:00Z",
+        "expires_at": null,
         "message": "string",
         "signers": [
           {
@@ -7813,15 +8743,16 @@ Example payload:
             ],
             "step": 1,
             "notified": false,
+            "identity_verification_status": "InReview",
             "completed": false,
             "notification_history": [
               {
-                "event": "signature_request",
-                "status": "sent",
-                "error_code": "string",
-                "error_message": "string",
-                "sent_at": "2026-07-07T12:00:00Z",
-                "failed_at": "2026-08-19T12:00:00Z"
+                "event": null,
+                "status": null,
+                "error_code": null,
+                "error_message": null,
+                "sent_at": null,
+                "failed_at": null
               }
             ]
           }
@@ -7841,8 +8772,8 @@ Example payload:
             },
             "signer": {},
             "field": {},
-            "display_settings": {},
-            "value": {},
+            "display_settings": null,
+            "value": null,
             "completed": false
           }
         ],
@@ -7896,10 +8827,11 @@ Search the documents a signer is party to (compact representation). Accepts eith
 |---|---|---:|---|---|
 | `signerId` | path | yes | `{"type":"string"}` | The signer ID. |
 | `search` | query | no | `{"type":"string"}` | Search term. |
+| `signer-access-code` | query | no | `{"type":"string"}` | Signer access code; workspace credentials are omitted for signer requests. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 Matching documents
 
 `application/json` schema:
@@ -7937,7 +8869,7 @@ Example payload:
       "resource": "document",
       "id": "615601fab04c0a3147bb1246",
       "account_id": "d199996981dbd199996981db",
-      "template_id": "string",
+      "template_id": null,
       "name": "document.pdf",
       "status": "metadata_ready",
       "artifacts": {
@@ -7945,7 +8877,7 @@ Example payload:
       },
       "is_closed": false,
       "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-      "decline_reason": "string",
+      "decline_reason": null,
       "declined_by": {
         "resource": "signer",
         "id": "62d6ee35c7741ca4006b9e11",
@@ -7966,7 +8898,7 @@ Example payload:
         "id": "615606ef81d199996981dbce",
         "sender_email": "sender@example.com",
         "method": "virtual",
-        "expires_at": "2026-08-19T12:00:00Z",
+        "expires_at": null,
         "message": "string",
         "signers": [
           {
@@ -7983,15 +8915,16 @@ Example payload:
             ],
             "step": 1,
             "notified": false,
+            "identity_verification_status": "InReview",
             "completed": false,
             "notification_history": [
               {
-                "event": "signature_request",
-                "status": "sent",
-                "error_code": "string",
-                "error_message": "string",
-                "sent_at": "2026-07-07T12:00:00Z",
-                "failed_at": "2026-08-19T12:00:00Z"
+                "event": null,
+                "status": null,
+                "error_code": null,
+                "error_message": null,
+                "sent_at": null,
+                "failed_at": null
               }
             ]
           }
@@ -8011,8 +8944,8 @@ Example payload:
             },
             "signer": {},
             "field": {},
-            "display_settings": {},
-            "value": {},
+            "display_settings": null,
+            "value": null,
             "completed": false
           }
         ],
@@ -8991,12 +9924,13 @@ Request body: required.
             "example": "fa8c140cb49b79f940aab95fddd"
           },
           "verification_method": {
-            "description": "Verification method for this signer. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id` (a CPF requires that person's certificate; a CNPJ requires an e-CNPJ for that company), must be alone in its signing step, and is charged 0.5 credits per signer. Only applies to signers (not copy receivers).",
+            "description": "Verification method for this signer. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id` (a CPF requires that person's certificate; a CNPJ requires an e-CNPJ for that company), must be alone in its signing step, and is charged 0.5 credits per signer. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Only applies to signers (not copy receivers).",
             "type": "string",
             "enum": [
               "Email",
               "Whatsapp",
-              "DigitalCertificate"
+              "DigitalCertificate",
+              "IdDocumentFaceMatchBasic"
             ],
             "example": "Email"
           },
@@ -9100,7 +10034,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 The created document
 
 `application/json` schema:
@@ -9134,7 +10068,7 @@ Example payload:
     "resource": "document",
     "id": "615601fab04c0a3147bb1246",
     "account_id": "d199996981dbd199996981db",
-    "template_id": "string",
+    "template_id": null,
     "name": "document.pdf",
     "status": "metadata_ready",
     "artifacts": {
@@ -9142,7 +10076,7 @@ Example payload:
     },
     "is_closed": false,
     "signing_url": "https://api.assinafy.com.br/v1/sign/doc1",
-    "decline_reason": "string",
+    "decline_reason": null,
     "declined_by": {
       "resource": "signer",
       "id": "62d6ee35c7741ca4006b9e11",
@@ -9163,7 +10097,7 @@ Example payload:
       "id": "615606ef81d199996981dbce",
       "sender_email": "sender@example.com",
       "method": "virtual",
-      "expires_at": "2026-08-19T12:00:00Z",
+      "expires_at": null,
       "message": "string",
       "signers": [
         {
@@ -9180,6 +10114,7 @@ Example payload:
           ],
           "step": 1,
           "notified": false,
+          "identity_verification_status": "InReview",
           "completed": false,
           "notification_history": [
             {
@@ -9188,7 +10123,7 @@ Example payload:
               "error_code": "string",
               "error_message": "string",
               "sent_at": "2026-07-07T12:00:00Z",
-              "failed_at": "2026-08-19T12:00:00Z"
+              "failed_at": null
             }
           ]
         }
@@ -9208,8 +10143,8 @@ Example payload:
           },
           "signer": {},
           "field": {},
-          "display_settings": {},
-          "value": {},
+          "display_settings": null,
+          "value": null,
           "completed": false
         }
       ],
@@ -9290,12 +10225,13 @@ Request body: required.
             "example": "fa8c14f32d732271e071998246e"
           },
           "verification_method": {
-            "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (0.5 credits) on top of the notification cost.",
+            "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (0.5 credits) on top of the notification cost. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged a per-signer fee.",
             "type": "string",
             "enum": [
               "Email",
               "Whatsapp",
-              "DigitalCertificate"
+              "DigitalCertificate",
+              "IdDocumentFaceMatchBasic"
             ],
             "example": "Whatsapp"
           },
@@ -9334,7 +10270,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 Cost estimate
 
 `application/json` schema:
@@ -9382,7 +10318,7 @@ Example payload:
     "document_balance": 0,
     "credit_balance": 0,
     "has_sufficient_resources": false,
-    "blocking_reason": "PendingPayment",
+    "blocking_reason": null,
     "message": "string"
   }
 }
@@ -10144,10 +11080,11 @@ List the account's webhook endpoints, oldest first. Requires the `account:read` 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
 | `accountId` | path | yes | `{"type":"string"}` | Workspace account ID. |
+| `url` | query | no | `{"type":"string","format":"uri"}` | Only the endpoint registered with exactly this URL. |
 
 Request body: none.
 
-Success response:
+Success response (200):
 The endpoints
 
 `application/json` schema:
@@ -10213,7 +11150,7 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Create webhook endpoint. Security: **bearerAuth or apiKeyAuth**.
 
-Register a URL to receive the account's webhook events. An account can have 1 endpoint, or up to 3 on paid plans; creating one past the limit returns `403`. Each endpoint of a workspace must have a different `url` (`400` otherwise). When `signing_enabled` is `true`, a signing secret is generated: read it with **Get webhook endpoint signing secret**. Requires the `webhooks:write` OAuth scope.
+Register a URL to receive the account's webhook events. An account can have 1 endpoint, or up to 3 on paid plans; creating one past the limit returns `403`. Each endpoint of a workspace must have a different `url` (`400` otherwise). When `signing_enabled` is `true`, a signing secret is generated and returned once, as `secret` in this response — store it, since it is never shown in list or view responses. It can be read again later with **Get webhook endpoint signing secret**, except by OAuth applications: an OAuth application that loses the secret must delete the endpoint and create a new one. Requires the `webhooks:write` OAuth scope.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -10289,7 +11226,7 @@ Example payload:
 }
 ```
 
-Success response:
+Success response (200):
 The created endpoint
 
 `application/json` schema:
@@ -10304,7 +11241,22 @@ The created endpoint
     {
       "properties": {
         "data": {
-          "$ref": "#/components/schemas/WebhookEndpoint"
+          "type": "object",
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/WebhookEndpoint"
+            },
+            {
+              "properties": {
+                "secret": {
+                  "description": "Standard Webhooks signing secret: `whsec_` followed by the base64-encoded key. Present only when `signing_enabled` is `true`.",
+                  "type": "string",
+                  "example": "whsec_ZXhhbXBsZQ=="
+                }
+              },
+              "type": "object"
+            }
+          ]
         }
       },
       "type": "object"
@@ -10331,7 +11283,8 @@ Example payload:
     "is_active": true,
     "signing_enabled": true,
     "created_at": "2026-10-01T12:00:00Z",
-    "updated_at": "2026-10-01T12:00:00Z"
+    "updated_at": "2026-10-01T12:00:00Z",
+    "secret": "whsec_ZXhhbXBsZQ=="
   }
 }
 ```
@@ -10342,13 +11295,15 @@ Error responses:
 
 See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
-
 #### 403
 
 See [Forbidden](#shared-forbidden) for the complete JSON schema and payload.
+
+The account already has as many endpoints as its plan allows.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -10628,7 +11583,7 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Get webhook endpoint signing secret. Security: **bearerAuth or apiKeyAuth**.
 
-Return the secret used to sign deliveries to this endpoint (see **Webhook Payloads → Verifying signatures**). Returns `400` when signing is disabled. Not available to OAuth applications.
+Return the secret used to sign deliveries to this endpoint (see **Webhook Payloads → Verifying signatures**). Returns `400` when signing is disabled. Not available to OAuth applications, which receive the secret in the **Create webhook endpoint** response instead.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -10637,7 +11592,7 @@ Return the secret used to sign deliveries to this endpoint (see **Webhook Payloa
 
 Request body: none.
 
-Success response:
+Success response (200):
 The secret
 
 `application/json` schema:
@@ -10679,13 +11634,15 @@ Error responses:
 
 See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+Signing is not enabled for this endpoint.
 
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -10695,7 +11652,7 @@ See [ServerError](#shared-servererror) for the complete JSON schema and payload.
 
 Rotate webhook endpoint signing secret. Security: **bearerAuth or apiKeyAuth**.
 
-Replace the endpoint's signing secret and return the new one. The old secret stops working immediately, so update your receiver right away. Returns `400` when signing is disabled. Not available to OAuth applications.
+Replace the endpoint's signing secret and return the new one. The old secret stops working immediately, so update your receiver right away. Returns `400` when signing is disabled. Not available to OAuth applications, which delete the endpoint and create a new one instead.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -10704,7 +11661,7 @@ Replace the endpoint's signing secret and return the new one. The old secret sto
 
 Request body: none.
 
-Success response:
+Success response (200):
 The new secret
 
 `application/json` schema:
@@ -10746,13 +11703,15 @@ Error responses:
 
 See [ValidationError](#shared-validationerror) for the complete JSON schema and payload.
 
-#### 401
-
-See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
+Signing is not enabled for this endpoint.
 
 #### 404
 
 See [NotFound](#shared-notfound) for the complete JSON schema and payload.
+
+#### 401
+
+See [Unauthorized](#shared-unauthorized) for the complete JSON schema and payload.
 
 #### 500
 
@@ -11153,6 +12112,17 @@ Full schema:
           "description": "Whether the signer opted to reuse their saved signature/initials in future processes. When false, clients should not pre-render the saved image even if `has_signature`/`has_initial` is true.",
           "type": "boolean",
           "example": false
+        },
+        "verification_method": {
+          "description": "How this signature request verifies the signer. `Email`/`Whatsapp` ask for the 6-digit code; `IdDocumentFaceMatchBasic` runs the identity document check instead (see **Identity document verification status**).",
+          "type": "string",
+          "enum": [
+            "Email",
+            "Whatsapp",
+            "DigitalCertificate",
+            "IdDocumentFaceMatchBasic"
+          ],
+          "example": "Email"
         }
       },
       "type": "object"
@@ -11174,7 +12144,8 @@ Example payload:
   "has_accepted_terms": false,
   "has_signature": true,
   "has_initial": false,
-  "is_signature_reusable": false
+  "is_signature_reusable": false,
+  "verification_method": "Email"
 }
 ```
 
@@ -11844,6 +12815,22 @@ Full schema:
             "null"
           ]
         },
+        "identity_verification_status": {
+          "description": "Latest identity-document verification status; `InReview` means the account must decide it before the document can be certificated.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Pending",
+            "InReview",
+            "Approved",
+            "Declined",
+            "Expired",
+            "Abandoned"
+          ],
+          "example": "InReview"
+        },
         "completed": {
           "description": "Only present in account-owner contexts.",
           "type": [
@@ -11885,6 +12872,7 @@ Example payload:
   ],
   "step": 1,
   "notified": false,
+  "identity_verification_status": "InReview",
   "completed": false,
   "notification_history": [
     {
@@ -11893,7 +12881,7 @@ Example payload:
       "error_code": "string",
       "error_message": "string",
       "sent_at": "2026-07-07T12:00:00Z",
-      "failed_at": "2026-08-19T12:00:00Z"
+      "failed_at": null
     }
   ]
 }
@@ -13526,6 +14514,309 @@ Example payload:
 }
 ```
 
+### Schema: SignerIdentityReview
+
+Full schema:
+
+```json
+{
+  "properties": {
+    "id": {
+      "type": "string",
+      "example": "104c267f8e1e8c6855d7788b76a8"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "InReview",
+        "Approved",
+        "Declined",
+        "Expired",
+        "Abandoned"
+      ],
+      "example": "InReview"
+    },
+    "provider": {
+      "type": "string",
+      "enum": [
+        "AssinafyVerify"
+      ],
+      "example": "AssinafyVerify"
+    },
+    "verification_method": {
+      "type": "string",
+      "enum": [
+        "IdDocumentFaceMatchBasic"
+      ],
+      "example": "IdDocumentFaceMatchBasic"
+    },
+    "reason_codes": {
+      "description": "Why the provider sent it to review, in its order. Unknown codes have the code as description.",
+      "type": "array",
+      "items": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "NAME_MISMATCH"
+          },
+          "description": {
+            "type": "string",
+            "example": "Nome no documento difere do cadastrado (similaridade 52%)"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "evidence_available": {
+      "type": "boolean",
+      "example": true
+    },
+    "expected": {
+      "description": "What the signer was registered with.",
+      "properties": {
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "example": "Maria da Silva"
+        },
+        "cpf": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "example": "52998224725"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "document": {
+      "description": "What was read from the document.",
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "example": "CNH"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "example": "MARIA SILVA"
+        },
+        "cpf": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "example": "52998224725"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "matches": {
+      "properties": {
+        "cpf": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "example": true
+        },
+        "name": {
+          "description": "Name similarity, 0-1.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "example": 0.5217
+        },
+        "birth_date": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "example": null
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "name"
+          },
+          "result": {
+            "description": "pass, review, skipped, or a failure result.",
+            "type": "string",
+            "example": "review"
+          },
+          "score": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "example": 0.5217
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "NAME_MISMATCH"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "images": {
+      "description": "The evidence images the reviewer can open with **Signer identity review image**, in display order: `document_front`, `document_back`, `document_pdf`, `face`. Only while `status` is `InReview`; empty once decided.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "document_front",
+          "document_back",
+          "document_pdf",
+          "face"
+        ]
+      },
+      "example": [
+        "document_front",
+        "document_back",
+        "face"
+      ]
+    },
+    "ruleset_version": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "2026-10-12.2"
+    },
+    "evidence_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "9f2c0d6e4b1a8c3f5e7d9b0a2c4e6f8a1b3d5f7091e2c4a6b8d0f2e4a6c8e0b2"
+    },
+    "reviewed_by": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "example": "Kx9pQ2"
+        },
+        "name": {
+          "type": "string",
+          "example": "Ana Souza"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "reviewed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "example": "2026-10-13T21:05:00Z"
+    },
+    "review_note": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "Conferido por videochamada."
+    },
+    "completed_at": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "example": "2026-10-13T21:05:00Z"
+    }
+  },
+  "type": "object"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": "104c267f8e1e8c6855d7788b76a8",
+  "status": "InReview",
+  "provider": "AssinafyVerify",
+  "verification_method": "IdDocumentFaceMatchBasic",
+  "reason_codes": [
+    {
+      "code": "NAME_MISMATCH",
+      "description": "Nome no documento difere do cadastrado (similaridade 52%)"
+    }
+  ],
+  "evidence_available": true,
+  "expected": {
+    "name": "Maria da Silva",
+    "cpf": "52998224725"
+  },
+  "document": {
+    "type": "CNH",
+    "name": "MARIA SILVA",
+    "cpf": "52998224725"
+  },
+  "matches": {
+    "cpf": true,
+    "name": 0.5217,
+    "birth_date": null
+  },
+  "checks": [
+    {
+      "name": "name",
+      "result": "review",
+      "score": 0.5217,
+      "reasons": [
+        "NAME_MISMATCH"
+      ]
+    }
+  ],
+  "images": [
+    "document_front",
+    "document_back",
+    "face"
+  ],
+  "ruleset_version": "2026-10-12.2",
+  "evidence_sha256": "9f2c0d6e4b1a8c3f5e7d9b0a2c4e6f8a1b3d5f7091e2c4a6b8d0f2e4a6c8e0b2",
+  "reviewed_by": null,
+  "reviewed_at": null,
+  "review_note": null,
+  "completed_at": null
+}
+```
+
 ### Schema: DocumentStatsRow
 
 Full schema:
@@ -13937,8 +15228,10 @@ Success response schema (`application/json`, flat JSON):
     },
     "refresh_token": {
       "description": "Present only when the `offline_access` scope was requested AND consented on the authorization_code/refresh_token grants. Never present for the token-exchange grant. Without it a client must send the user through the authorization flow again once the access token expires.",
-      "type": "string",
-      "nullable": true
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "scope": {
       "description": "The scope of the ACCESS token. `offline_access` is a request-time signal rather than a permission, so it never appears here even when it was requested.",
@@ -13947,8 +15240,10 @@ Success response schema (`application/json`, flat JSON):
     },
     "id_token": {
       "description": "A signed OIDC id_token (RS256). Present only when the openid scope was granted.",
-      "type": "string",
-      "nullable": true
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "type": "object"
@@ -14061,18 +15356,24 @@ Success response schema (`application/json`, flat JSON):
       "example": "d6zqpbyog2v3xvxerwn8la94"
     },
     "name": {
-      "type": "string",
-      "example": "Maria Silva",
-      "nullable": true
+      "type": [
+        "string",
+        "null"
+      ],
+      "example": "Maria Silva"
     },
     "email": {
-      "type": "string",
-      "format": "email",
-      "nullable": true
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "email"
     },
     "email_verified": {
-      "type": "boolean",
-      "nullable": true
+      "type": [
+        "boolean",
+        "null"
+      ]
     }
   },
   "type": "object"
@@ -16446,6 +17747,829 @@ Example payload:
   "account_id": "65f1c2a9b3e4d5f6"
 }
 ```
+
+### Event `signer_identity_verified`
+
+The signer passed identity-document verification (directly, or approved by the account after review). **Subject:** Signer · **Object:** Document · **Payload:** `signer_full_name`, and `evidence` when the provider keeps one: what was read off the document (`document_type`, `document_name`), `cpf_match`, `name_similarity` (0-1), for each check its `name`, `result` and `score`, and `evidence_sha256`. No images.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `webhook-id` | header | yes | `{"type":"string"}` | Message ID: the same on every attempt of this event to this endpoint. Use it to deduplicate retries. |
+| `webhook-timestamp` | header | yes | `{"type":"string"}` | Unix timestamp (seconds) of this attempt. |
+| `webhook-signature` | header | no | `{"type":"string"}` | Sent only when signing is enabled on the endpoint: `v1,<base64 HMAC-SHA256>`. See **Verifying signatures**. |
+
+Request body sent to the endpoint:
+`application/json` schema:
+
+```json
+{
+  "$ref": "#/components/schemas/WebhookEvent"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": 184406,
+  "event": "signer_identity_verified",
+  "message": null,
+  "payload": {
+    "signer_full_name": "João da Silva",
+    "evidence": {
+      "document_type": "CNH",
+      "document_name": "JOAO DA SILVA",
+      "cpf_match": true,
+      "name_similarity": 1,
+      "checks": [
+        {
+          "name": "name",
+          "result": "pass",
+          "score": 1
+        },
+        {
+          "name": "face_match",
+          "result": "pass",
+          "score": 0.94
+        },
+        {
+          "name": "liveness",
+          "result": "pass",
+          "score": 0.98
+        }
+      ],
+      "evidence_sha256": "9f2c0d6e4b1a8c3f5e7d9b0a2c4e6f8a1b3d5f7091e2c4a6b8d0f2e4a6c8e0b2"
+    }
+  },
+  "origin": null,
+  "created_at": 1790003600,
+  "subject": {
+    "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+    "full_name": "João da Silva",
+    "email": "joao.silva@example.com",
+    "whatsapp_phone_number": "+5548999990000",
+    "government_id": null,
+    "has_accepted_terms": true,
+    "type": "Signer"
+  },
+  "object": {
+    "id": "66b2f0e1c3a4d5e6f7a8b9c0",
+    "account_id": "65f1c2a9b3e4d5f6",
+    "template_id": null,
+    "name": "Contrato de Prestação de Serviços.pdf",
+    "status": "pending_signature",
+    "artifacts": {
+      "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
+      "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"
+    },
+    "is_closed": false,
+    "signing_url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0",
+    "decline_reason": null,
+    "declined_by": null,
+    "tags": [],
+    "created_at": 1790000000,
+    "updated_at": 1790000300,
+    "assignment": {
+      "id": "66b2f2b3c4d5e6f7a8b9c0d1",
+      "sender_email": "mariana@example.com",
+      "method": "virtual",
+      "expires_at": 1792592000,
+      "message": "Olá João, segue o contrato para assinatura.",
+      "signers": [
+        {
+          "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "full_name": "João da Silva",
+          "email": "joao.silva@example.com",
+          "whatsapp_phone_number": "+5548999990000",
+          "government_id": null,
+          "has_accepted_terms": false,
+          "completed": false,
+          "notification_history": [],
+          "verification_method": "Email",
+          "notification_methods": [
+            "Email"
+          ],
+          "step": 1,
+          "notified": true
+        }
+      ],
+      "copy_receivers": [],
+      "items": [
+        {
+          "id": "66b2f2b3c4d5e6f7a8b9c0d2",
+          "page": null,
+          "signer": {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false
+          },
+          "field": {
+            "id": "65f1c2aa0b1c2d3e4f5a6b7c",
+            "name": "Virtual",
+            "type": "virtual",
+            "regex": null,
+            "is_pre_defined": false,
+            "is_active": true,
+            "is_required": false,
+            "is_standard": false,
+            "is_read_only": false,
+            "is_visible": false
+          },
+          "display_settings": [],
+          "value": null,
+          "completed": false
+        }
+      ],
+      "summary": {
+        "signer_count": 1,
+        "completed_count": 0,
+        "signers": [
+          {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false,
+            "completed": false
+          }
+        ]
+      },
+      "signing_urls": [
+        {
+          "signer_id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0?email=joao.silva%40example.com"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e1",
+        "number": 1,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e1/download"
+      },
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e2",
+        "number": 2,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e2/download"
+      }
+    ],
+    "type": "Document"
+  },
+  "account_id": "65f1c2a9b3e4d5f6"
+}
+```
+
+Receiver response 2XX: Any `2xx` response acknowledges the delivery. Any other status, a connection error or a timeout counts as a failed attempt.
+
+### Event `signer_identity_verification_failed`
+
+The signer's identity-document verification ended without approval. **Subject:** Signer · **Object:** Document · **Payload:** `signer_full_name`, `reason` (`provider_declined`, `identity_binding_failed`, `workflow_capability_mismatch`, `reviewer_rejected`).
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `webhook-id` | header | yes | `{"type":"string"}` | Message ID: the same on every attempt of this event to this endpoint. Use it to deduplicate retries. |
+| `webhook-timestamp` | header | yes | `{"type":"string"}` | Unix timestamp (seconds) of this attempt. |
+| `webhook-signature` | header | no | `{"type":"string"}` | Sent only when signing is enabled on the endpoint: `v1,<base64 HMAC-SHA256>`. See **Verifying signatures**. |
+
+Request body sent to the endpoint:
+`application/json` schema:
+
+```json
+{
+  "$ref": "#/components/schemas/WebhookEvent"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": 184406,
+  "event": "signer_identity_verification_failed",
+  "message": null,
+  "payload": {
+    "signer_full_name": "João da Silva",
+    "reason": "provider_declined"
+  },
+  "origin": null,
+  "created_at": 1790003600,
+  "subject": {
+    "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+    "full_name": "João da Silva",
+    "email": "joao.silva@example.com",
+    "whatsapp_phone_number": "+5548999990000",
+    "government_id": null,
+    "has_accepted_terms": true,
+    "type": "Signer"
+  },
+  "object": {
+    "id": "66b2f0e1c3a4d5e6f7a8b9c0",
+    "account_id": "65f1c2a9b3e4d5f6",
+    "template_id": null,
+    "name": "Contrato de Prestação de Serviços.pdf",
+    "status": "pending_signature",
+    "artifacts": {
+      "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
+      "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"
+    },
+    "is_closed": false,
+    "signing_url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0",
+    "decline_reason": null,
+    "declined_by": null,
+    "tags": [],
+    "created_at": 1790000000,
+    "updated_at": 1790000300,
+    "assignment": {
+      "id": "66b2f2b3c4d5e6f7a8b9c0d1",
+      "sender_email": "mariana@example.com",
+      "method": "virtual",
+      "expires_at": 1792592000,
+      "message": "Olá João, segue o contrato para assinatura.",
+      "signers": [
+        {
+          "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "full_name": "João da Silva",
+          "email": "joao.silva@example.com",
+          "whatsapp_phone_number": "+5548999990000",
+          "government_id": null,
+          "has_accepted_terms": false,
+          "completed": false,
+          "notification_history": [],
+          "verification_method": "Email",
+          "notification_methods": [
+            "Email"
+          ],
+          "step": 1,
+          "notified": true
+        }
+      ],
+      "copy_receivers": [],
+      "items": [
+        {
+          "id": "66b2f2b3c4d5e6f7a8b9c0d2",
+          "page": null,
+          "signer": {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false
+          },
+          "field": {
+            "id": "65f1c2aa0b1c2d3e4f5a6b7c",
+            "name": "Virtual",
+            "type": "virtual",
+            "regex": null,
+            "is_pre_defined": false,
+            "is_active": true,
+            "is_required": false,
+            "is_standard": false,
+            "is_read_only": false,
+            "is_visible": false
+          },
+          "display_settings": [],
+          "value": null,
+          "completed": false
+        }
+      ],
+      "summary": {
+        "signer_count": 1,
+        "completed_count": 0,
+        "signers": [
+          {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false,
+            "completed": false
+          }
+        ]
+      },
+      "signing_urls": [
+        {
+          "signer_id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0?email=joao.silva%40example.com"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e1",
+        "number": 1,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e1/download"
+      },
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e2",
+        "number": 2,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e2/download"
+      }
+    ],
+    "type": "Document"
+  },
+  "account_id": "65f1c2a9b3e4d5f6"
+}
+```
+
+Receiver response 2XX: Any `2xx` response acknowledges the delivery. Any other status, a connection error or a timeout counts as a failed attempt.
+
+### Event `signer_identity_review_required`
+
+The provider could not decide the signer's identity verification and it awaits the account's review. The signer can still sign; the document is certificated only after the account approves (status `pending_identity_review` once every signer has signed). **Subject:** Signer · **Object:** Document · **Payload:** `signer_full_name`, `reason_codes`.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `webhook-id` | header | yes | `{"type":"string"}` | Message ID: the same on every attempt of this event to this endpoint. Use it to deduplicate retries. |
+| `webhook-timestamp` | header | yes | `{"type":"string"}` | Unix timestamp (seconds) of this attempt. |
+| `webhook-signature` | header | no | `{"type":"string"}` | Sent only when signing is enabled on the endpoint: `v1,<base64 HMAC-SHA256>`. See **Verifying signatures**. |
+
+Request body sent to the endpoint:
+`application/json` schema:
+
+```json
+{
+  "$ref": "#/components/schemas/WebhookEvent"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": 184406,
+  "event": "signer_identity_review_required",
+  "message": null,
+  "payload": {
+    "signer_full_name": "João da Silva",
+    "reason_codes": [
+      "NAME_MISMATCH",
+      "LIVENESS_UNCERTAIN"
+    ]
+  },
+  "origin": null,
+  "created_at": 1790003600,
+  "subject": {
+    "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+    "full_name": "João da Silva",
+    "email": "joao.silva@example.com",
+    "whatsapp_phone_number": "+5548999990000",
+    "government_id": null,
+    "has_accepted_terms": true,
+    "type": "Signer"
+  },
+  "object": {
+    "id": "66b2f0e1c3a4d5e6f7a8b9c0",
+    "account_id": "65f1c2a9b3e4d5f6",
+    "template_id": null,
+    "name": "Contrato de Prestação de Serviços.pdf",
+    "status": "pending_signature",
+    "artifacts": {
+      "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
+      "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"
+    },
+    "is_closed": false,
+    "signing_url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0",
+    "decline_reason": null,
+    "declined_by": null,
+    "tags": [],
+    "created_at": 1790000000,
+    "updated_at": 1790000300,
+    "assignment": {
+      "id": "66b2f2b3c4d5e6f7a8b9c0d1",
+      "sender_email": "mariana@example.com",
+      "method": "virtual",
+      "expires_at": 1792592000,
+      "message": "Olá João, segue o contrato para assinatura.",
+      "signers": [
+        {
+          "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "full_name": "João da Silva",
+          "email": "joao.silva@example.com",
+          "whatsapp_phone_number": "+5548999990000",
+          "government_id": null,
+          "has_accepted_terms": false,
+          "completed": false,
+          "notification_history": [],
+          "verification_method": "Email",
+          "notification_methods": [
+            "Email"
+          ],
+          "step": 1,
+          "notified": true
+        }
+      ],
+      "copy_receivers": [],
+      "items": [
+        {
+          "id": "66b2f2b3c4d5e6f7a8b9c0d2",
+          "page": null,
+          "signer": {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false
+          },
+          "field": {
+            "id": "65f1c2aa0b1c2d3e4f5a6b7c",
+            "name": "Virtual",
+            "type": "virtual",
+            "regex": null,
+            "is_pre_defined": false,
+            "is_active": true,
+            "is_required": false,
+            "is_standard": false,
+            "is_read_only": false,
+            "is_visible": false
+          },
+          "display_settings": [],
+          "value": null,
+          "completed": false
+        }
+      ],
+      "summary": {
+        "signer_count": 1,
+        "completed_count": 0,
+        "signers": [
+          {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false,
+            "completed": false
+          }
+        ]
+      },
+      "signing_urls": [
+        {
+          "signer_id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0?email=joao.silva%40example.com"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e1",
+        "number": 1,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e1/download"
+      },
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e2",
+        "number": 2,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e2/download"
+      }
+    ],
+    "type": "Document"
+  },
+  "account_id": "65f1c2a9b3e4d5f6"
+}
+```
+
+Receiver response 2XX: Any `2xx` response acknowledges the delivery. Any other status, a connection error or a timeout counts as a failed attempt.
+
+### Event `signer_identity_review_approved`
+
+A user of the account approved the signer's identity after review. `reason_codes` are the differences the provider found and the reviewer accepted. **Subject:** Signer · **Object:** Document · **Payload:** `signer_full_name`, `reviewer_id`, `reviewer_name`, `reason_codes`.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `webhook-id` | header | yes | `{"type":"string"}` | Message ID: the same on every attempt of this event to this endpoint. Use it to deduplicate retries. |
+| `webhook-timestamp` | header | yes | `{"type":"string"}` | Unix timestamp (seconds) of this attempt. |
+| `webhook-signature` | header | no | `{"type":"string"}` | Sent only when signing is enabled on the endpoint: `v1,<base64 HMAC-SHA256>`. See **Verifying signatures**. |
+
+Request body sent to the endpoint:
+`application/json` schema:
+
+```json
+{
+  "$ref": "#/components/schemas/WebhookEvent"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": 184406,
+  "event": "signer_identity_review_approved",
+  "message": null,
+  "payload": {
+    "signer_full_name": "João da Silva",
+    "reviewer_id": "Kx9pQ2",
+    "reviewer_name": "Mariana Costa",
+    "reason_codes": [
+      "NAME_MISMATCH",
+      "LIVENESS_UNCERTAIN"
+    ]
+  },
+  "origin": null,
+  "created_at": 1790003600,
+  "subject": {
+    "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+    "full_name": "João da Silva",
+    "email": "joao.silva@example.com",
+    "whatsapp_phone_number": "+5548999990000",
+    "government_id": null,
+    "has_accepted_terms": true,
+    "type": "Signer"
+  },
+  "object": {
+    "id": "66b2f0e1c3a4d5e6f7a8b9c0",
+    "account_id": "65f1c2a9b3e4d5f6",
+    "template_id": null,
+    "name": "Contrato de Prestação de Serviços.pdf",
+    "status": "pending_signature",
+    "artifacts": {
+      "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
+      "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"
+    },
+    "is_closed": false,
+    "signing_url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0",
+    "decline_reason": null,
+    "declined_by": null,
+    "tags": [],
+    "created_at": 1790000000,
+    "updated_at": 1790000300,
+    "assignment": {
+      "id": "66b2f2b3c4d5e6f7a8b9c0d1",
+      "sender_email": "mariana@example.com",
+      "method": "virtual",
+      "expires_at": 1792592000,
+      "message": "Olá João, segue o contrato para assinatura.",
+      "signers": [
+        {
+          "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "full_name": "João da Silva",
+          "email": "joao.silva@example.com",
+          "whatsapp_phone_number": "+5548999990000",
+          "government_id": null,
+          "has_accepted_terms": false,
+          "completed": false,
+          "notification_history": [],
+          "verification_method": "Email",
+          "notification_methods": [
+            "Email"
+          ],
+          "step": 1,
+          "notified": true
+        }
+      ],
+      "copy_receivers": [],
+      "items": [
+        {
+          "id": "66b2f2b3c4d5e6f7a8b9c0d2",
+          "page": null,
+          "signer": {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false
+          },
+          "field": {
+            "id": "65f1c2aa0b1c2d3e4f5a6b7c",
+            "name": "Virtual",
+            "type": "virtual",
+            "regex": null,
+            "is_pre_defined": false,
+            "is_active": true,
+            "is_required": false,
+            "is_standard": false,
+            "is_read_only": false,
+            "is_visible": false
+          },
+          "display_settings": [],
+          "value": null,
+          "completed": false
+        }
+      ],
+      "summary": {
+        "signer_count": 1,
+        "completed_count": 0,
+        "signers": [
+          {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false,
+            "completed": false
+          }
+        ]
+      },
+      "signing_urls": [
+        {
+          "signer_id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0?email=joao.silva%40example.com"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e1",
+        "number": 1,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e1/download"
+      },
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e2",
+        "number": 2,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e2/download"
+      }
+    ],
+    "type": "Document"
+  },
+  "account_id": "65f1c2a9b3e4d5f6"
+}
+```
+
+Receiver response 2XX: Any `2xx` response acknowledges the delivery. Any other status, a connection error or a timeout counts as a failed attempt.
+
+### Event `signer_identity_review_rejected`
+
+A user of the account rejected the signer's identity after review. The document is cancelled (`user_rejected_document` follows, with the reviewer as the user). `note` is the reviewer's optional note, HTML-escaped (`&` arrives as `&amp;`). **Subject:** Signer · **Object:** Document · **Payload:** `signer_full_name`, `reviewer_id`, `reviewer_name`, `note`.
+
+| Parameter | Location | Required | Schema | Description |
+|---|---|---:|---|---|
+| `webhook-id` | header | yes | `{"type":"string"}` | Message ID: the same on every attempt of this event to this endpoint. Use it to deduplicate retries. |
+| `webhook-timestamp` | header | yes | `{"type":"string"}` | Unix timestamp (seconds) of this attempt. |
+| `webhook-signature` | header | no | `{"type":"string"}` | Sent only when signing is enabled on the endpoint: `v1,<base64 HMAC-SHA256>`. See **Verifying signatures**. |
+
+Request body sent to the endpoint:
+`application/json` schema:
+
+```json
+{
+  "$ref": "#/components/schemas/WebhookEvent"
+}
+```
+
+Example payload:
+
+```json
+{
+  "id": 184406,
+  "event": "signer_identity_review_rejected",
+  "message": null,
+  "payload": {
+    "signer_full_name": "João da Silva",
+    "reviewer_id": "Kx9pQ2",
+    "reviewer_name": "Mariana Costa",
+    "note": "Pessoa diferente da foto do documento."
+  },
+  "origin": null,
+  "created_at": 1790003600,
+  "subject": {
+    "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+    "full_name": "João da Silva",
+    "email": "joao.silva@example.com",
+    "whatsapp_phone_number": "+5548999990000",
+    "government_id": null,
+    "has_accepted_terms": true,
+    "type": "Signer"
+  },
+  "object": {
+    "id": "66b2f0e1c3a4d5e6f7a8b9c0",
+    "account_id": "65f1c2a9b3e4d5f6",
+    "template_id": null,
+    "name": "Contrato de Prestação de Serviços.pdf",
+    "status": "pending_signature",
+    "artifacts": {
+      "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
+      "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"
+    },
+    "is_closed": false,
+    "signing_url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0",
+    "decline_reason": null,
+    "declined_by": null,
+    "tags": [],
+    "created_at": 1790000000,
+    "updated_at": 1790000300,
+    "assignment": {
+      "id": "66b2f2b3c4d5e6f7a8b9c0d1",
+      "sender_email": "mariana@example.com",
+      "method": "virtual",
+      "expires_at": 1792592000,
+      "message": "Olá João, segue o contrato para assinatura.",
+      "signers": [
+        {
+          "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "full_name": "João da Silva",
+          "email": "joao.silva@example.com",
+          "whatsapp_phone_number": "+5548999990000",
+          "government_id": null,
+          "has_accepted_terms": false,
+          "completed": false,
+          "notification_history": [],
+          "verification_method": "Email",
+          "notification_methods": [
+            "Email"
+          ],
+          "step": 1,
+          "notified": true
+        }
+      ],
+      "copy_receivers": [],
+      "items": [
+        {
+          "id": "66b2f2b3c4d5e6f7a8b9c0d2",
+          "page": null,
+          "signer": {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false
+          },
+          "field": {
+            "id": "65f1c2aa0b1c2d3e4f5a6b7c",
+            "name": "Virtual",
+            "type": "virtual",
+            "regex": null,
+            "is_pre_defined": false,
+            "is_active": true,
+            "is_required": false,
+            "is_standard": false,
+            "is_read_only": false,
+            "is_visible": false
+          },
+          "display_settings": [],
+          "value": null,
+          "completed": false
+        }
+      ],
+      "summary": {
+        "signer_count": 1,
+        "completed_count": 0,
+        "signers": [
+          {
+            "id": "66b2f0c9a1b2c3d4e5f6a7b8",
+            "full_name": "João da Silva",
+            "email": "joao.silva@example.com",
+            "whatsapp_phone_number": "+5548999990000",
+            "government_id": null,
+            "has_accepted_terms": false,
+            "completed": false
+          }
+        ]
+      },
+      "signing_urls": [
+        {
+          "signer_id": "66b2f0c9a1b2c3d4e5f6a7b8",
+          "url": "https://app.assinafy.com.br/sign/66b2f0e1c3a4d5e6f7a8b9c0?email=joao.silva%40example.com"
+        }
+      ]
+    },
+    "pages": [
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e1",
+        "number": 1,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e1/download"
+      },
+      {
+        "id": "66b2f12ad4e5f6a7b8c9d0e2",
+        "number": 2,
+        "height": 2200,
+        "width": 1700,
+        "download_url": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/pages/66b2f12ad4e5f6a7b8c9d0e2/download"
+      }
+    ],
+    "type": "Document"
+  },
+  "account_id": "65f1c2a9b3e4d5f6"
+}
+```
+
+Receiver response 2XX: Any `2xx` response acknowledges the delivery. Any other status, a connection error or a timeout counts as a failed attempt.
 
 ## Shared error response payloads
 

@@ -38,11 +38,11 @@ corpos de requisição, respostas e erros, está em [docs/API.md](docs/API.md#sd
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.5.1
+dotnet add package Assinafy.Sdk --version 2.6.0
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
-precisa dos SDKs .NET 8.0.424, 9.0.317 e 10.0.400; o [`global.json`](global.json) seleciona o .NET 10
+precisa dos SDKs .NET 8.0.426, 9.0.319 e 10.0.402; o [`global.json`](global.json) seleciona o .NET 10
 para os comandos do repositório.
 
 ## Credenciais e ambientes
@@ -135,8 +135,8 @@ transporte — redirecionamentos e cookies desativados, tempo de vida de conexã
 nunca um status HTTP).
 
 As credenciais são anexadas por requisição; o SDK não grava credenciais nos headers padrão.
-Não configure `Authorization`, `X-Api-Key` ou cookies no transporte fornecido: seus headers
-padrão também alcançam rotas públicas e do signatário. O SDK acrescenta `Accept` e `User-Agent`
+O SDK rejeita requisições quando o transporte fornecido tem `Authorization`, `X-Api-Key` ou
+`Cookie` nos headers padrão. Configure as credenciais em `AssinafyClientOptions`. O SDK acrescenta `Accept` e `User-Agent`
 quando ausentes. O `Timeout` do transporte fornecido fica intocado — defina você mesmo.
 
 ## Injeção de dependência
@@ -320,10 +320,17 @@ flowchart TD
     M --> F{Verificação do signatário}
     F --> G[OTP por Email ou WhatsApp]
     F --> H[Certificado A1 ou A3 via Web PKI]
+    F --> N[Documento, face e prova de vida]
+    N --> I
     G --> I[Assinar]
     H --> J[Iniciar e concluir certificado]
-    I --> K[Webhook document_ready e status certificated]
-    J --> K
+    I --> R{Revisão de identidade pendente?}
+    J --> R
+    R -->|Não| K[Webhook document_ready e status certificated]
+    R -->|Sim| P[pending_identity_review]
+    P --> Q[Decisão humana na workspace]
+    Q -->|Aprovar todas| K
+    Q -->|Rejeitar| X[Cancelar documento e notificar]
     K --> L[Baixar PDF certificado, PAdES ou bundle]
 ```
 
@@ -331,8 +338,9 @@ flowchart TD
 2. **Aguarde** a plataforma normalizar o arquivo e extrair as páginas (`metadata_ready`).
 3. **Crie os signatários** — registros de pessoas reutilizáveis, pertencentes à workspace.
 4. **Crie o assignment**, ligando os signatários ao documento. É isso que dispara os convites.
-5. **Os signatários assinam**; quando o último termina, o documento vira `certificated` e os
-   artefatos assinados ficam disponíveis para download.
+5. **Os signatários assinam**; quando o último termina e todas as revisões de identidade estão
+   aprovadas, o documento vira `certificated` e os artefatos assinados ficam disponíveis. Uma revisão
+   pendente mantém o documento em `pending_identity_review`.
 
 De ponta a ponta:
 
@@ -749,21 +757,74 @@ Definidos por signatário ao criar o assignment. Informe exatamente um canal em
 `NotificationMethods`: `Email` ou `Whatsapp`. Verificação e notificação são acopladas; se apenas
 um lado for informado, a API infere o outro. Sem nenhum dos dois, ambos assumem `Email`.
 Verificação `Email` exige notificação `Email`; `Whatsapp` exige `Whatsapp`; `DigitalCertificate`
-permite qualquer um desses dois canais. Dois canais ou uma combinação incompatível retornam `400`.
+e `IdDocumentFaceMatchBasic` permitem qualquer um desses dois canais. Dois canais ou uma combinação incompatível retornam `400`.
 
 | Método | Como funciona | Custo por signatário |
 | --- | --- | --- |
 | `Email` *(padrão)* | Código de uso único (OTP) por e-mail, exigido antes de assinar | 0 créditos |
 | `Whatsapp` | Código de uso único (OTP) por WhatsApp | 0,45 crédito (a notificação WhatsApp, que este método exige); só em planos pagos |
 | `DigitalCertificate` | O signatário assina com o **próprio certificado ICP-Brasil (A1/A3)**, pela extensão de navegador Web PKI, gerando uma assinatura **PAdES qualificada** | 0,5 crédito + a notificação |
+| `IdDocumentFaceMatchBasic` | Documento de identidade, foto do signatário segurando o documento e prova de vida; exige o recurso na conta e CPF válido em `GovernmentId` | Tarifa por signatário + a notificação; consulte a estimativa |
 
-O que é cobrado é a **notificação** — nenhum método de verificação tem preço próprio, exceto o
-certificado digital, que cobra a assinatura em si. Como os lados são acoplados, escolher verificação
+A notificação é cobrada por signatário. O certificado digital cobra também a assinatura, e a
+verificação de documento e face tem uma tarifa própria por signatário. Como os lados são acoplados, escolher verificação
 por `Whatsapp` escolhe junto a notificação por WhatsApp e o custo dela.
 
-`DigitalCertificate` é exclusivo de verificação; use `Email` ou `Whatsapp` para notificar.
+`DigitalCertificate` e `IdDocumentFaceMatchBasic` são exclusivos de verificação; use `Email` ou `Whatsapp` para notificar.
 Os destinatários precisam dos dados de contato dos canais escolhidos, e WhatsApp exige plano pago.
 Use `Assignments.EstimateCostAsync` para obter o custo e os bloqueios da configuração enviada.
+
+### Biometria: documento de identidade e correspondência facial
+
+Exige o recurso **ID Document + Face Match** na conta e um CPF válido em `GovernmentId`. Crie o
+signatário com esse CPF e use `SignerChannels.IdDocumentFaceMatchBasic` no `SignerRef` ou
+`TemplateSigner`, com exatamente uma notificação `Email` ou `Whatsapp`. O helper
+`UploadAndRequestSignaturesAsync` também aceita `GovernmentId` por signatário. Estime os custos
+antes de criar o assignment; a cobrança é por signatário na criação.
+
+No fluxo do signatário, consulte `Signers.GetSelfAsync(...).VerificationMethod` para escolher a
+verificação. A biometria usa a captura hospedada em vez do OTP de `Signers.VerifyAsync`:
+
+```csharp
+var estado = await client.Signing.GetIdentityVerificationAsync(signerAccessCode);
+if (estado.CanStart)
+{
+    var sessao = await client.Signing.StartIdentityVerificationAsync(
+        signerAccessCode, consentimentoBiometricoDoSignatario);
+    var urlDeCaptura = sessao.Url;
+}
+```
+
+O consentimento deve vir de uma ação explícita do signatário. Abra a URL completa no navegador,
+incluindo o fragmento `#t=`, sem registrá-la em logs nem persistir no navegador. Consulte novamente
+o estado após o retorno. `CanStart` só permite uma sessão ausente ou `Expired`; `Pending`,
+`InReview`, `Approved`, `Declined` e `Abandoned` não permitem reinício. Reabrir após `Expired` não
+cobra de novo. `Declined` ou `Abandoned` exigem um novo documento e assignment. Reenviar a
+notificação preserva a sessão ativa.
+
+Em `InReview`, o signatário pode visualizar, confirmar dados, aceitar termos e assinar. A conta
+decide a revisão; a certificação aguarda todas as aprovações. As imagens só existem enquanto a
+revisão está aberta e devem ser tratadas sem cache nem logs:
+
+```csharp
+var revisao = await client.Assignments.GetIdentityReviewAsync(documentId, assignmentId, signerId);
+if (revisao.Status == "InReview" && revisao.Images.Count > 0)
+{
+    var evidencia = await client.Assignments.DownloadIdentityReviewImageAsync(
+        documentId, assignmentId, signerId, revisao.Images[0]);
+}
+
+// Execute apenas após a decisão do revisor: "Approved" ou "Rejected".
+var decidida = await client.Assignments.DecideIdentityReviewAsync(
+    documentId, assignmentId, signerId,
+    new DecideIdentityReviewRequest { Decision = decisaoDoRevisor, Note = notaDoRevisor });
+```
+
+A nota privada aceita até 2000 caracteres. A rejeição cancela o documento como `rejected_by_user`
+e notifica signatários e destinatários de cópia. As decisões seguem para o provedor. Os eventos
+`signer_identity_verified`, `signer_identity_verification_failed`, `signer_identity_review_required`,
+`signer_identity_review_approved` e `signer_identity_review_rejected` permitem acompanhar o fluxo.
+Payloads completos: [verificação e revisão](docs/API.md#schema-signeridentityreview).
 
 ## Assinatura por certificado digital ICP-Brasil
 
@@ -928,8 +989,8 @@ var endpoint = await client.Webhooks.CreateEndpointAsync(new CreateWebhookEndpoi
     SigningEnabled = true,
 });
 
-// Guarde o segredo junto da configuração do receptor. Indisponível para aplicações OAuth.
-var segredo = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
+// Guarde o segredo devolvido na criação, inclusive com OAuth.
+var segredo = endpoint.Secret ?? throw new InvalidOperationException("Segredo ausente.");
 
 var endpoints = await client.Webhooks.ListEndpointsAsync();          // do mais antigo ao mais novo
 await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpointRequest
@@ -937,7 +998,8 @@ await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpoint
     Events = ["document_ready"],                                      // só os campos enviados mudam
 });
 
-// A rotação vale na hora: as entregas passam a ser assinadas só com o novo segredo.
+// Com API key: leitura e rotação. A rotação invalida o segredo anterior imediatamente.
+var atual = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
 var novo = await client.Webhooks.RotateEndpointSecretAsync(endpoint.Id);
 
 // Histórico de entregas (opcionalmente de um endpoint) e reenvio ao endpoint daquela entrada.
@@ -958,6 +1020,12 @@ await client.Webhooks.DeleteEndpointAsync(endpoint.Id);               // libera 
 Criar um endpoint além do limite do plano retorna 403, e cada endpoint precisa de uma URL distinta
 (400). `GetAsync`, `UpdateSubscriptionAsync` e `InactivateAsync` atuam sobre o endpoint mais antigo
 da conta; `UpdateSubscriptionAsync` o cria quando a conta não tem nenhum.
+
+`Secret` aparece apenas na resposta de criação com assinatura habilitada. Aplicações OAuth devem
+armazená-lo nesse momento: não podem ler nem rotacionar o segredo depois. Se o perderem, precisam
+excluir o endpoint e criar outro. Com API key, `GetEndpointSecretAsync` e `RotateEndpointSecretAsync`
+estão disponíveis. Para localizar ou excluir pelo endereço exato, use
+`ListEndpointsByUrlAsync(url)` ou `DeleteEndpointByUrlAsync(url)`.
 
 ### Recebendo e verificando entregas
 

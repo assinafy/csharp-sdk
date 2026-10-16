@@ -9,6 +9,45 @@ public sealed class SigningResource : BaseResource
     internal SigningResource(HttpClient http, Action<HttpRequestMessage>? authenticate = null)
         : base(http, authenticate: authenticate) { }
 
+    /// <summary><c>GET /signers/identity-verification?signer-access-code={code}</c> — get the current biometric verification state, backfilling a pending provider decision. Sends no workspace credential.</summary>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Whether capture can start, status, capture URL, expiration, and completion time. InReview permits signing but holds certification until approved.</returns>
+    public Task<IdentityVerificationStatus> GetIdentityVerificationAsync(
+        string signerAccessCode,
+        CancellationToken cancellationToken = default)
+    {
+        var code = RequireId(signerAccessCode, "Signer access code");
+        return CallAsync<IdentityVerificationStatus>(
+            AppendQueryString("signers/identity-verification", AccessCodeQuery(code)),
+            HttpMethod.Get,
+            cancellationToken: cancellationToken,
+            authenticate: false);
+    }
+
+    /// <summary><c>POST /signers/identity-verification?signer-access-code={code}</c> — record explicit biometric-processing consent and open a hosted capture session. Sends no workspace credential.</summary>
+    /// <remarks>Only a missing or Expired session may be started. Pending, InReview, Approved, Declined, and Abandoned return 400. Restarting an Expired session adds no charge; Declined or Abandoned require a new document and assignment.</remarks>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="consent">The signer's explicit consent to biometric processing; must be true.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The session ID, capture URL, and optional expiration. Open the bearer URL as-is, including its fragment; never log or persist it.</returns>
+    public Task<IdentityVerificationSession> StartIdentityVerificationAsync(
+        string signerAccessCode,
+        bool consent,
+        CancellationToken cancellationToken = default)
+    {
+        var code = RequireId(signerAccessCode, "Signer access code");
+        if (!consent)
+            throw new ValidationException("Explicit consent to biometric processing is required.");
+
+        return CallAsync<IdentityVerificationSession>(
+            AppendQueryString("signers/identity-verification", AccessCodeQuery(code)),
+            HttpMethod.Post,
+            new { consent },
+            cancellationToken: cancellationToken,
+            authenticate: false);
+    }
+
     /// <summary><c>GET /sign</c> — signer-facing endpoint: load the document and assignment data for the current signer access code.</summary>
     /// <remarks>Returns 409 while the document is being prepared. Digital-certificate signers must confirm their data and accept terms before this call; the query flag does not bypass that requirement.</remarks>
     /// <param name="signerAccessCode">The signer's access code identifying which assignment to load.</param>

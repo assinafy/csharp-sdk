@@ -119,11 +119,31 @@ public sealed class WebhookResource : BaseResource
     /// <returns>The account's webhook endpoints.</returns>
     public Task<IReadOnlyList<WebhookEndpoint>> ListEndpointsAsync(
         string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        ListEndpointsCoreAsync(null, accountId, cancellationToken);
+
+    /// <summary><c>GET /accounts/{account_id}/webhooks/endpoints?url={url}</c> — list only the endpoint registered with exactly this URL. OAuth scope <c>account:read</c>.</summary>
+    /// <param name="url">Exact registered endpoint URL.</param>
+    /// <param name="accountId">Workspace account ID; falls back to the client's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The matching endpoint, or an empty list when no URL matches.</returns>
+    public Task<IReadOnlyList<WebhookEndpoint>> ListEndpointsByUrlAsync(
+        string url,
+        string? accountId = null,
         CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        return ListEndpointsCoreAsync(url, accountId, cancellationToken);
+    }
+
+    private Task<IReadOnlyList<WebhookEndpoint>> ListEndpointsCoreAsync(
+        string? url,
+        string? accountId,
+        CancellationToken cancellationToken)
     {
         var id = AccountId(accountId);
         return CallListBodyAsync<WebhookEndpoint>(
-            $"accounts/{id}/webhooks/endpoints",
+            AppendQueryString($"accounts/{id}/webhooks/endpoints", new Dictionary<string, string?> { ["url"] = url }),
             HttpMethod.Get,
             cancellationToken: cancellationToken);
     }
@@ -148,7 +168,8 @@ public sealed class WebhookResource : BaseResource
     /// <c>POST /accounts/{account_id}/webhooks/endpoints</c> — register a URL to receive the account's events.
     /// Returns 403 past the plan's limit (one endpoint, or three on paid plans) and 400 when another endpoint
     /// already uses the URL. With <see cref="CreateWebhookEndpointRequest.SigningEnabled"/> a secret is
-    /// generated; read it with <see cref="GetEndpointSecretAsync"/>. OAuth scope <c>webhooks:write</c>.
+    /// returned once in <see cref="WebhookEndpoint.Secret"/>; store it securely. OAuth applications cannot
+    /// read or rotate it later and must recreate the endpoint if it is lost. OAuth scope <c>webhooks:write</c>.
     /// </summary>
     /// <param name="request">URL, contact email, events, and optional name, active flag, and signing flag.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
@@ -212,6 +233,24 @@ public sealed class WebhookResource : BaseResource
     {
         return CallVoidAsync(
             EndpointPath(endpointId, accountId),
+            HttpMethod.Delete,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary><c>DELETE /accounts/{account_id}/webhooks/endpoints?url={url}</c> — delete the endpoint whose registered URL matches exactly and free its slot. Returns 404 when no endpoint matches. OAuth scope <c>webhooks:write</c>.</summary>
+    /// <param name="url">Exact registered endpoint URL.</param>
+    /// <param name="accountId">Workspace account ID; falls back to the client's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when the matching endpoint has been deleted; the API returns an empty data array.</returns>
+    public Task DeleteEndpointByUrlAsync(
+        string url,
+        string? accountId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(url);
+        return CallVoidAsync(
+            AppendQueryString($"accounts/{AccountId(accountId)}/webhooks/endpoints",
+                new Dictionary<string, string?> { ["url"] = url }),
             HttpMethod.Delete,
             cancellationToken: cancellationToken);
     }

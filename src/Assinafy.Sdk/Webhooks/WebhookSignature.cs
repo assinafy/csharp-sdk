@@ -52,6 +52,9 @@ public static class WebhookSignature
             throw new ArgumentException("The webhook secret is not a valid whsec_ base64 key.", nameof(secret), ex);
         }
 
+        if (key.Length == 0)
+            throw new ArgumentException("The webhook signing key must not be empty.", nameof(secret));
+
         if (string.IsNullOrEmpty(webhookId) || string.IsNullOrEmpty(signatureHeader) ||
             !long.TryParse(webhookTimestamp, NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
             return false;

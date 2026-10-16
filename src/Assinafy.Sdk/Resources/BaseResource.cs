@@ -117,6 +117,14 @@ public abstract class BaseResource
     private protected static Dictionary<string, string?> AccessCodeQuery(string code) =>
         new() { [SignerAccessCodeParam] = code };
 
+    private protected static MediaTypeHeaderValue ParseContentType(string contentType)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        return MediaTypeHeaderValue.TryParse(contentType, out var parsed)
+            ? parsed
+            : throw new ValidationException("Content type must be a valid media type.");
+    }
+
     /// <summary>
     /// Send a request and deserialize the envelope's required <c>data</c> into
     /// <typeparamref name="T"/>. List callers should prefer <see cref="CallListBodyAsync{T}"/>,
@@ -424,6 +432,11 @@ public abstract class BaseResource
     {
         try
         {
+            if (_http.DefaultRequestHeaders.Contains("Authorization") ||
+                _http.DefaultRequestHeaders.Contains("X-Api-Key") ||
+                _http.DefaultRequestHeaders.Contains("Cookie"))
+                throw new ValidationException("HttpClient default headers must not contain Authorization, X-Api-Key, or Cookie. Configure credentials through AssinafyClientOptions instead.");
+
             using var request = requestFactory();
             if (authenticate)
                 _authenticate?.Invoke(request);

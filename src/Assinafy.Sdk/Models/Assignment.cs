@@ -6,11 +6,7 @@ namespace Assinafy.Sdk.Models;
 /// <summary>A signer within an assignment: the base <see cref="Signer"/> plus per-assignment verification, notification, and progress details.</summary>
 public sealed record AssignmentSigner : Signer
 {
-    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c> (see <see cref="SignerChannels"/>), or <see langword="null"/>.</summary>
-    [JsonPropertyName("verification_method")]
-    public string? VerificationMethod { get; init; }
-
-    /// <summary>Channels used to notify the signer of the request — any combination of <see cref="SignerChannels"/> (<c>Email</c>, <c>Whatsapp</c>), or <see langword="null"/>.</summary>
+    /// <summary>The notification channel for this request: a single <c>Email</c> or <c>Whatsapp</c> entry, or <see langword="null"/>.</summary>
     [JsonPropertyName("notification_methods")]
     public IReadOnlyList<string>? NotificationMethods { get; init; }
 
@@ -29,6 +25,10 @@ public sealed record AssignmentSigner : Signer
     /// <summary>Per-channel delivery history for this signer (email + WhatsApp), most recent first. Present in account-owner contexts.</summary>
     [JsonPropertyName("notification_history")]
     public IReadOnlyList<NotificationHistoryEntry>? NotificationHistory { get; init; }
+
+    /// <summary>Latest identity-document verification status; <c>InReview</c> holds certification until the account decides the review.</summary>
+    [JsonPropertyName("identity_verification_status")]
+    public string? IdentityVerificationStatus { get; init; }
 }
 
 /// <summary>One delivery attempt of a signer notification (email or WhatsApp), returned in <see cref="AssignmentSigner.NotificationHistory"/>.</summary>
@@ -179,7 +179,7 @@ public static class AssignmentMethods
 
 /// <summary>
 /// Allowed verification and notification channel values. <c>Email</c> and <c>Whatsapp</c> may be
-/// used for either purpose; <c>DigitalCertificate</c> is a verification method only. The API expects
+/// used for either purpose; <c>DigitalCertificate</c> and <c>IdDocumentFaceMatchBasic</c> are verification methods only. The API expects
 /// these values capitalized. <c>Whatsapp</c> incurs an additional cost and is paid-only.
 /// </summary>
 public static class SignerChannels
@@ -192,6 +192,9 @@ public static class SignerChannels
 
     /// <summary>ICP-Brasil digital-certificate verification.</summary>
     public const string DigitalCertificate = "DigitalCertificate";
+
+    /// <summary>Government ID, face match, and liveness verification. Requires the account feature and a valid signer CPF; priced per signer, plus one Email or Whatsapp notification.</summary>
+    public const string IdDocumentFaceMatchBasic = "IdDocumentFaceMatchBasic";
 }
 
 /// <summary>
@@ -204,7 +207,7 @@ public sealed class SignerRef
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing — <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified.</summary>
+    /// <summary>Verification method from <see cref="SignerChannels"/>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>Exactly one notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. Inferred from verification when omitted; defaults to <c>Email</c> when neither is specified.</summary>
@@ -511,7 +514,7 @@ public sealed class TemplateSigner
     /// </summary>
     public string? Id { get; set; }
 
-    /// <summary>How the signer's identity is verified before signing: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method.</summary>
+    /// <summary>Verification method from <see cref="SignerChannels"/>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>The notification channel for the template signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, the API infers the verification method.</summary>

@@ -12,7 +12,7 @@ public sealed record DocumentStatusInfo
     /// <summary>
     /// Status code, one of <c>uploading</c>, <c>uploaded</c>, <c>metadata_processing</c>,
     /// <c>metadata_ready</c>, <c>expired</c>, <c>certificating</c>, <c>certificated</c>,
-    /// <c>rejected_by_signer</c>, <c>pending_signature</c>, <c>rejected_by_user</c>, or <c>failed</c>.
+    /// <c>rejected_by_signer</c>, <c>pending_signature</c>, <c>pending_identity_review</c>, <c>rejected_by_user</c>, or <c>failed</c>.
     /// </summary>
     [JsonPropertyName("code")]
     public string Code { get; init; } = string.Empty;

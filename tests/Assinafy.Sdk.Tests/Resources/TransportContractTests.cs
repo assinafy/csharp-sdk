@@ -9,6 +9,25 @@ namespace Assinafy.Sdk.Tests.Resources;
 
 public sealed class TransportContractTests
 {
+    [Theory]
+    [InlineData("X-Api-Key", "workspace-key")]
+    [InlineData("Authorization", "Bearer workspace-token")]
+    [InlineData("Cookie", "session=workspace-session")]
+    public async Task SignerRequests_RejectInheritedCredentialsBeforeSending(string name, string value)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/sign", FakeHttpMessageHandler.ApiOk(new { id = "doc" }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(new AssinafyClientOptions { ApiKey = "key" }, http);
+        http.DefaultRequestHeaders.TryAddWithoutValidation(name, value);
+
+        await ((Func<Task>)(() => client.Signing.GetAsync("signer-code")))
+            .Should().ThrowAsync<ValidationException>();
+
+        handler.Requests.Should().BeEmpty();
+        http.DefaultRequestHeaders.Contains(name).Should().BeTrue();
+    }
+
     [Fact]
     public async Task DeletionRestrictions_PreserveTheTopLevelBlockers()
     {

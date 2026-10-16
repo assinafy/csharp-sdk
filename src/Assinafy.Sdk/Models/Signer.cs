@@ -49,6 +49,10 @@ public record Signer
     /// </summary>
     [JsonPropertyName("is_signature_reusable")]
     public bool? IsSignatureReusable { get; init; }
+
+    /// <summary>Verification method for the current signature request, returned by <c>GET /signers/self</c>; see <see cref="SignerChannels"/>. Other signer responses may omit it.</summary>
+    [JsonPropertyName("verification_method")]
+    public string? VerificationMethod { get; init; }
 }
 
 /// <summary>Body for <c>POST /accounts/{account_id}/signers</c>.</summary>
@@ -60,7 +64,7 @@ public sealed class CreateSignerRequest
     /// <summary>Signer's email address, or <see langword="null"/> to omit.</summary>
     public string? Email { get; set; }
 
-    /// <summary>Signer's CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification. <see langword="null"/> to omit.</summary>
+    /// <summary>Signer's CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification; <c>IdDocumentFaceMatchBasic</c> requires a valid CPF. <see langword="null"/> to omit.</summary>
     public string? GovernmentId { get; set; }
 
     /// <summary>Signer's WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> to omit.</summary>
@@ -77,7 +81,7 @@ public sealed class UpdateSignerRequest
     /// <summary>New email address, or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified email on an in-flight (not yet certificated) document.</summary>
     public string? Email { get; set; }
 
-    /// <summary>New CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification. <see langword="null"/> to leave unchanged.</summary>
+    /// <summary>New CPF (11 digits) or CNPJ (14 characters, which may be alphanumeric); formatting is accepted and normalized on save. Required for <c>DigitalCertificate</c> verification; <c>IdDocumentFaceMatchBasic</c> requires a valid CPF. <see langword="null"/> to leave unchanged.</summary>
     public string? GovernmentId { get; set; }
 
     /// <summary>New WhatsApp number in E.164 format (normalized on save), or <see langword="null"/> to leave unchanged. Cannot be changed while the signer has verified WhatsApp on an in-flight (not yet certificated) document.</summary>

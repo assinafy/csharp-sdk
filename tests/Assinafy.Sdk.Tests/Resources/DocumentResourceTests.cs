@@ -297,6 +297,18 @@ public sealed class DocumentResourceTests
         signer.TryGetProperty("step", out _).Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TemplatePayload_PreservesExplicitEmptyNotificationMethods(bool estimate)
+    {
+        var payload = DocumentResource.BuildTemplateSigners(
+            [new TemplateSigner { RoleId = "role", Id = "signer", NotificationMethods = [] }], estimate);
+
+        var signer = JsonSerializer.SerializeToElement(payload)[0];
+        signer.GetProperty("notification_methods").GetArrayLength().Should().Be(0);
+    }
+
     [Fact]
     public async Task Verify_CallsVerifyEndpoint()
     {

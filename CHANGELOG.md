@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.6.0] - 2026-10-16
+
+### Added
+
+- Identity-document, face-match, and liveness verification with `SignerChannels.IdDocumentFaceMatchBasic`,
+  signer capture-session status and creation, and account review, evidence downloads, and decisions.
+- `Signer.VerificationMethod` and `AssignmentSigner.IdentityVerificationStatus` for choosing the signing
+  flow and tracking identity reviews; `WaitUntilReadyAsync` accepts `pending_identity_review`.
+- `UploadAndRequestSignaturesSigner.GovernmentId` for certificate and biometric signing flows.
+- Webhook endpoint lookup and deletion by exact URL with `ListEndpointsByUrlAsync` and
+  `DeleteEndpointByUrlAsync`.
+
+### Fixed
+
+- Preserve the one-time `WebhookEndpoint.Secret` returned when creating a signed endpoint, including
+  for OAuth applications that cannot retrieve it later.
+- Reject inherited `Authorization`, `X-Api-Key`, and `Cookie` default headers on supplied HTTP clients
+  before requests are sent.
+- Reject webhook signing secrets that decode to an empty key.
+- Report malformed logo and signature-image content types as `ValidationException` before transport.
+- Preserve explicitly supplied empty notification arrays in assignment and template requests instead
+  of omitting them and invoking the API's channel inference.
+
 ## [2.5.1] - 2026-10-11
 
 ### Added

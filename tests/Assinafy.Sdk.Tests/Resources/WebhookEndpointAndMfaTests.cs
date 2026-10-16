@@ -77,6 +77,62 @@ public sealed class WebhookEndpointAndMfaTests
     }
 
     [Fact]
+    public async Task CreateEndpoint_WithOAuth_ReturnsOneTimeSigningSecret()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/webhooks/endpoints", FakeHttpMessageHandler.ApiOk(new
+        {
+            id = "ep1",
+            signing_enabled = true,
+            secret = "whsec_ZXhhbXBsZQ==",
+        }));
+        using var http = Client(handler);
+        using var client = new AssinafyClient(new AssinafyClientOptions { Token = "oauth-token", AccountId = "acc" }, http);
+
+        var endpoint = await client.Webhooks.CreateEndpointAsync(new()
+        {
+            Url = "https://example.com/hook",
+            Email = "ops@example.com",
+            Events = ["document_ready"],
+            SigningEnabled = true,
+        });
+
+        endpoint.Secret.Should().Be("whsec_ZXhhbXBsZQ==");
+        handler.Requests.Should().ContainSingle().Which.Headers.Authorization!.Parameter.Should().Be("oauth-token");
+    }
+
+    [Fact]
+    public async Task EndpointByUrlMethods_EscapeExactUrlAndUseExplicitAccount()
+    {
+        const string url = "https://example.com/hook?tenant=one&key=a+b#fragment";
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Get, "/webhooks/endpoints?url=", FakeHttpMessageHandler.ApiOk(new[] { Endpoint }));
+        handler.AddJsonResponse(HttpMethod.Delete, "/webhooks/endpoints?url=", FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        var resource = new WebhookResource(Client(handler), "default");
+
+        (await resource.ListEndpointsByUrlAsync(url, "acc/1")).Should().ContainSingle();
+        await resource.DeleteEndpointByUrlAsync(url, "acc/1");
+
+        handler.Requests.Select(r => r.Method).Should().Equal(HttpMethod.Get, HttpMethod.Delete);
+        foreach (var request in handler.Requests)
+            request.RequestUri!.PathAndQuery.Should().Be($"/v1/accounts/acc%2F1/webhooks/endpoints?url={Uri.EscapeDataString(url)}");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task EndpointByUrlMethods_RequireUrlBeforeSending(string? url)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = new WebhookResource(Client(handler), "acc");
+
+        await ((Func<Task>)(() => resource.ListEndpointsByUrlAsync(url!))).Should().ThrowAsync<ArgumentException>();
+        await ((Func<Task>)(() => resource.DeleteEndpointByUrlAsync(url!))).Should().ThrowAsync<ArgumentException>();
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CreateEndpoint_RequiresEvents()
     {
         var resource = new WebhookResource(Client(new FakeHttpMessageHandler()), "acc");
@@ -216,6 +272,17 @@ public sealed class WebhookEndpointAndMfaTests
     public void Verify_RejectsMalformedSecret()
     {
         var act = () => Verify("msg_1", "1", "v1,x", secret: "whsec_not base64!");
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void Verify_RejectsEmptyDecodedKeyEvenWithMatchingForgedSignature()
+    {
+        var timestamp = Now.ToUnixTimeSeconds().ToString();
+        var forged = "v1," + Convert.ToBase64String(HMACSHA256.HashData(Array.Empty<byte>(), Encoding.UTF8.GetBytes($"msg_1.{timestamp}.{Body}")));
+
+        var act = () => Verify("msg_1", timestamp, forged, secret: "whsec_");
+
         act.Should().Throw<ArgumentException>();
     }
 

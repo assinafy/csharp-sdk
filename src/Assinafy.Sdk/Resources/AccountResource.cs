@@ -1,4 +1,3 @@
-using System.Net.Http.Headers;
 using Assinafy.Sdk.Models;
 using Assinafy.Sdk.Support;
 
@@ -161,12 +160,12 @@ public sealed class AccountResource : BaseResource
     {
         ArgumentNullException.ThrowIfNull(imageStream);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+        var mediaType = ParseContentType(contentType);
         var id = AccountId(accountId);
 
         var content = new MultipartFormDataContent();
         var streamContent = new NonDisposingStreamContent(imageStream);
-        streamContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        streamContent.Headers.ContentType = mediaType;
         content.Add(streamContent, "file", fileName);
 
         return CallContentVoidAsync(

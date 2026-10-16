@@ -43,7 +43,7 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Account-scoped signer management and signer self-service endpoints.</summary>
     public SignerResource Signers { get; }
 
-    /// <summary>Signature assignment creation, cost estimation, resend, and expiration.</summary>
+    /// <summary>Signature assignment creation, cost estimation, resend, expiration, and identity reviews.</summary>
     public AssignmentResource Assignments { get; }
 
     /// <summary>Template upload, listing, update, deletion, details, and page downloads.</summary>
@@ -58,7 +58,7 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Public document lookup and signer token delivery.</summary>
     public PublicDocumentResource PublicDocuments { get; }
 
-    /// <summary>Signer-facing document access, signing, declining, certificate signing, and public downloads.</summary>
+    /// <summary>Signer-facing document access, signing, declining, certificate signing, biometric capture, and public downloads.</summary>
     public SigningResource Signing { get; }
 
     /// <summary>Signer signature/initial image upload and download.</summary>
@@ -77,6 +77,8 @@ public sealed class AssinafyClient : IDisposable
     /// The caller is responsible for the lifetime of <paramref name="http"/>;
     /// this constructor will not dispose it. Use this overload to register the client with
     /// <c>IHttpClientFactory</c> in an ASP.NET Core container.
+    /// Requests reject <c>Authorization</c>, <c>X-Api-Key</c>, and <c>Cookie</c> default headers;
+    /// configure credentials with <see cref="AssinafyClientOptions"/> instead.
     /// Authentication is attached per request, so the supplied client's default
     /// headers are not mutated with credentials. Its <see cref="HttpClient.BaseAddress"/>
     /// must match <see cref="AssinafyClientOptions.BaseUrl"/>. When using an API key,
@@ -354,6 +356,7 @@ public sealed class AssinafyClient : IDisposable
                 {
                     FullName = signer.FullName,
                     Email = signer.Email,
+                    GovernmentId = signer.GovernmentId,
                     WhatsAppPhoneNumber = signer.WhatsAppPhoneNumber,
                 },
                 options.AccountId,

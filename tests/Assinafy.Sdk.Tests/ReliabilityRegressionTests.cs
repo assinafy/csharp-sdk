@@ -11,6 +11,25 @@ namespace Assinafy.Sdk.Tests;
 public sealed class ReliabilityRegressionTests
 {
     [Theory]
+    [InlineData("invalid")]
+    [InlineData("image/png\r\nX-Injected: yes")]
+    public async Task ImageUploads_RejectMalformedContentTypeWithinSdkExceptions(string contentType)
+    {
+        var handler = new FakeHttpMessageHandler();
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var image = new MemoryStream([1]);
+        var accounts = new AccountResource(http, "account");
+        var signatures = new SignatureResource(http);
+
+        await ((Func<Task>)(() => accounts.UploadLogoAsync(image, "logo.png", contentType)))
+            .Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => signatures.UploadAsync(image, "code", contentType: contentType)))
+            .Should().ThrowAsync<ValidationException>();
+        image.CanRead.Should().BeTrue();
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(-2)]
     public void SuppliedHttpClient_IgnoresInvalidOptionTimeout(int timeoutMilliseconds)

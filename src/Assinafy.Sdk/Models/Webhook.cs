@@ -167,6 +167,10 @@ public sealed record WebhookEndpoint
     [JsonPropertyName("signing_enabled")]
     public bool SigningEnabled { get; init; }
 
+    /// <summary>Signing secret returned once when creating a signing-enabled endpoint; absent from list and view responses. Store it securely, especially for OAuth integrations that cannot read or rotate secrets.</summary>
+    [JsonPropertyName("secret")]
+    public string? Secret { get; init; }
+
     /// <summary>ISO-8601 date-time when the endpoint was created.</summary>
     [JsonPropertyName("created_at")]
     public string? CreatedAt { get; init; }

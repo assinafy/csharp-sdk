@@ -200,8 +200,12 @@ public sealed class AssinafyClientTests
         http.Dispose();
     }
 
-    [Fact]
-    public async Task UploadAndRequestSignatures_CompletesDocumentSignerAssignmentFlow()
+    [Theory]
+    [InlineData(SignerChannels.Email)]
+    [InlineData(SignerChannels.Whatsapp)]
+    [InlineData(SignerChannels.DigitalCertificate)]
+    [InlineData(SignerChannels.IdDocumentFaceMatchBasic)]
+    public async Task UploadAndRequestSignatures_CompletesDocumentSignerAssignmentFlow(string verificationMethod)
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Post, "/accounts/acc/documents",
@@ -220,7 +224,12 @@ public sealed class AssinafyClientTests
             FileStream = stream,
             FileName = "contract.pdf",
             WaitForReady = false,
-            Signers = [new UploadAndRequestSignaturesSigner { FullName = "Test Signer" }],
+            Signers = [new UploadAndRequestSignaturesSigner
+            {
+                FullName = "Test Signer", GovernmentId = "52998224725",
+                VerificationMethod = verificationMethod,
+                NotificationMethods = [verificationMethod == SignerChannels.Whatsapp ? SignerChannels.Whatsapp : SignerChannels.Email],
+            }],
         });
 
         result.Document.Id.Should().Be("doc-1");
@@ -228,6 +237,11 @@ public sealed class AssinafyClientTests
         result.Assignment.Id.Should().Be("assignment-1");
         handler.Requests.Select(request => request.Method)
             .Should().Equal(HttpMethod.Post, HttpMethod.Post, HttpMethod.Post);
+        using var signerBody = JsonDocument.Parse(handler.RequestBodies[1]);
+        signerBody.RootElement.GetProperty("government_id").GetString().Should().Be("52998224725");
+        using var assignmentBody = JsonDocument.Parse(handler.RequestBodies[2]);
+        assignmentBody.RootElement.GetProperty("signers")[0].GetProperty("verification_method").GetString()
+            .Should().Be(verificationMethod);
     }
 
     [Fact]

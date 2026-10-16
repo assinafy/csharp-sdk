@@ -11,11 +11,14 @@ public sealed class UploadAndRequestSignaturesSigner
     /// <summary>The signer's email address; required when verifying or notifying by <c>Email</c>.</summary>
     public string? Email { get; set; }
 
+    /// <summary>CPF or CNPJ for digital-certificate signing; a valid CPF is required for identity-document and face-match verification.</summary>
+    public string? GovernmentId { get; set; }
+
     /// <summary>The signer's WhatsApp phone number; required when verifying or notifying by <c>Whatsapp</c>.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 
-    /// <summary>Optional per-signer verification method: <c>Email</c>, <c>Whatsapp</c>, or <c>DigitalCertificate</c>.</summary>
+    /// <summary>Optional per-signer verification method from <see cref="SignerChannels"/>.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>Exactly one optional notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. The API infers the omitted side.</summary>

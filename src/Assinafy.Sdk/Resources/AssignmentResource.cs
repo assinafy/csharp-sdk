@@ -3,7 +3,7 @@ using Assinafy.Sdk.Models;
 
 namespace Assinafy.Sdk.Resources;
 
-/// <summary>Assignments resource: create requests, estimate costs, resend, and expiration handling.</summary>
+/// <summary>Assignments resource: create requests, estimate costs, resend, expiration, and account-facing identity reviews.</summary>
 public sealed class AssignmentResource : BaseResource
 {
     internal AssignmentResource(HttpClient http, string? defaultAccountId = null, Action<HttpRequestMessage>? authenticate = null)
@@ -164,6 +164,71 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification</c> — get the account-facing identity review, evidence summary, checks, and available image names.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment containing the signer.</param>
+    /// <param name="signerId">Signer whose verification to review.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The review summary; directly approved verifications have no evidence here. Returns 404 when no verification exists.</returns>
+    public Task<SignerIdentityReview> GetIdentityReviewAsync(
+        string documentId,
+        string assignmentId,
+        string signerId,
+        CancellationToken cancellationToken = default) =>
+        CallAsync<SignerIdentityReview>(
+            IdentityReviewPath(documentId, assignmentId, signerId),
+            HttpMethod.Get,
+            cancellationToken: cancellationToken);
+
+    /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}</c> — fetch evidence directly from the provider while the verification is InReview. Returns 404 after a decision.</summary>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment containing the signer.</param>
+    /// <param name="signerId">Signer whose evidence to fetch.</param>
+    /// <param name="name">An entry from the review's Images: document_front, document_back, document_pdf, or face.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>JPEG, PNG, or PDF bytes. The API sends Cache-Control: no-store; handle these sensitive bytes without caching or logging.</returns>
+    public Task<byte[]> DownloadIdentityReviewImageAsync(
+        string documentId,
+        string assignmentId,
+        string signerId,
+        string name,
+        CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(
+            $"{IdentityReviewPath(documentId, assignmentId, signerId)}/images/{PathSegment(name, "Image name")}",
+            HttpMethod.Get,
+            cancellationToken);
+
+    /// <summary><c>POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review</c> — approve or reject an InReview verification on a pending_signature or pending_identity_review document.</summary>
+    /// <remarks>Approval permits certification once all signers have signed and all reviews are approved. Rejection cancels the document as rejected_by_user and notifies signers and copy receivers. The signer receives no separate decision message.</remarks>
+    /// <param name="documentId">Document that owns the assignment.</param>
+    /// <param name="assignmentId">Assignment containing the signer.</param>
+    /// <param name="signerId">Signer whose identity to review.</param>
+    /// <param name="request">Approved or Rejected decision and an optional private note of up to 2000 characters.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The updated identity review, including reviewer, note, and decision timestamps.</returns>
+    public Task<SignerIdentityReview> DecideIdentityReviewAsync(
+        string documentId,
+        string assignmentId,
+        string signerId,
+        DecideIdentityReviewRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Decision is not ("Approved" or "Rejected"))
+            throw new ValidationException("Identity review decision must be Approved or Rejected.");
+        if (request.Note is not null && request.Note.EnumerateRunes().Count() > 2000)
+            throw new ValidationException("Identity review note must not exceed 2000 characters.");
+
+        return CallAsync<SignerIdentityReview>(
+            $"{IdentityReviewPath(documentId, assignmentId, signerId)}/review",
+            HttpMethod.Post,
+            request,
+            cancellationToken: cancellationToken);
+    }
+
+    private static string IdentityReviewPath(string documentId, string assignmentId, string signerId) =>
+        $"documents/{PathSegment(documentId, "Document ID")}/assignments/{PathSegment(assignmentId, "Assignment ID")}/signers/{PathSegment(signerId, "Signer ID")}/identity-verification";
+
     internal static Dictionary<string, object?> BuildPayload(CreateAssignmentRequest request)
     {
         ValidateEntries(request.Entries);
@@ -207,7 +272,7 @@ public sealed class AssignmentResource : BaseResource
             var signer = new Dictionary<string, object?>();
             if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
                 signer["verification_method"] = reference.VerificationMethod;
-            if (reference.NotificationMethods?.Length > 0)
+            if (reference.NotificationMethods is not null)
                 signer["notification_methods"] = reference.NotificationMethods;
             return signer;
         }).ToList();
@@ -270,7 +335,7 @@ public sealed class AssignmentResource : BaseResource
         if (!string.IsNullOrWhiteSpace(reference.VerificationMethod))
             result["verification_method"] = reference.VerificationMethod;
 
-        if (reference.NotificationMethods?.Length > 0)
+        if (reference.NotificationMethods is not null)
             result["notification_methods"] = reference.NotificationMethods;
 
         if (reference.Step.HasValue)

@@ -8,7 +8,7 @@ public sealed class DocumentResource : BaseResource
 {
     private static readonly IReadOnlySet<string> ReadyStatuses = new HashSet<string>
     {
-        "metadata_ready", "pending_signature", "certificated",
+        "metadata_ready", "pending_signature", "pending_identity_review", "certificated",
     };
 
     private static readonly IReadOnlySet<string> FailedStatuses = new HashSet<string>
@@ -418,7 +418,7 @@ public sealed class DocumentResource : BaseResource
 
             if (!string.IsNullOrWhiteSpace(signer.VerificationMethod))
                 payload["verification_method"] = signer.VerificationMethod;
-            if (signer.NotificationMethods?.Length > 0)
+            if (signer.NotificationMethods is not null)
                 payload["notification_methods"] = signer.NotificationMethods;
             return payload;
         }).ToList();

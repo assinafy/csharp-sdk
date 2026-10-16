@@ -39,11 +39,11 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.5.1
+dotnet add package Assinafy.Sdk --version 2.6.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
-.NET SDKs 8.0.424, 9.0.317, and 10.0.400; [`global.json`](global.json) selects .NET 10 for
+.NET SDKs 8.0.426, 9.0.319, and 10.0.402; [`global.json`](global.json) selects .NET 10 for
 repository commands.
 
 ## Credentials and environments
@@ -138,8 +138,8 @@ because Assinafy refuses older protocols during the handshake (a `NetworkExcepti
 status).
 
 Credentials are attached per request; the SDK never stores credentials in default headers.
-Keep `Authorization`, `X-Api-Key`, and cookies off a supplied transport: its default headers
-also reach public and signer endpoints. The SDK adds `Accept` and `User-Agent` when absent.
+Requests reject a supplied transport with `Authorization`, `X-Api-Key`, or `Cookie` in its default
+headers. Configure credentials through `AssinafyClientOptions`. The SDK adds `Accept` and `User-Agent` when absent.
 Its `Timeout` is left untouched — set it yourself.
 
 ## OAuth 2.1 for multi-workspace apps
@@ -571,10 +571,17 @@ flowchart TD
     M --> F{Signer verification}
     F --> G[Email or WhatsApp OTP]
     F --> H[A1 or A3 certificate through Web PKI]
+    F --> N[Identity document, face match and liveness]
+    N --> I
     G --> I[Sign]
     H --> J[Start and complete certificate signing]
-    I --> K[document_ready webhook and certificated status]
-    J --> K
+    I --> R{Identity review pending?}
+    J --> R
+    R -->|No| K[document_ready webhook and certificated status]
+    R -->|Yes| P[pending_identity_review]
+    P --> Q[Human review in the workspace]
+    Q -->|Approve all| K
+    Q -->|Reject| X[Cancel document and notify]
     K --> L[Download signed PDF, PAdES or bundle]
 ```
 
@@ -582,8 +589,9 @@ flowchart TD
 2. **Wait** for the platform to normalize it and extract pages (`metadata_ready`).
 3. **Create signers** — reusable people records belonging to the workspace.
 4. **Create an assignment**, binding signers to the document. This is what sends the invitations.
-5. **Signers sign**, and once the last one finishes the document becomes `certificated` and its
-   signed artifacts become downloadable.
+5. **Signers sign**, and once the last one finishes and every identity review is approved, the
+   document becomes `certificated` and its signed artifacts become downloadable. An open review
+   keeps it in `pending_identity_review`.
 
 End to end:
 
@@ -878,12 +886,14 @@ new SignerRef
 ```
 
 Each signer takes exactly one notification method; a second entry returns 400. `Email` verification
-pairs with `Email` notification, `Whatsapp` with `Whatsapp`, and `DigitalCertificate` with either.
+pairs with `Email` notification, `Whatsapp` with `Whatsapp`, and `DigitalCertificate` or
+`IdDocumentFaceMatchBasic` with either.
 Send one side and the API infers the other.
 
 `Step` drives sequential signing: signers sharing a step are notified together, and the next step is
 notified only once the previous one completes. `SignerChannels.Whatsapp` is paid-only and costs
-extra credits. `SignerChannels.DigitalCertificate` is a verification method only.
+extra credits. `SignerChannels.DigitalCertificate` and `SignerChannels.IdDocumentFaceMatchBasic`
+are verification methods only.
 
 ## The signer-facing flow
 
@@ -983,6 +993,58 @@ and a browser-signed Web PKI token.
 `Signing.GetAsync` returns `400` for certificate signers before data confirmation and terms
 acceptance; its `hasAcceptedTerms` parameter cannot replace those steps. Download `pades` after
 completion to receive the qualified PAdES signature.
+
+### Identity document and face-match verification
+
+Requires the account's **ID Document + Face Match** feature and a valid CPF in the signer's
+`GovernmentId`. Create the signer with that CPF, then set `SignerChannels.IdDocumentFaceMatchBasic`
+on `SignerRef` or `TemplateSigner`, paired with exactly one `Email` or `Whatsapp` notification.
+`UploadAndRequestSignaturesAsync` also accepts `GovernmentId` per signer. Estimate costs first;
+the per-signer fee is charged when the assignment is created.
+
+Read `Signers.GetSelfAsync(...).VerificationMethod` to choose the signer flow. Biometrics uses
+hosted capture instead of the OTP accepted by `Signers.VerifyAsync`:
+
+```csharp
+var state = await client.Signing.GetIdentityVerificationAsync(signerAccessCode);
+if (state.CanStart)
+{
+    var session = await client.Signing.StartIdentityVerificationAsync(
+        signerAccessCode, biometricConsentGrantedBySigner);
+    var captureUrl = session.Url;
+}
+```
+
+Consent must come from the signer's explicit action. Open the complete URL in the browser,
+including its `#t=` fragment; never log it or persist it in browser storage. Query the state again
+after the signer returns. `CanStart` permits only a missing or `Expired` session; `Pending`,
+`InReview`, `Approved`, `Declined`, and `Abandoned` cannot restart. Restarting an `Expired` session
+adds no charge. `Declined` or `Abandoned` requires a new document and assignment. Resending the
+notification preserves a live session.
+
+`InReview` still allows the signer to view, confirm data, accept terms, and sign. The account
+decides the review, and certification waits for every approval. Evidence images are available
+only while the review is open; handle their sensitive bytes without caching or logging:
+
+```csharp
+var review = await client.Assignments.GetIdentityReviewAsync(documentId, assignmentId, signerId);
+if (review.Status == "InReview" && review.Images.Count > 0)
+{
+    var evidence = await client.Assignments.DownloadIdentityReviewImageAsync(
+        documentId, assignmentId, signerId, review.Images[0]);
+}
+
+// Execute only after the reviewer's decision: "Approved" or "Rejected".
+var decided = await client.Assignments.DecideIdentityReviewAsync(
+    documentId, assignmentId, signerId,
+    new DecideIdentityReviewRequest { Decision = reviewerDecision, Note = reviewerNote });
+```
+
+The private note accepts up to 2000 characters. Rejection cancels the document as `rejected_by_user`
+and notifies signers and copy receivers. Decisions are also sent to the provider. Subscribe to
+`signer_identity_verified`, `signer_identity_verification_failed`, `signer_identity_review_required`,
+`signer_identity_review_approved`, and `signer_identity_review_rejected` to follow the flow.
+Full payloads: [verification and review](docs/API.md#schema-signeridentityreview).
 
 ## Signature images
 
@@ -1098,8 +1160,8 @@ var endpoint = await client.Webhooks.CreateEndpointAsync(new CreateWebhookEndpoi
     SigningEnabled = true,
 });
 
-// Store the secret with your receiver configuration. Not available to OAuth applications.
-var secret = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
+// Store the secret returned at creation, including when using OAuth.
+var secret = endpoint.Secret ?? throw new InvalidOperationException("Missing signing secret.");
 
 var endpoints = await client.Webhooks.ListEndpointsAsync();          // oldest first
 await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpointRequest
@@ -1107,7 +1169,8 @@ await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpoint
     Events = ["document_ready"],                                      // only sent fields change
 });
 
-// Rotation takes effect at once: deliveries are signed only with the new secret.
+// With an API key: read and rotate. Rotation invalidates the old secret immediately.
+var current = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
 var rotated = await client.Webhooks.RotateEndpointSecretAsync(endpoint.Id);
 
 // Delivery history (optionally for one endpoint) and replay to that entry's endpoint.
@@ -1128,6 +1191,12 @@ await client.Webhooks.DeleteEndpointAsync(endpoint.Id);               // frees t
 Creating an endpoint past the plan's limit returns 403, and each endpoint needs a distinct URL (400).
 `GetAsync`, `UpdateSubscriptionAsync`, and `InactivateAsync` act on the account's oldest endpoint;
 `UpdateSubscriptionAsync` creates it when the account has none.
+
+`Secret` appears only in the creation response when signing is enabled. OAuth applications must
+store it then: they cannot read or rotate it later. If it is lost, delete the endpoint and create
+a replacement. API-key integrations can use `GetEndpointSecretAsync` and `RotateEndpointSecretAsync`.
+Use `ListEndpointsByUrlAsync(url)` or `DeleteEndpointByUrlAsync(url)` to find or remove an endpoint
+by its exact registered address.
 
 ### Receiving and verifying deliveries
 
@@ -1278,9 +1347,12 @@ await client.Authentication.DeleteApiKeyAsync();
 
 **Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
 only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 0.5 credits per signer
-on top of its notification). Values are capitalized exactly as shown. Assignments and templates accept exactly
+on top of its notification), and `IdDocumentFaceMatchBasic` (verification only; identity document,
+face match and liveness, account feature and valid CPF required; per-signer fee plus notification).
+Values are capitalized exactly as shown. Assignments and templates accept exactly
 one notification channel per signer. Email verification requires Email notification, WhatsApp
-verification requires WhatsApp notification, and DigitalCertificate permits either. The API infers
+verification requires WhatsApp notification, and DigitalCertificate or IdDocumentFaceMatchBasic
+permits either. The API infers
 an omitted side from the supplied side; with neither supplied, both default to Email. Multiple
 channels or incompatible combinations return 400. Use the cost estimate for the exact configuration.
 
