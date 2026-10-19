@@ -5,7 +5,7 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `5e0b468d233af024deecb6fc9a44a7ca5f42844cfceb0252c4a431f6f3a252ae`
+- Snapshot SHA-256: `966ddb1561621c4ac41ab19a9c8a0f2a5f3c060400168d40b275100b806f6931`
 - OpenAPI: `3.1.0`; API info version: `1.0.0`
 - API surface: 112 documented production operations across 85 paths, 45 component schemas, and 23 webhook event payloads.
 
@@ -441,16 +441,27 @@ Verification and notification are **coupled** — you may send one, both or neit
 | `Email` | The signer receives a verification code by email that must be entered before signing. |
 | `Whatsapp` | The signer receives a verification code over WhatsApp that must be entered before signing. Requires the WhatsApp notification channel — the two always travel together. |
 | `DigitalCertificate` | The signer signs with their own ICP-Brasil digital certificate (A1/A3) from their device using the Web PKI browser extension, producing a qualified PAdES signature on the document. |
+| `IdDocumentFaceMatchBasic` | Identity document verification. Before seeing the document, the signer consents, photographs an identity document, takes a photo holding it and passes a liveness check; the result must match the CPF and name you registered for the signer. See **Identity document verification** below. |
 
 | Code | Requirements | Cost per signer (verification + its notification) |
 |------|--------------|---------------------------------------------------|
 | `Email` | Signer must have an email address. | 0 credits (the Email notification) |
 | `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits (the WhatsApp notification, which this method requires) |
 | `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**. | 0.5 credits + its notification |
+| `IdDocumentFaceMatchBasic` | Account must have the **identity document verification** feature, enabled on request. Signer must have a full name and a valid CPF in `government_id` (a CNPJ is refused). | Your plan's verification price (see below) + its notification |
 
-> **How verification is priced.** No verification method carries a price of its own — you are billed for the **notification** it is paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.
+> **How verification is priced.** `Email`, `Whatsapp` and `DigitalCertificate` verification carry no price of their own — you are billed for the **notification** they are paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.
 
-> **Digital Certificate cost.** Unlike the other verification methods (whose only cost is the notification), the digital-certificate signature itself is charged **0.5 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
+> **Digital Certificate cost.** Unlike `Email` and `Whatsapp` verification (whose only cost is the notification), the digital-certificate signature itself is charged **0.5 credits per digital-certificate signer**, on top of the notification cost. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
+
+> **Identity document verification cost.** `IdDocumentFaceMatchBasic` is charged per signer, on top of the notification cost, at a price that depends on your plan (below). The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `VerificationIdDocumentFaceMatchBasic` code.
+
+| Plan | Price per signer |
+|------|------------------|
+| Free | 1.5 credits |
+| Standard | 1 credit |
+| Pro | 0.5 credits |
+| Other plans and enterprise contracts | 0.25 credits |
 
 ### Notification methods
 
@@ -475,6 +486,7 @@ Only matching combinations are allowed; an invalid pairing returns `400 Bad Requ
 | `Email` | `Email` |
 | `Whatsapp` | `Whatsapp` |
 | `DigitalCertificate` | `Email` or `Whatsapp` |
+| `IdDocumentFaceMatchBasic` | `Email` or `Whatsapp` (inferred: `Email`) |
 
 Exactly one notification method is allowed per signer — `notification_methods` takes a single-element array, and a second entry is rejected with `400` before the pairing above is even checked.
 
@@ -492,13 +504,37 @@ Notification cost is charged **per signer**, on top of the document cost. For ex
 - 2 signers notified by email = 0 credits
 - 2 signers notified by WhatsApp = 0.9 credits
 
-Verification follows the same arithmetic, because it is the notification that is billed: 2 signers **verified** by WhatsApp are necessarily notified by WhatsApp, and therefore also cost 0.9 credits.
+Verification follows the same arithmetic, because it is the notification that is billed: 2 signers **verified** by WhatsApp are necessarily notified by WhatsApp, and therefore also cost 0.9 credits. The exceptions are `DigitalCertificate` and `IdDocumentFaceMatchBasic`, which add their own per-signer charge on top of the notification.
 
-Use the **Estimate assignment cost** endpoint to preview the exact total (documents + notifications) before creating an assignment.
+Use the **Estimate assignment cost** endpoint to preview the exact total (documents + notifications + verification and signature charges) before creating an assignment.
 
 ### Notification timing and sequential signing
 
 By default every signer is notified as soon as the assignment is created. When you set `signers[].step` to define a signing order, each signer's notification is held until their step is activated: step 1 is notified at creation, and a later step is notified only after every signer in the previous step has finished.
+
+### Identity document verification
+
+With `IdDocumentFaceMatchBasic`, identity verification is the signer's first step:
+
+1. The signer opens the invitation and gives consent (**Start identity document verification**). The response carries the capture `url`, which the signer opens on their phone to photograph the document, take a photo holding it and pass the liveness check.
+2. Back on the signing page, **Identity document verification status** reports the result. The document's signer list also shows it in `identity_verification_status`.
+
+| Result | What happens |
+|--------|--------------|
+| `Approved` | The document, CPF and name matched. The signer views and signs normally. |
+| `InReview` | The service could not decide (for instance, the name differs slightly from the document). The signer **still views and signs**; the account is emailed to review. Once every signer has signed, the document waits in `pending_identity_review` instead of being certificated. |
+| `Declined` | The verification failed. The signer cannot sign this document. |
+| `Expired` | The capture link lapsed before anything was submitted; the signer may start again. |
+| `Abandoned` | The signer left the capture unfinished. As with `Declined`, they cannot restart; send a new document to verify them again. |
+
+**Reviewing.** A user of the account opens the review with **Signer identity review** (reasons, expected vs. read data, checks and evidence images, each fetched with **Signer identity review image** while the review is open), then decides with **Decide signer identity review**:
+
+- **Approved** — the document is certificated once every signer has signed and no other review is pending.
+- **Rejected** — the document is cancelled (`rejected_by_user`, with the reviewer as the user) and every signer receives the usual cancellation notice. The reviewer's note is never shown to signers.
+
+An unreviewed document still expires at its deadline, and deleting a `pending_identity_review` document cancels it and notifies the signers. A signer under review in a sequential flow completes their step, so the next step is notified right away.
+
+Each step of the process is recorded as a `signer_identity_*` activity and webhook event (see the **Event catalog**). A verification belongs to one document and is never reused for another.
 
 ### Assignments
 
@@ -612,7 +648,7 @@ Each event also has its own entry under **Webhooks** with a complete example bod
 | `document_metadata_ready` | User | Document | — | The document was normalized to PDF and its pages are available. |
 | `document_prepared` | User | Document | — | The user prepared a document (fields assigned to signers). |
 | `assignment_created` | User | Document | `user_name`, `user_email`, `user_telephone` | The user created an assignment for the document. Includes a snapshot of the creator profile. |
-| `document_ready` | Account | Document | — | The last signer signed the document; status is now `ready`. |
+| `document_ready` | Account | Document | — | The document was certificated after every signer signed (and, when a signer's identity was under review, after the account approved it). |
 | `document_processing_failed` | Account | Document | `error_message` | The document could not be processed. |
 | `signature_requested` | User | Document | `signer_full_name`, `signer_email`, `signer_whatsapp_phone_number`, `notification_method` | The user requested a signer to sign the document. |
 | `signer_created` | User | Signer | `signer_full_name` | The user created a new signer. |
@@ -653,8 +689,8 @@ User account endpoints.
 | AccountResource | `UploadLogoAsync` | `Task UploadLogoAsync(Stream imageStream, string fileName, string contentType = "image/png", string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/logo — upload or replace the account logo image (multipart file field). |
 | AccountResource | `DeleteLogoAsync` | `Task DeleteLogoAsync(string? accountId = null, CancellationToken cancellationToken = default)` | DELETE /accounts/{account_id}/logo — remove the account logo image. |
 | AssignmentResource | `ListAsync` | `Task<PaginatedResult<Assignment>> ListAsync(AssignmentListParams? parameters = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /assignments — list assignments for the authenticated user's current account. Passing accountId explicitly sends the legacy, undocumented accountId compatibility extension; the configured client default is not sent. |
-| AssignmentResource | `CreateAsync` | `Task<Assignment> CreateAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{document_id}/assignments — create a signature assignment binding signers to a document. |
-| AssignmentResource | `EstimateCostAsync` | `Task<AssignmentCostEstimate> EstimateCostAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/estimate-cost — preview the credit cost of CreateAsync before committing. |
+| AssignmentResource | `CreateAsync` | `Task<Assignment> CreateAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{document_id}/assignments — create a signature assignment binding signers to a document. `DigitalCertificate` requires `virtual`; other methods fail before transport with code `digital_certificate_requires_virtual`. |
+| AssignmentResource | `EstimateCostAsync` | `Task<AssignmentCostEstimate> EstimateCostAsync(string documentId, CreateAssignmentRequest request, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/estimate-cost — preview the credit cost of CreateAsync before committing. Applies the same `DigitalCertificate`/`virtual` validation and stable code. |
 | AssignmentResource | `ResetExpirationAsync` | `Task<Assignment> ResetExpirationAsync(string documentId, string assignmentId, string? expiresAt, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/reset-expiration — set or clear the assignment's expiration date. Always sends the required `expires_at` key: an ISO-8601 date at least one hour ahead, or `null` to remove the expiration. Not allowed once the document is closed. |
 | AssignmentResource | `ResendNotificationAsync` | `Task<ResendNotificationResult> ResendNotificationAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/resend — resend the signature notification (email or WhatsApp) for a specific signer. |
 | AssignmentResource | `EstimateResendCostAsync` | `Task<ResendCostEstimate> EstimateResendCostAsync(string documentId, string assignmentId, string signerId, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/estimate-resend-cost — preview the credit cost of ResendNotificationAsync. |
@@ -800,7 +836,7 @@ Every constructed client exposes `Authentication`, `OAuth`, `Accounts`, `Users`,
 
 A supplied `HttpClient` must keep `Authorization`, `X-Api-Key`, and `Cookie` out of its default headers. Requests reject these inherited credentials with `ValidationException`; configure credentials through `AssinafyClientOptions`.
 
-- Malformed credentials and SDK-validated request values throw `ValidationException` before transport; required .NET arguments use `ArgumentNullException` or `ArgumentException`.
+- Malformed credentials and SDK-validated request values throw `ValidationException` before transport; `Code` carries a stable machine-readable code when documented, and required .NET arguments use `ArgumentNullException` or `ArgumentException`.
 - A request body that cannot be encoded as JSON throws `SerializationException` before transport.
 - HTTP/API-envelope failures throw `ApiException`, with status, message, and structured details when supplied, plus `RateLimitLimit`, `RateLimitRemaining`, `RateLimitReset`, and `RetryAfter` from the rate-limit headers (`429` carries `Retry-After`).
 - Transport failures and client-side request timeouts throw `NetworkException`.
@@ -878,6 +914,12 @@ InReview permits signing but holds certification. When all signers have signed, 
 ## Template and digital-certificate payloads
 
 The signer certificate routes use only `signer-access-code` and never receive configured client credentials. They are production-only deployed extensions: the sandbox does not expose them, and they are not included in the published OpenAPI document. A valid production `DigitalCertificate` assignment and browser-signed Web PKI token are required for the complete flow.
+
+`DigitalCertificate` signers require assignment method `virtual`. `AssignmentResource.CreateAsync`
+and `EstimateCostAsync` reject another method before transport with `ValidationException.Code`
+`digital_certificate_requires_virtual`. A template with any placed field is instantiated as a
+`collect` assignment and is therefore incompatible with `DigitalCertificate`; use a template with
+no placed fields for certificate signers.
 
 ### POST /v1/accounts/{accountId}/templates
 
@@ -2924,8 +2966,16 @@ Per-unit costs (in credits) used to build the estimate:
 | Email notification | 0 credits |
 | WhatsApp notification | 0.45 credits |
 | Digital certificate signature (per signer) | 0.5 credits |
+| Identity document verification (per signer) | depends on the plan, see the table below |
 
-Verification methods are not priced separately — every line in the `breakdown` is a notification or a signature. A `Whatsapp`-verified signer therefore shows up as a WhatsApp notification, because that channel is mandatory for that verification method. A `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code.
+| Plan | Price per signer |
+|------|------------------|
+| Free | 1.5 credits |
+| Standard | 1 credit |
+| Pro | 0.5 credits |
+| Other plans and enterprise contracts | 0.25 credits |
+
+`Email` and `Whatsapp` verification are not priced separately — their only line in the `breakdown` is their notification. A `Whatsapp`-verified signer therefore shows up as a WhatsApp notification, because that channel is mandatory for that verification method. A `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code. An `IdDocumentFaceMatchBasic` signer likewise adds your plan's verification price on top of its notification, under the `VerificationIdDocumentFaceMatchBasic` code.
 
 | Parameter | Location | Required | Schema | Description |
 |---|---|---:|---|---|
@@ -2951,7 +3001,7 @@ Request body: required.
       "items": {
         "properties": {
           "verification_method": {
-            "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification. `IdDocumentFaceMatchBasic` requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged a per-signer fee.",
+            "description": "Verification method to price. `Whatsapp` forces the WhatsApp notification, so it prices at 0.45 credits per signer; `DigitalCertificate` adds the per-signer signature cost on top of its notification. `IdDocumentFaceMatchBasic` requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged your plan's per-signer verification price on top of its notification.",
             "type": "string",
             "enum": [
               "Email",
@@ -18459,7 +18509,7 @@ Example payload:
     "account_id": "65f1c2a9b3e4d5f6",
     "template_id": null,
     "name": "Contrato de Prestação de Serviços.pdf",
-    "status": "pending_signature",
+    "status": "rejected_by_user",
     "artifacts": {
       "original": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/download/original",
       "thumbnail": "https://api.assinafy.com.br/v1/documents/66b2f0e1c3a4d5e6f7a8b9c0/thumbnail"

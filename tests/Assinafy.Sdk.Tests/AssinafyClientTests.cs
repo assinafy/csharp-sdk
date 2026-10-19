@@ -360,6 +360,36 @@ public sealed class AssinafyClientTests
     }
 
     [Fact]
+    public async Task UploadAndRequestSignatures_RejectsCollectCertificateBeforeUploading()
+    {
+        var handler = new FakeHttpMessageHandler();
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(
+            new AssinafyClientOptions { ApiKey = "key", AccountId = "acc" }, http);
+
+        var act = () => client.UploadAndRequestSignaturesAsync(new UploadAndRequestSignaturesOptions
+        {
+            FileStream = new MemoryStream([1]),
+            FileName = "contract.pdf",
+            Method = AssignmentMethods.Collect,
+            Signers = [new UploadAndRequestSignaturesSigner
+            {
+                FullName = "Test Signer",
+                VerificationMethod = SignerChannels.DigitalCertificate,
+            }],
+            Entries = [new AssignmentEntry
+            {
+                PageId = "page",
+                Fields = [new AssignmentEntryField { SignerId = "signer", FieldId = "field" }],
+            }],
+        });
+
+        var exception = (await act.Should().ThrowAsync<ValidationException>()).Which;
+        exception.Code.Should().Be("digital_certificate_requires_virtual");
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task UploadAndRequestSignatures_RejectsEmptyFactoryResultAfterSignerCreation()
     {
         var handler = new FakeHttpMessageHandler();

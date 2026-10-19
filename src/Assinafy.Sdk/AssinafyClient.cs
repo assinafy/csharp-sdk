@@ -331,6 +331,9 @@ public sealed class AssinafyClient : IDisposable
             throw new ValidationException("At least one signer is required.");
         if (options.Signers.Any(signer => signer is null || string.IsNullOrWhiteSpace(signer.FullName)))
             throw new ValidationException("Every signer must have a full name.");
+        AssignmentResource.ValidateDigitalCertificateMethod(
+            options.Method,
+            options.Signers.Select(signer => signer.VerificationMethod));
         if (options.Entries is not null && options.EntriesFactory is not null)
             throw new ValidationException("Specify either Entries or EntriesFactory, not both.");
         if (string.Equals(options.Method, AssignmentMethods.Collect, StringComparison.OrdinalIgnoreCase) &&

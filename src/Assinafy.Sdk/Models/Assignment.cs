@@ -207,7 +207,7 @@ public sealed class SignerRef
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
 
-    /// <summary>Verification method from <see cref="SignerChannels"/>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified.</summary>
+    /// <summary>Verification method from <see cref="SignerChannels"/>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified. <c>DigitalCertificate</c> requires a <c>virtual</c> assignment.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>Exactly one notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. Inferred from verification when omitted; defaults to <c>Email</c> when neither is specified.</summary>
@@ -235,7 +235,7 @@ public sealed class AssignmentListParams
 /// <summary>Body for <c>POST /v1/documents/{documentId}/assignments</c> (create assignment / request signatures).</summary>
 public sealed class CreateAssignmentRequest
 {
-    /// <summary>Assignment method — one of <see cref="AssignmentMethods"/> (<c>virtual</c> to sign without input fields, or <c>collect</c> to place input fields on specific pages).</summary>
+    /// <summary>Assignment method — one of <see cref="AssignmentMethods"/> (<c>virtual</c> to sign without input fields, or <c>collect</c> to place input fields on specific pages). <c>DigitalCertificate</c> signers require <c>virtual</c>.</summary>
     public string? Method { get; set; }
 
     /// <summary>Signers to request, each with optional per-signer verification/notification/step settings. Required for the <c>virtual</c> method. Takes precedence over <see cref="SignerIds"/>.</summary>
@@ -514,7 +514,7 @@ public sealed class TemplateSigner
     /// </summary>
     public string? Id { get; set; }
 
-    /// <summary>Verification method from <see cref="SignerChannels"/>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method.</summary>
+    /// <summary>Verification method from <see cref="SignerChannels"/>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method. <c>DigitalCertificate</c> cannot be used when the template has placed fields, because that produces a <c>collect</c> assignment.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>The notification channel for the template signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, the API infers the verification method.</summary>

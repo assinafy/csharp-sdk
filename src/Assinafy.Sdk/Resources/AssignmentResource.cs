@@ -36,6 +36,7 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="request">Assignment configuration: <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>; defaults to <c>virtual</c>), the signers, and optional message, <c>expires_at</c>, copy receivers, and entries.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The newly created assignment.</returns>
+    /// <exception cref="ValidationException">A <c>DigitalCertificate</c> signer is combined with a method other than <c>virtual</c>; <see cref="ValidationException.Code"/> is <c>digital_certificate_requires_virtual</c>.</exception>
     public Task<Assignment> CreateAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -56,6 +57,7 @@ public sealed class AssignmentResource : BaseResource
     /// <param name="request">Same shape as <see cref="CreateAsync"/>; for estimation, signers may be specified without an <c>id</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The estimated document and credit cost, balance information, and any blocking reason.</returns>
+    /// <exception cref="ValidationException">A <c>DigitalCertificate</c> signer is combined with a method other than <c>virtual</c>; <see cref="ValidationException.Code"/> is <c>digital_certificate_requires_virtual</c>.</exception>
     public Task<AssignmentCostEstimate> EstimateCostAsync(
         string documentId,
         CreateAssignmentRequest request,
@@ -235,6 +237,7 @@ public sealed class AssignmentResource : BaseResource
         var signerRefs = ExtractSignerRefs(request);
         if (signerRefs.Count == 0)
             throw new ValidationException("At least one signer is required.");
+        ValidateDigitalCertificateMethod(request.Method, signerRefs.Select(signer => signer.VerificationMethod));
 
         var signers = signerRefs
             .Select(NormaliseSignerRef)
@@ -266,6 +269,7 @@ public sealed class AssignmentResource : BaseResource
         var signerRefs = ExtractSignerRefs(request);
         if (signerRefs.Count == 0)
             throw new ValidationException("At least one signer is required for a cost estimate.");
+        ValidateDigitalCertificateMethod(request.Method, signerRefs.Select(signer => signer.VerificationMethod));
 
         body["signers"] = signerRefs.Select(reference =>
         {
@@ -279,6 +283,17 @@ public sealed class AssignmentResource : BaseResource
 
         if (request.Entries?.Count > 0) body["entries"] = request.Entries;
         return body;
+    }
+
+    internal static void ValidateDigitalCertificateMethod(
+        string? method,
+        IEnumerable<string?> verificationMethods)
+    {
+        if (!string.Equals(method ?? AssignmentMethods.Virtual, AssignmentMethods.Virtual, StringComparison.Ordinal) &&
+            verificationMethods.Contains(SignerChannels.DigitalCertificate))
+            throw new ValidationException(
+                "DigitalCertificate signers require a virtual assignment.",
+                new Dictionary<string, object?> { ["code"] = "digital_certificate_requires_virtual" });
     }
 
     private static void ValidateEntries(IReadOnlyList<AssignmentEntry>? entries)

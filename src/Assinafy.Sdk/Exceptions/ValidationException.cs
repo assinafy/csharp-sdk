@@ -8,7 +8,10 @@ namespace Assinafy.Sdk.Exceptions;
 /// </summary>
 public sealed class ValidationException : AssinafyException
 {
-    /// <summary>Optional field-level validation details keyed by field name, or <see langword="null"/> when none were supplied.</summary>
+    /// <summary>Stable machine-readable error code, or <see langword="null"/> when the validation has no code.</summary>
+    public string? Code => Details?.TryGetValue("code", out var code) == true ? code as string : null;
+
+    /// <summary>Optional structured validation details, including field-level values, or <see langword="null"/> when none were supplied.</summary>
     public IReadOnlyDictionary<string, object?>? Details { get; }
 
     /// <summary>Creates a new <see cref="ValidationException"/> with the given message and optional field-level details.</summary>

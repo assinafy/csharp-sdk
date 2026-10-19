@@ -39,7 +39,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.6.0
+dotnet add package Assinafy.Sdk --version 2.6.1
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -525,7 +525,7 @@ Every SDK-specific exception derives from `AssinafyException`:
 
 | Exception | Raised when | Key members |
 |---|---|---|
-| `ValidationException` | The SDK rejects input before any HTTP call | `Details` (field-level) |
+| `ValidationException` | The SDK rejects input before any HTTP call | `Code` (when present), `Details` (field-level) |
 | `ApiException` | The API returned an error status or envelope | `StatusCode`, `ApiMessage`, `Details` |
 | `OAuthException` | The failure carries a machine-readable OAuth error code, from an OAuth endpoint or an `insufficient_scope` challenge on any endpoint. Derives from `ApiException` | `Error`, `ErrorDescription`, `Scope` |
 | `NetworkException` | Connection, DNS, or TLS failure, or a client-side timeout | `InnerException` |
@@ -687,6 +687,12 @@ created remain for you to inspect or clean up.
 |---|---|---|
 | `AssignmentMethods.Virtual` | Signers are notified and sign remotely, at their convenience | Document in `uploaded`, `metadata_processing`, or `metadata_ready` |
 | `AssignmentMethods.Collect` | Field values are collected in-session against explicit page and field placements | Document in `metadata_ready`, plus `Entries` |
+
+`DigitalCertificate` requires `AssignmentMethods.Virtual`: the certificate flow completes the
+virtual item and does not submit field values. `Assignments.CreateAsync` and `EstimateCostAsync`
+reject every other method before transport with `ValidationException.Code` set to
+`digital_certificate_requires_virtual`. A template with any placed field produces a `collect`
+assignment, so do not use `DigitalCertificate` for that template's signers.
 
 A collect assignment needs an entry per page describing which signer fills which field:
 
@@ -965,7 +971,8 @@ var artifact = await client.Signing.DownloadPublicAsync(
 ### Digital-certificate signing
 
 When an assignment's verification method is `DigitalCertificate`, signing is a two-step Web PKI
-exchange instead of a field submission:
+exchange instead of a field submission. It requires a `virtual` assignment; templates with placed
+fields produce `collect` and are incompatible:
 
 ```csharp
 // Confirm identity and terms before Signing.GetAsync for certificate signers.
@@ -1000,7 +1007,8 @@ Requires the account's **ID Document + Face Match** feature and a valid CPF in t
 `GovernmentId`. Create the signer with that CPF, then set `SignerChannels.IdDocumentFaceMatchBasic`
 on `SignerRef` or `TemplateSigner`, paired with exactly one `Email` or `Whatsapp` notification.
 `UploadAndRequestSignaturesAsync` also accepts `GovernmentId` per signer. Estimate costs first;
-the per-signer fee is charged when the assignment is created.
+the fee charged per signer when the assignment is created is 1.5 credits on Free, 1 on Standard,
+0.5 on Pro, and 0.25 on other plans and enterprise contracts, plus the notification.
 
 Read `Signers.GetSelfAsync(...).VerificationMethod` to choose the signer flow. Biometrics uses
 hosted capture instead of the OTP accepted by `Signers.VerifyAsync`:
@@ -1348,7 +1356,8 @@ await client.Authentication.DeleteApiKeyAsync();
 **Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
 only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 0.5 credits per signer
 on top of its notification), and `IdDocumentFaceMatchBasic` (verification only; identity document,
-face match and liveness, account feature and valid CPF required; per-signer fee plus notification).
+face match and liveness, account feature and valid CPF required; 1.5/1/0.5/0.25 credits per signer
+on Free/Standard/Pro/other plans, plus notification).
 Values are capitalized exactly as shown. Assignments and templates accept exactly
 one notification channel per signer. Email verification requires Email notification, WhatsApp
 verification requires WhatsApp notification, and DigitalCertificate or IdDocumentFaceMatchBasic
@@ -1358,6 +1367,7 @@ channels or incompatible combinations return 400. Use the cost estimate for the 
 
 
 **Assignment methods** (`AssignmentMethods`) — `virtual`, `collect`.
+`DigitalCertificate` signers require `virtual`; templates with placed fields produce `collect`.
 
 **Signature image types** (`SignatureImageTypes`) — `signature`, `initial`.
 

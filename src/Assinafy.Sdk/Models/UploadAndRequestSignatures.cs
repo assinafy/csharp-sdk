@@ -18,7 +18,7 @@ public sealed class UploadAndRequestSignaturesSigner
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 
-    /// <summary>Optional per-signer verification method from <see cref="SignerChannels"/>.</summary>
+    /// <summary>Optional per-signer verification method from <see cref="SignerChannels"/>. <c>DigitalCertificate</c> requires <see cref="AssignmentMethods.Virtual"/>.</summary>
     public string? VerificationMethod { get; set; }
 
     /// <summary>Exactly one optional notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. The API infers the omitted side.</summary>
@@ -46,7 +46,7 @@ public sealed class UploadAndRequestSignaturesOptions
     /// <summary>When <see langword="true"/> (the default), waits for the document to reach <c>metadata_ready</c> before creating the assignment.</summary>
     public bool? WaitForReady { get; set; }
 
-    /// <summary>Assignment method to create. Defaults to <c>virtual</c> when not set.</summary>
+    /// <summary>Assignment method to create. Defaults to <c>virtual</c> when not set. <c>DigitalCertificate</c> signers require <c>virtual</c>.</summary>
     public string? Method { get; set; }
 
     /// <summary>Optional message sent to signers.</summary>

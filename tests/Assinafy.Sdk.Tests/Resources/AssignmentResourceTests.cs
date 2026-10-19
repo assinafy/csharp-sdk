@@ -84,7 +84,7 @@ public sealed class AssignmentResourceTests
         var body = AssignmentResource.BuildEstimatePayload(new CreateAssignmentRequest
         {
             Method = "collect",
-            Signers = [new SignerRef { VerificationMethod = "DigitalCertificate" }],
+            Signers = [new SignerRef { VerificationMethod = "Email" }],
             Entries = [new AssignmentEntry
             {
                 PageId = "p1",
@@ -94,8 +94,35 @@ public sealed class AssignmentResourceTests
 
         // collect is priced per signer too, so the channels must reach the API.
         var signers = (List<Dictionary<string, object?>>)body["signers"]!;
-        signers[0]["verification_method"].Should().Be("DigitalCertificate");
+        signers[0]["verification_method"].Should().Be("Email");
         body.Should().ContainKey("entries");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DigitalCertificate_RequiresVirtualAssignmentBeforeTransport(bool estimate)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+        var request = new CreateAssignmentRequest
+        {
+            Method = AssignmentMethods.Collect,
+            Signers = [new SignerRef { Id = "signer", VerificationMethod = SignerChannels.DigitalCertificate }],
+            Entries = [new AssignmentEntry
+            {
+                PageId = "page",
+                Fields = [new AssignmentEntryField { SignerId = "signer", FieldId = "field" }],
+            }],
+        };
+
+        Func<Task> act = estimate
+            ? () => resource.EstimateCostAsync("document", request)
+            : () => resource.CreateAsync("document", request);
+
+        var exception = (await act.Should().ThrowAsync<ValidationException>()).Which;
+        exception.Code.Should().Be("digital_certificate_requires_virtual");
+        handler.Requests.Should().BeEmpty();
     }
 
     [Theory]

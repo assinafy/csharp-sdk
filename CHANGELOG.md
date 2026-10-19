@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.6.1] - 2026-10-19
+
+### Fixed
+
+- Reject non-virtual assignments with `DigitalCertificate` signers before creation or cost
+  estimation, with the stable `ValidationException.Code` value
+  `digital_certificate_requires_virtual`.
+- Validate the same combination before `UploadAndRequestSignaturesAsync` uploads a document or
+  creates signers.
+
+### Documentation
+
+- Clarify that digital-certificate signers require virtual assignments and cannot use templates
+  with placed fields.
+- Document current identity-document verification pricing by plan.
+
 ## [2.6.0] - 2026-10-16
 
 ### Added

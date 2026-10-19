@@ -38,7 +38,7 @@ corpos de requisição, respostas e erros, está em [docs/API.md](docs/API.md#sd
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.6.0
+dotnet add package Assinafy.Sdk --version 2.6.1
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
@@ -274,7 +274,7 @@ Toda exceção específica do SDK deriva de `AssinafyException`:
 
 | Exceção | Lançada quando | Membros principais |
 |---|---|---|
-| `ValidationException` | O SDK rejeita a entrada antes de qualquer chamada HTTP | `Details` (por campo) |
+| `ValidationException` | O SDK rejeita a entrada antes de qualquer chamada HTTP | `Code` (quando houver), `Details` (por campo) |
 | `ApiException` | A API devolveu status ou envelope de erro | `StatusCode`, `ApiMessage`, `Details` |
 | `OAuthException` | A falha traz um código de erro OAuth legível por máquina, vindo de uma rota OAuth ou de um desafio `insufficient_scope` em qualquer rota. Deriva de `ApiException` | `Error`, `ErrorDescription`, `Scope` |
 | `NetworkException` | Falha de conexão, DNS ou TLS, ou timeout do lado do cliente | `InnerException` |
@@ -443,6 +443,12 @@ criados permanecem para você inspecionar ou limpar.
 |---|---|---|
 | `AssignmentMethods.Virtual` | Os signatários são notificados e assinam remotamente, quando quiserem | Documento em `uploaded`, `metadata_processing` ou `metadata_ready` |
 | `AssignmentMethods.Collect` | Valores de campos são coletados em sessão, em posições explícitas de página e campo | Documento em `metadata_ready`, mais `Entries` |
+
+`DigitalCertificate` exige `AssignmentMethods.Virtual`: o fluxo de certificado conclui o item
+virtual e não envia valores de campos. `Assignments.CreateAsync` e `EstimateCostAsync` rejeitam
+qualquer outro método antes da chamada HTTP com `ValidationException.Code` igual a
+`digital_certificate_requires_virtual`. Um template com qualquer campo posicionado gera um
+assignment `collect`, portanto não use `DigitalCertificate` nos signatários desse template.
 
 Um assignment `collect` precisa de uma entrada por página descrevendo qual signatário preenche qual
 campo:
@@ -764,7 +770,7 @@ e `IdDocumentFaceMatchBasic` permitem qualquer um desses dois canais. Dois canai
 | `Email` *(padrão)* | Código de uso único (OTP) por e-mail, exigido antes de assinar | 0 créditos |
 | `Whatsapp` | Código de uso único (OTP) por WhatsApp | 0,45 crédito (a notificação WhatsApp, que este método exige); só em planos pagos |
 | `DigitalCertificate` | O signatário assina com o **próprio certificado ICP-Brasil (A1/A3)**, pela extensão de navegador Web PKI, gerando uma assinatura **PAdES qualificada** | 0,5 crédito + a notificação |
-| `IdDocumentFaceMatchBasic` | Documento de identidade, foto do signatário segurando o documento e prova de vida; exige o recurso na conta e CPF válido em `GovernmentId` | Tarifa por signatário + a notificação; consulte a estimativa |
+| `IdDocumentFaceMatchBasic` | Documento de identidade, foto do signatário segurando o documento e prova de vida; exige o recurso na conta e CPF válido em `GovernmentId` | Free: 1,5; Standard: 1; Pro: 0,5; outros planos/enterprise: 0,25 crédito + a notificação |
 
 A notificação é cobrada por signatário. O certificado digital cobra também a assinatura, e a
 verificação de documento e face tem uma tarifa própria por signatário. Como os lados são acoplados, escolher verificação
@@ -780,7 +786,8 @@ Exige o recurso **ID Document + Face Match** na conta e um CPF válido em `Gover
 signatário com esse CPF e use `SignerChannels.IdDocumentFaceMatchBasic` no `SignerRef` ou
 `TemplateSigner`, com exatamente uma notificação `Email` ou `Whatsapp`. O helper
 `UploadAndRequestSignaturesAsync` também aceita `GovernmentId` por signatário. Estime os custos
-antes de criar o assignment; a cobrança é por signatário na criação.
+antes de criar o assignment; a cobrança por signatário na criação é 1,5 crédito no Free, 1 no
+Standard, 0,5 no Pro e 0,25 em outros planos e contratos enterprise, mais a notificação.
 
 No fluxo do signatário, consulte `Signers.GetSelfAsync(...).VerificationMethod` para escolher a
 verificação. A biometria usa a captura hospedada em vez do OTP de `Signers.VerifyAsync`:
@@ -834,7 +841,8 @@ exige o certificado daquela pessoa (e-CPF, ou e-CNPJ que a nomeie como represent
 exige um e-CNPJ da empresa.
 
 Quando o método de verificação do assignment é `DigitalCertificate`, assinar é um handshake de dois
-passos com a extensão Web PKI, e não o envio de campos:
+passos com a extensão Web PKI, e não o envio de campos. Ele exige um assignment `virtual`; templates
+com campos posicionados produzem `collect` e não são compatíveis:
 
 ```csharp
 // Confirme identidade e termos antes de Signing.GetAsync para certificados.
