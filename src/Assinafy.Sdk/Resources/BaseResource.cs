@@ -18,12 +18,15 @@ public abstract class BaseResource
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         PropertyNameCaseInsensitive = true,
-        Converters = { new FlexibleStringJsonConverter() },
+        Converters = { new FlexibleStringJsonConverter(), new ContractRecordJsonConverter() },
     };
 
     private readonly HttpClient _http;
     private readonly string? _defaultAccountId;
     private readonly Action<HttpRequestMessage>? _authenticate;
+
+    /// <summary>The configured workspace ID before path or query escaping.</summary>
+    private protected string? DefaultAccountId => _defaultAccountId;
 
     private protected BaseResource(
         HttpClient http,
@@ -300,7 +303,7 @@ public abstract class BaseResource
         bool requireBody)
     {
         using var response = await SendAsync(requestFactory, cancellationToken, authenticate).ConfigureAwait(false);
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var json = await ReadResponseTextAsync(response, cancellationToken).ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
             throw UnwrappedError(response, json);
@@ -498,7 +501,7 @@ public abstract class BaseResource
         CancellationToken cancellationToken,
         bool requireData = false)
     {
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        var json = await ReadResponseTextAsync(response, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(json))
         {
@@ -520,6 +523,23 @@ public abstract class BaseResource
                 throw ApiError(response, (int)response.StatusCode, response.ReasonPhrase, null);
 
             throw new SerializationException("Failed to parse the API response body as JSON.", ex);
+        }
+    }
+
+    private static async Task<string> ReadResponseTextAsync(
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (InvalidOperationException ex) when (ex.InnerException is ArgumentException)
+        {
+            if (!response.IsSuccessStatusCode)
+                throw ApiError(response, (int)response.StatusCode, response.ReasonPhrase, null);
+
+            throw new SerializationException("Failed to decode the API response body.", ex);
         }
     }
 
@@ -584,9 +604,14 @@ public abstract class BaseResource
 
     private static JsonElement? ReadErrorDetails(JsonElement root)
     {
+        if (root.TryGetProperty("restrictions", out _) ||
+            root.TryGetProperty("errors", out _) ||
+            root.TryGetProperty("code", out _))
+            return root.Clone();
+
         return root.TryGetProperty("data", out var data) && data.ValueKind != JsonValueKind.Null
             ? data.Clone()
-            : root.TryGetProperty("restrictions", out _) ? root.Clone() : null;
+            : null;
     }
 
     private protected static string AppendQueryString(string path, IDictionary<string, string?>? queryParams)

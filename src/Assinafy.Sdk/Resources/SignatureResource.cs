@@ -10,10 +10,10 @@ public sealed class SignatureResource : BaseResource
         : base(http, authenticate: authenticate) { }
 
     /// <summary><c>POST /signature?signer-access-code={code}&amp;type={type}</c> — upload the signer's signature or initial image.</summary>
-    /// <param name="imageStream">PNG image data to upload. The SDK leaves this caller-owned stream open.</param>
+    /// <param name="imageStream">Nonblank PNG or JPEG image data to upload. The SDK leaves this caller-owned stream open.</param>
     /// <param name="signerAccessCode">The signer's access code authorizing the upload.</param>
     /// <param name="type">Which image to upload; one of the <see cref="SignatureImageTypes"/> values (<c>signature</c> or <c>initial</c>). Defaults to <c>signature</c>.</param>
-    /// <param name="contentType">MIME type of the image data. The current API documents <c>image/png</c>.</param>
+    /// <param name="contentType">MIME type matching the image data: <c>image/png</c> or <c>image/jpeg</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when the image has been uploaded.</returns>
     public Task UploadAsync(
@@ -31,11 +31,11 @@ public sealed class SignatureResource : BaseResource
             cancellationToken);
 
     /// <summary><c>POST /signature?signer-access-code={code}&amp;type={type}&amp;reuse={reuse}</c> — upload a signature or initial and choose whether it may be reused.</summary>
-    /// <param name="imageStream">PNG image data to upload. The SDK leaves this caller-owned stream open.</param>
+    /// <param name="imageStream">Nonblank PNG or JPEG image data to upload. The SDK leaves this caller-owned stream open.</param>
     /// <param name="signerAccessCode">The signer's access code authorizing the upload.</param>
     /// <param name="reuse">Whether the uploaded image may be reused in future signing processes.</param>
     /// <param name="type">Which image to upload; <c>signature</c> or <c>initial</c>.</param>
-    /// <param name="contentType">MIME type of the image data. The current API documents <c>image/png</c>.</param>
+    /// <param name="contentType">MIME type matching the image data: <c>image/png</c> or <c>image/jpeg</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes when the image has been uploaded.</returns>
     public Task UploadAsync(

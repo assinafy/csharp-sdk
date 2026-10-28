@@ -3,7 +3,7 @@
 *[Leia em português](README.md) · English*
 
 A typed .NET client for the [Assinafy](https://api.assinafy.com.br/v1/docs) electronic-signature
-API. It covers the complete documented HTTP surface — documents, templates, signers, assignments,
+API. It covers the complete documented HTTP surface — documents, contract tracking, templates, signers, assignments,
 the signer-facing signing flow, signature images, tags, fields, webhooks, accounts, users, and the
 OAuth 2.1 authorization-code flow — as strongly-typed resources on a single `AssinafyClient`, with
 one exception hierarchy, envelope handling, and pagination already taken care of.
@@ -35,11 +35,12 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 21. [Testing](#testing)
 22. [Support matrix and versioning](#support-matrix-and-versioning)
 23. [Further reading](#further-reading)
+24. [Contract lifecycle management](#contract-lifecycle-management)
 
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.6.1
+dotnet add package Assinafy.Sdk --version 2.7.0
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -1151,6 +1152,89 @@ await client.Fields.DeleteAsync(field.Id);
 
 Deleting a field already used on a document fails.
 
+## Contract lifecycle management
+
+Contract tracking is separate from signing. Upload a document and wait for it to be ready, then
+set its terms with `Contracts.SetAsync`. Reads need `documents:read`; writes need `documents:write`
+and a plan with contract tracking. Reads remain available after the plan lapses.
+
+```csharp
+using Assinafy.Sdk.Models;
+
+using var pdf = File.OpenRead("contract.pdf");
+var uploaded = await client.Documents.UploadAsync(pdf, "contract.pdf");
+var ready = await client.Documents.WaitUntilReadyAsync(uploaded.Id);
+var terms = (DocumentContract)await client.Contracts.SetAsync(ready.Id,
+    new Dictionary<string, object?>
+    {
+        ["status"] = "active",
+        ["counterparty_name"] = "Example Company",
+        ["value"] = 12000.50m,
+        ["currency"] = "BRL",
+        ["start_date"] = "2026-11-01",
+        ["end_date"] = "2027-10-31",
+        ["auto_renew"] = false,
+        ["renewal_term_months"] = 12,
+        ["notice_period_days"] = 30,
+        ["metadata"] = new Dictionary<string, string> { ["crm_stage"] = "won" },
+        ["external_references"] = new[]
+        {
+            new ContractExternalReference { System = "crm", Id = "deal-123" },
+        },
+    });
+
+var page = await client.Contracts.ListAsync(new Dictionary<string, string?>
+{
+    ["status"] = "active,expired", ["ending_within_days"] = "30",
+    ["expand"] = "document", ["sort"] = "-updated_at", ["per-page"] = "50",
+});
+
+// Send only changed attributes. Explicit null clears a term; omitted keys stay unchanged.
+terms = (DocumentContract)await client.Contracts.SetAsync(ready.Id,
+    new Dictionary<string, object?>
+    {
+        ["counterparty_name"] = null,
+        ["updated_at"] = terms.UpdatedAt,
+    });
+
+terms = await client.Contracts.RenewAsync(ready.Id, new Dictionary<string, object?>
+{
+    ["term"] = terms.Term, ["updated_at"] = terms.UpdatedAt,
+});
+terms = await client.Contracts.TerminateAsync(ready.Id, new Dictionary<string, object?>
+{
+    ["reason"] = "Agreement ended", ["updated_at"] = terms.UpdatedAt,
+});
+```
+
+Use API snake_case keys in write dictionaries so omitted attributes and explicit `null` stay
+separate. `metadata` and `external_references` replace their entire collections. Dates use
+`YYYY-MM-DD` on the Brasília calendar, monetary values use `decimal`, and a stale `updated_at`
+returns 409 with `ContractChanged` in `ApiException.Details`. Validation errors retain their
+`errors` array with field names and stable codes. Renewal must include the current `term` or a
+later `end_date`; do not issue another renewal with freshly read values after an uncertain result
+without first checking whether the original succeeded. The SDK never retries writes.
+
+For a signed amendment, upload a separate instrument and call `SetAsync` on its ID with
+`parent_document_id`, `relation_type` (`amendment`, `renewal`, or `termination`), and only the terms
+it changes. Complete the normal signing flow on that instrument. Its delta applies in signing
+order when certificated and the plan is eligible. `GetAsync` returns `DocumentContract` or
+`DocumentContractAmendment`; inspect the runtime type. `GetRelatedAsync` returns the root terms
+with all instruments. Pending amendments allow delta edits; null drops a delta key, and
+`parent_document_id: null` unlinks the instrument. Applied amendments are read-only; inspect
+`ApplyError` when a signed instrument is still pending.
+
+Subscribe to `document_contract_updated`, `document_contract_renewal_notice`,
+`document_contract_expiring`, `document_contract_expired`, `document_contract_renewed`,
+`document_contract_terminated`, `document_contract_amendment_updated`, and
+`document_contract_amended`. Deduplicate deliveries by `webhook-id`, then fetch current terms.
+For missed events, page contracts by `-updated_at` and read document activities. The hourly run
+handles notices, expiry and auto-renewal; it pauses while the plan is ineligible and catches up
+when it returns. The four `Contract*` notification preferences control lifecycle emails.
+
+Full filters, limits, null semantics, request/response payloads and errors are in
+[the API reference](docs/API.md#full-operation-request-and-response-payloads).
+
 ## Webhooks
 
 An account registers one webhook endpoint, or up to three on paid plans. Every active endpoint
@@ -1200,9 +1284,10 @@ Creating an endpoint past the plan's limit returns 403, and each endpoint needs 
 `GetAsync`, `UpdateSubscriptionAsync`, and `InactivateAsync` act on the account's oldest endpoint;
 `UpdateSubscriptionAsync` creates it when the account has none.
 
-`Secret` appears only in the creation response when signing is enabled. OAuth applications must
-store it then: they cannot read or rotate it later. If it is lost, delete the endpoint and create
-a replacement. API-key integrations can use `GetEndpointSecretAsync` and `RotateEndpointSecretAsync`.
+`Secret` is returned once when creating a signed endpoint or enabling signing on an existing one.
+Store it securely. OAuth applications cannot read the existing secret, but can obtain a replacement
+with `RotateEndpointSecretAsync` and `webhooks:write`. Rotation takes effect immediately; store the
+new secret before processing subsequent deliveries. API-key integrations can also use `GetEndpointSecretAsync`.
 Use `ListEndpointsByUrlAsync(url)` or `DeleteEndpointByUrlAsync(url)` to find or remove an endpoint
 by its exact registered address.
 

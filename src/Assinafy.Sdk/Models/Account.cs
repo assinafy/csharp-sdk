@@ -52,9 +52,21 @@ public sealed record Account
     [JsonPropertyName("is_delete_allowed")]
     public bool IsDeleteAllowed { get; init; }
 
+    /// <summary>Current plan limits, returned by the single-account endpoint and omitted from account lists.</summary>
+    [JsonPropertyName("limits")]
+    public AccountLimits? Limits { get; init; }
+
     /// <summary>ISO-8601 date-time when the account was created.</summary>
     [JsonPropertyName("created_at")]
     public string CreatedAt { get; init; } = string.Empty;
+}
+
+/// <summary>Limits of the workspace's current plan, returned by <c>GET /accounts/{account_id}</c>.</summary>
+public sealed record AccountLimits
+{
+    /// <summary>Maximum registered webhook endpoints: one, or three with the Multiple Webhooks feature. Creating an endpoint past this limit returns 403.</summary>
+    [JsonPropertyName("webhook_endpoints")]
+    public int WebhookEndpoints { get; init; }
 }
 
 /// <summary>

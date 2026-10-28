@@ -95,7 +95,7 @@ public sealed class WebhookResource : BaseResource
             cancellationToken);
     }
 
-    /// <summary><c>POST /accounts/{account_id}/webhooks/{dispatch_id}/retry</c> — re-send a previous delivery to the endpoint of that entry only. Returns 400 when that endpoint is inactive or no longer subscribed to the event.</summary>
+    /// <summary><c>POST /accounts/{account_id}/webhooks/{dispatch_id}/retry</c> — send the entry's event to its endpoint once, even while delivery is paused. A successful delivery lifts the pause. OAuth scope <c>webhooks:write</c>.</summary>
     /// <param name="dispatchId">Previous webhook dispatch to re-attempt.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -169,7 +169,7 @@ public sealed class WebhookResource : BaseResource
     /// Returns 403 past the plan's limit (one endpoint, or three on paid plans) and 400 when another endpoint
     /// already uses the URL. With <see cref="CreateWebhookEndpointRequest.SigningEnabled"/> a secret is
     /// returned once in <see cref="WebhookEndpoint.Secret"/>; store it securely. OAuth applications cannot
-    /// read or rotate it later and must recreate the endpoint if it is lost. OAuth scope <c>webhooks:write</c>.
+    /// read it later but can replace a lost secret with <see cref="RotateEndpointSecretAsync"/>. OAuth scope <c>webhooks:write</c>.
     /// </summary>
     /// <param name="request">URL, contact email, events, and optional name, active flag, and signing flag.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>
@@ -196,7 +196,9 @@ public sealed class WebhookResource : BaseResource
 
     /// <summary>
     /// <c>PUT /accounts/{account_id}/webhooks/endpoints/{endpoint_id}</c> — change only the fields sent.
-    /// Enabling signing generates a secret when the endpoint has none; disabling it discards the secret.
+    /// Enabling signing generates a secret when the endpoint has none and returns it once in
+    /// <see cref="WebhookEndpoint.Secret"/>; disabling signing discards the secret.
+    /// Changing the URL or sending <c>is_active: true</c> lifts a delivery pause.
     /// Returns 400 when another endpoint already uses the URL. OAuth scope <c>webhooks:write</c>.
     /// </summary>
     /// <param name="endpointId">Endpoint to update.</param>
@@ -277,7 +279,7 @@ public sealed class WebhookResource : BaseResource
     /// <summary>
     /// <c>POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/secret/rotate</c> — replace the signing
     /// secret. The old secret stops working immediately, so update the receiver at once. Returns 400 when
-    /// signing is disabled. Not available to OAuth applications.
+    /// signing is disabled. Available to OAuth applications with the <c>webhooks:write</c> scope.
     /// </summary>
     /// <param name="endpointId">Endpoint whose secret to rotate.</param>
     /// <param name="accountId">Workspace (account) ID; falls back to the client's configured default when <see langword="null"/>.</param>

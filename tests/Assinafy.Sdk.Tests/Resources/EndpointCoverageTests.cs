@@ -17,10 +17,39 @@ public sealed class EndpointCoverageTests
 {
     private static HttpClient Client(FakeHttpMessageHandler handler) => FakeHttpMessageHandler.CreateClient(handler);
 
+    [Theory]
+    [InlineData("field-get")]
+    [InlineData("field-delete")]
+    [InlineData("signer-delete")]
+    public async Task WorkspaceItemOperations_EscapeIdsAndAuthenticateWithoutABody(string operation)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var method = operation == "field-get" ? HttpMethod.Get : HttpMethod.Delete;
+        var resource = operation == "signer-delete" ? "signers" : "fields";
+        var path = $"/v1/accounts/override/{resource}/item%2F%3F";
+        handler.AddJsonResponse(method, path, FakeHttpMessageHandler.ApiOk(new { id = "item/?", name = "Example", type = "text" }));
+        using var client = new AssinafyClient(
+            new AssinafyClientOptions { ApiKey = "example-key", AccountId = "default" }, Client(handler));
+
+        if (operation == "field-get")
+            (await client.Fields.GetAsync("item/?", "override")).Id.Should().Be("item/?");
+        else if (operation == "field-delete")
+            await client.Fields.DeleteAsync("item/?", "override");
+        else
+            await client.Signers.DeleteAsync("item/?", "override");
+
+        var request = handler.Requests.Single();
+        request.Method.Should().Be(method);
+        request.RequestUri!.AbsolutePath.Should().Be(path);
+        request.RequestUri.Query.Should().BeEmpty();
+        request.Headers.GetValues("X-Api-Key").Should().ContainSingle().Which.Should().Be("example-key");
+        handler.RequestBodies.Should().ContainSingle().Which.Should().BeEmpty();
+    }
+
     // ---- Routes and queries ----------------------------------------------------------
 
     [Fact]
-    public async Task Assignments_List_UsesDocumentedPaginationOnly()
+    public async Task Assignments_List_SendsConfiguredAccountAndPagination()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Get, "/assignments",
@@ -31,7 +60,7 @@ public sealed class EndpointCoverageTests
 
         result.Data.Should().ContainSingle().Which.Id.Should().Be("as1");
         var query = handler.Requests.Single(r => r.RequestUri!.AbsolutePath.EndsWith("/assignments")).RequestUri!.Query;
-        query.Should().NotContain("accountId");
+        query.Should().Contain("accountId=acc");
         query.Should().Contain("page=2");
         query.Should().Contain("per-page=5");
     }

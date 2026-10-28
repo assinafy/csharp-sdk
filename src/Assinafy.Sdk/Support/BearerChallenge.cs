@@ -1,5 +1,5 @@
 using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
+using System.Text;
 
 namespace Assinafy.Sdk.Support;
 
@@ -9,17 +9,14 @@ namespace Assinafy.Sdk.Support;
 /// <c>Bearer error="insufficient_scope", scope="documents:write", resource_metadata="..."</c>.
 /// </summary>
 /// <remarks>
-/// The raw header text is matched rather than <see cref="HttpResponseHeaders.WwwAuthenticate"/>,
+/// The raw header text is parsed rather than <see cref="HttpResponseHeaders.WwwAuthenticate"/>,
 /// because the typed collection splits a single challenge on the commas separating its auth-params
 /// and reports each fragment as its own scheme.
 /// </remarks>
-internal static partial class BearerChallenge
+internal static class BearerChallenge
 {
     private static readonly Dictionary<string, string> NoParameters =
         new(StringComparer.OrdinalIgnoreCase);
-
-    [GeneratedRegex("(?<key>[A-Za-z_]+)\\s*=\\s*\"(?<value>[^\"]*)\"", RegexOptions.ExplicitCapture)]
-    private static partial Regex ParameterPattern();
 
     /// <summary>
     /// Extract the auth-params of the <c>Bearer</c> challenge on a response, or an empty
@@ -33,16 +30,56 @@ internal static partial class BearerChallenge
             return NoParameters;
 
         var header = string.Join(", ", values);
-        if (!header.Contains("Bearer", StringComparison.OrdinalIgnoreCase))
-            return NoParameters;
-
         Dictionary<string, string>? parameters = null;
-        foreach (Match match in ParameterPattern().Matches(header))
+        var start = 0;
+        var quoted = false;
+        for (var i = 0; i <= header.Length; i++)
         {
-            parameters ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            parameters[match.Groups["key"].Value] = match.Groups["value"].Value;
+            if (i < header.Length)
+            {
+                if (quoted && header[i] == '\\' && i + 1 < header.Length)
+                {
+                    i++;
+                    continue;
+                }
+                if (header[i] == '"') quoted = !quoted;
+                if (header[i] != ',' || quoted) continue;
+            }
+
+            var part = header[start..i].Trim();
+            start = i + 1;
+            if (part.Length == 0) continue;
+
+            if (!NameValueHeaderValue.TryParse(part, out var parameter) || parameter.Value is null)
+            {
+                // A new scheme ends the first Bearer challenge; its parameters cannot overwrite it.
+                if (parameters is not null) break;
+                if (!AuthenticationHeaderValue.TryParse(part, out var challenge) ||
+                    !string.Equals(challenge.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                parameters = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                if (!NameValueHeaderValue.TryParse(challenge.Parameter, out parameter) || parameter.Value is null)
+                    continue;
+            }
+
+            if (parameters is not null)
+                parameters[parameter.Name] = Unquote(parameter.Value);
         }
 
         return parameters ?? NoParameters;
+    }
+
+    private static string Unquote(string value)
+    {
+        if (value.Length == 0 || value[0] != '"') return value;
+
+        var result = new StringBuilder(value.Length - 2);
+        for (var i = 1; i < value.Length - 1; i++)
+        {
+            if (value[i] == '\\') i++;
+            result.Append(value[i]);
+        }
+        return result.ToString();
     }
 }

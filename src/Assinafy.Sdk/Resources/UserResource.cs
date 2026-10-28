@@ -48,7 +48,7 @@ public sealed class UserResource : BaseResource
         }
     }
 
-    /// <summary><c>GET /users/self/notification-preferences</c> — retrieve all nine email notification preferences.</summary>
+    /// <summary><c>GET /users/self/notification-preferences</c> — retrieve document, signer, template, and contract email notification preferences.</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The authenticated user's notification preferences.</returns>
     public Task<NotificationPreferences> GetNotificationPreferencesAsync(
@@ -77,7 +77,11 @@ public sealed class UserResource : BaseResource
             request.DocumentExpirationReset is null &&
             request.DocumentProcessingFailed is null &&
             request.TemplateProcessingFailed is null &&
-            request.SignerWhatsappFailed is null)
+            request.SignerWhatsappFailed is null &&
+            request.ContractRenewalNotice is null &&
+            request.ContractExpiring is null &&
+            request.ContractExpired is null &&
+            request.ContractRenewed is null)
             throw new ValidationException("At least one notification preference is required.");
 
         return CallAsync<NotificationPreferences>(

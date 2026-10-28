@@ -272,7 +272,7 @@ public sealed class AssignmentResourceTests
     }
 
     [Fact]
-    public async Task List_SendsAccountOnlyWhenExplicitlyRequestedForCompatibility()
+    public async Task List_ExplicitAccountOverridesConfiguredAccount()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Get, "/assignments",

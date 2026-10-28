@@ -151,7 +151,26 @@ public sealed class DocumentResource : BaseResource
         int? page = null,
         int? perPage = null,
         string? accountId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        SearchAsync(search, status, page, perPage, accountId, null, cancellationToken);
+
+    /// <summary><c>GET /accounts/{account_id}/documents/search</c> — search documents by name with an explicit sort order, returning compact document records.</summary>
+    /// <param name="search">Case-insensitive search term matched against document names, or null for all documents.</param>
+    /// <param name="status">Optional document status filter.</param>
+    /// <param name="page">Optional 1-based page number.</param>
+    /// <param name="perPage">Optional page size.</param>
+    /// <param name="accountId">Workspace account; falls back to the client default.</param>
+    /// <param name="sort">Sort by <c>name</c> or <c>updated_at</c>; prefix with <c>-</c> for descending. The API defaults to <c>-updated_at</c> and ignores unknown values.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page of matching documents and any pagination metadata returned by the API.</returns>
+    public Task<PaginatedResult<DocumentListItem>> SearchAsync(
+        string? search,
+        string? status,
+        int? page,
+        int? perPage,
+        string? accountId,
+        string? sort,
+        CancellationToken cancellationToken)
     {
         var id = AccountId(accountId);
         var query = new Dictionary<string, string?>();
@@ -159,6 +178,7 @@ public sealed class DocumentResource : BaseResource
         if (!string.IsNullOrWhiteSpace(status)) query["status"] = status;
         if (page is int p) query["page"] = p.ToString();
         if (perPage is int pp) query["per-page"] = pp.ToString();
+        if (!string.IsNullOrWhiteSpace(sort)) query["sort"] = sort;
 
         return CallListAsync<DocumentListItem>($"accounts/{id}/documents/search", query, cancellationToken);
     }
@@ -209,13 +229,28 @@ public sealed class DocumentResource : BaseResource
     /// <returns>The document's activity timeline.</returns>
     public async Task<IReadOnlyList<DocumentActivity>> ActivitiesAsync(
         string documentId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        (await ActivitiesAsync(documentId, null, cancellationToken).ConfigureAwait(false)).Data;
+
+    /// <summary><c>GET /documents/{documentId}/activities</c> — fetch a page of document activity with its pagination metadata.</summary>
+    /// <param name="documentId">Document whose activity timeline to fetch.</param>
+    /// <param name="parameters">Optional sort order and pagination. The API returns newest activity first by default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The requested page of activity records and any pagination metadata returned by the API.</returns>
+    public Task<PaginatedResult<DocumentActivity>> ActivitiesAsync(
+        string documentId,
+        DocumentActivityListParams? parameters,
+        CancellationToken cancellationToken)
     {
         var id = PathSegment(documentId, "Document ID");
-        return await CallListBodyAsync<DocumentActivity>(
+        var query = new Dictionary<string, string?>();
+        if (!string.IsNullOrWhiteSpace(parameters?.Sort)) query["sort"] = parameters.Sort;
+        if (parameters?.Page is int page) query["page"] = page.ToString();
+        if (parameters?.PerPage is int perPage) query["per-page"] = perPage.ToString();
+        return CallListAsync<DocumentActivity>(
             $"documents/{id}/activities",
-            HttpMethod.Get,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            query,
+            cancellationToken);
     }
 
     /// <summary>
@@ -332,6 +367,7 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents</c> — create a document by binding signers to template roles.</summary>
+    /// <remarks>The response starts with status <c>uploaded</c> and no assignment. Poll the document or receive webhooks: assignment creation runs in the background and can fail without charging. Templates with placed signer fields use <c>collect</c> and cannot use <c>DigitalCertificate</c>.</remarks>
     /// <param name="templateId">Template to instantiate.</param>
     /// <param name="signers">Signers bound to the template's roles.</param>
     /// <param name="options">Optional document name, message, <c>expires_at</c>, and editor-field values.</param>
@@ -411,8 +447,16 @@ public sealed class DocumentResource : BaseResource
             if (!estimate)
             {
                 if (string.IsNullOrWhiteSpace(signer.Id))
-                    throw new ValidationException("Signer ID is required when creating from a template.");
-                payload["id"] = signer.Id;
+                {
+                    if (string.IsNullOrWhiteSpace(signer.Email))
+                        throw new ValidationException("Signer ID or email is required when creating from a template.");
+                    payload["email"] = signer.Email;
+                    if (signer.Name is not null) payload["name"] = signer.Name;
+                    if (signer.WhatsAppPhoneNumber is not null)
+                        payload["whatsapp_phone_number"] = signer.WhatsAppPhoneNumber;
+                }
+                else
+                    payload["id"] = signer.Id;
                 if (signer.Step.HasValue) payload["step"] = signer.Step.Value;
             }
 

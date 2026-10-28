@@ -20,7 +20,7 @@ public class ApiException : AssinafyException
     /// <summary>Human-readable error message reported by the API, or <see langword="null"/> when the response carried none.</summary>
     public string? ApiMessage { get; }
 
-    /// <summary>Structured error details from <c>data</c>, or the full error object when it carries top-level deletion <c>restrictions</c>; <see langword="null"/> when absent.</summary>
+    /// <summary>Structured error details from <c>data</c>, or the full error object when it carries top-level <c>errors</c>, <c>code</c>, or deletion <c>restrictions</c>; <see langword="null"/> when absent.</summary>
     public JsonElement? Details { get; }
 
     /// <summary>
@@ -57,7 +57,7 @@ public class ApiException : AssinafyException
     /// <summary>Creates a new <see cref="ApiException"/> for the given status code, API-supplied message, and structured details.</summary>
     /// <param name="statusCode">HTTP or envelope status code reported by the API.</param>
     /// <param name="apiMessage">Optional human-readable message reported by the API.</param>
-    /// <param name="details">Optional structured data or deletion-restriction error object.</param>
+    /// <param name="details">Optional structured data or complete error object carrying field errors, a code, or deletion restrictions.</param>
     public ApiException(int statusCode, string? apiMessage, JsonElement? details)
         : base($"API error {statusCode}{(apiMessage != null ? $": {apiMessage}" : string.Empty)}")
     {

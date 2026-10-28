@@ -4,7 +4,7 @@ namespace Assinafy.Sdk.Models;
 
 /// <summary>
 /// The authenticated user's owner-facing email notification preferences. The API returns
-/// all nine properties; <see langword="true"/> means the corresponding email is enabled.
+/// all preferences; <see langword="true"/> means the corresponding email is enabled.
 /// </summary>
 public sealed record NotificationPreferences
 {
@@ -43,6 +43,22 @@ public sealed record NotificationPreferences
     /// <summary>Email when a WhatsApp notification to a signer cannot be delivered.</summary>
     [JsonPropertyName("SignerWhatsappFailed")]
     public bool SignerWhatsappFailed { get; init; }
+
+    /// <summary>Email when a tracked contract enters its notice period before ending or renewing.</summary>
+    [JsonPropertyName("ContractRenewalNotice")]
+    public bool ContractRenewalNotice { get; init; }
+
+    /// <summary>Email when a tracked contract ends in 45 or 30 days.</summary>
+    [JsonPropertyName("ContractExpiring")]
+    public bool ContractExpiring { get; init; }
+
+    /// <summary>Email when a tracked contract ends without renewal.</summary>
+    [JsonPropertyName("ContractExpired")]
+    public bool ContractExpired { get; init; }
+
+    /// <summary>Email when a tracked contract automatically renews into its next term.</summary>
+    [JsonPropertyName("ContractRenewed")]
+    public bool ContractRenewed { get; init; }
 }
 
 /// <summary>
@@ -86,6 +102,22 @@ public sealed class UpdateNotificationPreferencesRequest
     /// <summary>Enable or disable the signer-WhatsApp-failed email.</summary>
     [JsonPropertyName("SignerWhatsappFailed")]
     public bool? SignerWhatsappFailed { get; set; }
+
+    /// <summary>Enable or disable the contract-renewal-notice email.</summary>
+    [JsonPropertyName("ContractRenewalNotice")]
+    public bool? ContractRenewalNotice { get; set; }
+
+    /// <summary>Enable or disable the contract-expiring email.</summary>
+    [JsonPropertyName("ContractExpiring")]
+    public bool? ContractExpiring { get; set; }
+
+    /// <summary>Enable or disable the contract-expired email.</summary>
+    [JsonPropertyName("ContractExpired")]
+    public bool? ContractExpired { get; set; }
+
+    /// <summary>Enable or disable the contract-renewed email.</summary>
+    [JsonPropertyName("ContractRenewed")]
+    public bool? ContractRenewed { get; set; }
 }
 
 /// <summary>The authenticated user's enrolled two-factor methods (<c>GET /users/self/mfa</c>).</summary>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Models;
 
@@ -130,6 +131,14 @@ public sealed record Assignment
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
 
+    /// <summary>The document this assignment belongs to, or <see langword="null"/> if the document was deleted.</summary>
+    [JsonPropertyName("document_id")]
+    public string? DocumentId { get; init; }
+
+    /// <summary>ISO-8601 date-time when the assignment was created.</summary>
+    [JsonPropertyName("created_at")]
+    public string? CreatedAt { get; init; }
+
     /// <summary>Email address of the account owner who created the assignment.</summary>
     [JsonPropertyName("sender_email")]
     public string? SenderEmail { get; init; }
@@ -213,7 +222,7 @@ public sealed class SignerRef
     /// <summary>Exactly one notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. Inferred from verification when omitted; defaults to <c>Email</c> when neither is specified.</summary>
     public string[]? NotificationMethods { get; set; }
 
-    /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
+    /// <summary>Signing-order step. Signers sharing a step sign in parallel; a digital-certificate signer must be alone in its step. The next step activates once the previous completes. Omit for all-at-once signing.</summary>
     public int? Step { get; set; }
 
     /// <summary>Creates a <see cref="SignerRef"/> from a bare signer ID, leaving verification and notification settings to the API defaults.</summary>
@@ -222,9 +231,15 @@ public sealed class SignerRef
     public static implicit operator SignerRef(string id) => new() { Id = id };
 }
 
-/// <summary>Optional pagination filters for <c>Assignments.ListAsync</c> (<c>GET /assignments</c>).</summary>
+/// <summary>Optional sorting and pagination for <c>Assignments.ListAsync</c> (<c>GET /assignments</c>).</summary>
 public sealed class AssignmentListParams
 {
+    /// <summary>Workspace ID when not passed directly to ListAsync. Falls back to the client's configured default; an OAuth token can supply its bound workspace when omitted.</summary>
+    public string? AccountId { get; set; }
+
+    /// <summary>Sort by <c>created_at</c> (default), <c>expires_at</c>, or <c>id</c>; prefix with <c>-</c> for descending order. Unknown values are ignored by the API.</summary>
+    public string? Sort { get; set; }
+
     /// <summary>1-based page number.</summary>
     public int? Page { get; set; }
 
@@ -322,7 +337,7 @@ public sealed record AssignmentCostEstimate
     [JsonPropertyName("documents")]
     public int Documents { get; init; }
 
-    /// <summary>Total notification credits needed.</summary>
+    /// <summary>Credits for notifications, digital-certificate signatures, and identity checks; excludes any extra-document cost.</summary>
     [JsonPropertyName("credits")]
     public decimal Credits { get; init; }
 
@@ -334,7 +349,7 @@ public sealed record AssignmentCostEstimate
     [JsonPropertyName("extra_document_cost")]
     public decimal ExtraDocumentCost { get; init; }
 
-    /// <summary>Total credits required for the assignment (notifications plus any extra-document cost).</summary>
+    /// <summary>Total credits required for the assignment: the breakdown costs plus any extra-document cost.</summary>
     [JsonPropertyName("total_credits")]
     public decimal TotalCredits { get; init; }
 
@@ -380,8 +395,9 @@ public sealed record ResendNotificationResult
 }
 
 /// <summary>
-/// Cost estimate for resending a signature request. It includes the current full-cost shape and
-/// retains legacy fields returned by older deployments.
+/// Cost estimate for resending a signature request: total credits, their breakdown, the available
+/// credit balance, and whether it is sufficient. A reminder consumes no document.
+/// Other cost fields are retained for deployments returning the assignment-cost shape.
 /// </summary>
 public sealed record ResendCostEstimate
 {
@@ -405,7 +421,7 @@ public sealed record ResendCostEstimate
     [JsonPropertyName("total_credits")]
     public decimal TotalCredits { get; init; }
 
-    /// <summary>Legacy total-credit field returned by older deployments.</summary>
+    /// <summary>Total credits needed for the reminder, equal to the sum of the breakdown costs.</summary>
     [JsonPropertyName("total")]
     public decimal Total { get; init; }
 
@@ -417,15 +433,23 @@ public sealed record ResendCostEstimate
     [JsonPropertyName("document_balance")]
     public decimal DocumentBalance { get; init; }
 
-    /// <summary>The account's current credit balance.</summary>
+    /// <summary>The account's available credits, or <see langword="null"/> when credits are unlimited or the balance is not reported.</summary>
     [JsonPropertyName("credit_balance")]
-    public decimal CreditBalance { get; init; }
+    public decimal? AvailableCreditBalance { get; init; }
+
+    /// <summary>Compatibility credit balance, returning zero when credits are unlimited or not reported. Use <see cref="AvailableCreditBalance"/> to distinguish these from an exhausted balance.</summary>
+    [JsonIgnore]
+    public decimal CreditBalance
+    {
+        get => AvailableCreditBalance ?? 0;
+        init => AvailableCreditBalance = value;
+    }
 
     /// <summary>Whether the account has enough documents and credits.</summary>
     [JsonPropertyName("has_sufficient_resources")]
     public bool HasSufficientResources { get; init; }
 
-    /// <summary>Legacy sufficiency field returned by older deployments.</summary>
+    /// <summary>Whether the account has enough credits for the reminder, including unlimited-credit plans.</summary>
     [JsonPropertyName("has_sufficient_credits")]
     public bool HasSufficientCredits { get; init; }
 
@@ -465,8 +489,9 @@ public sealed record CostBreakdownItem
 /// <summary>A rendered WhatsApp notification sent for an assignment, split into header/body/buttons as the signer would see it.</summary>
 public sealed record WhatsAppNotification
 {
-    /// <summary>Unix-epoch timestamp (seconds) when the message was sent.</summary>
+    /// <summary>Unix-epoch timestamp (seconds) when the message was sent, converted from the API's ISO-8601 timestamp. Legacy numeric timestamps are also accepted.</summary>
     [JsonPropertyName("sent_at")]
+    [JsonConverter(typeof(UnixSecondsJsonConverter))]
     public long SentAt { get; init; }
 
     /// <summary>The rendered message header text.</summary>
@@ -502,17 +527,27 @@ public sealed record WhatsAppNotificationButton
     public string? Url { get; init; }
 }
 
-/// <summary>Maps an existing signer to a template role when creating a document from a template. The signer must already exist in the account.</summary>
+/// <summary>Maps a signer to a template role by existing ID or email when creating a document from a template.</summary>
 public sealed class TemplateSigner
 {
     /// <summary>The template role ID this signer fills.</summary>
     public required string RoleId { get; set; }
 
     /// <summary>
-    /// ID of the existing signer to assign to the role. Required when creating a document and
-    /// omitted when estimating a template's cost.
+    /// ID of the existing signer to assign to the role. Takes precedence over <see cref="Email"/>;
+    /// supply either ID or email when creating a document. Omitted when estimating its cost.
     /// </summary>
     public string? Id { get; set; }
+
+    /// <summary>Used without <see cref="Id"/> to reuse the account's signer with this email, or create one with <see cref="Name"/>.</summary>
+    public string? Email { get; set; }
+
+    /// <summary>Full name for a signer created from <see cref="Email"/>.</summary>
+    public string? Name { get; set; }
+
+    /// <summary>WhatsApp phone number for a signer created from <see cref="Email"/>.</summary>
+    [JsonPropertyName("whatsapp_phone_number")]
+    public string? WhatsAppPhoneNumber { get; set; }
 
     /// <summary>Verification method from <see cref="SignerChannels"/>. If set without <see cref="NotificationMethods"/>, the template route infers the notification method. <c>DigitalCertificate</c> cannot be used when the template has placed fields, because that produces a <c>collect</c> assignment.</summary>
     public string? VerificationMethod { get; set; }
@@ -520,6 +555,6 @@ public sealed class TemplateSigner
     /// <summary>The notification channel for the template signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, the API infers the verification method.</summary>
     public string[]? NotificationMethods { get; set; }
 
-    /// <summary>Signing-order step. Signers sharing a step sign in parallel; the next step activates once the previous step completes. Omit for all-at-once signing.</summary>
+    /// <summary>Signing-order step. If supplied for any signer role, supply it for all, forming a contiguous sequence from one. Signers sharing a step sign in parallel; a digital-certificate signer must be alone in its step. Copy receivers ignore this value.</summary>
     public int? Step { get; set; }
 }

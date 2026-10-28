@@ -10,12 +10,12 @@ public sealed class AssignmentResource : BaseResource
         : base(http, defaultAccountId, authenticate) { }
 
     /// <summary>
-    /// <c>GET /assignments</c> — list assignments for the authenticated user's current account.
-    /// Passing <paramref name="accountId"/> explicitly sends the legacy, undocumented
-    /// <c>accountId</c> compatibility extension; the configured client default is not sent.
+    /// <c>GET /assignments</c> — list workspace assignments, oldest first by default.
+    /// Sends the explicit or configured account ID; an OAuth token can supply its bound workspace
+    /// when neither is set. Non-OAuth requests require an account ID.
     /// </summary>
-    /// <param name="parameters">Optional pagination (<c>page</c>, <c>per-page</c>).</param>
-    /// <param name="accountId">Optional legacy account query extension. Leave <see langword="null"/> for the documented current-account request.</param>
+    /// <param name="parameters">Optional workspace ID, sort order, and pagination (<c>page</c>, <c>per-page</c>).</param>
+    /// <param name="accountId">Workspace ID; overrides the parameter object's account ID, then falls back to the configured default or the OAuth token's workspace.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The requested page of assignments and any pagination metadata returned by the API.</returns>
     public Task<PaginatedResult<Assignment>> ListAsync(
@@ -24,7 +24,9 @@ public sealed class AssignmentResource : BaseResource
         CancellationToken cancellationToken = default)
     {
         var query = new Dictionary<string, string?>();
-        if (accountId is not null) query["accountId"] = RequireId(accountId, "Account ID");
+        var account = accountId ?? parameters?.AccountId ?? DefaultAccountId;
+        if (account is not null) query["accountId"] = RequireId(account, "Account ID");
+        if (!string.IsNullOrWhiteSpace(parameters?.Sort)) query["sort"] = parameters.Sort;
         if (parameters?.Page is int page) query["page"] = page.ToString();
         if (parameters?.PerPage is int perPage) query["per-page"] = perPage.ToString();
 
@@ -32,6 +34,7 @@ public sealed class AssignmentResource : BaseResource
     }
 
     /// <summary><c>POST /documents/{document_id}/assignments</c> — create a signature assignment binding signers to a document.</summary>
+    /// <remarks>Use exactly one Email or Whatsapp notification per signer, coupled to the verification method. Digital-certificate and biometric verification add a per-signer charge. A digital-certificate signer must be alone in its signing step. When steps are supplied, all signers need a step and the sequence must be contiguous from one.</remarks>
     /// <param name="documentId">Document to attach the assignment to.</param>
     /// <param name="request">Assignment configuration: <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>; defaults to <c>virtual</c>), the signers, and optional message, <c>expires_at</c>, copy receivers, and entries.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

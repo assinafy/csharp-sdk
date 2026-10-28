@@ -136,6 +136,14 @@ public record DocumentListItem
     [JsonPropertyName("signing_url")]
     public string? SigningUrl { get; init; }
 
+    /// <summary>Public verification code printed on the certificate page, or <see langword="null"/> before certification or on older documents without a code.</summary>
+    [JsonPropertyName("verification_code")]
+    public string? VerificationCode { get; init; }
+
+    /// <summary>Public verification page URL, or <see langword="null"/> before certification.</summary>
+    [JsonPropertyName("verification_url")]
+    public string? VerificationUrl { get; init; }
+
     /// <summary>Reason a signer gave for declining; only present when the access token belongs to the document's creator.</summary>
     [JsonPropertyName("decline_reason")]
     public string? DeclineReason { get; init; }
@@ -156,6 +164,10 @@ public record DocumentListItem
 /// </summary>
 public sealed record DocumentDetails : DocumentListItem
 {
+    /// <summary>Whether contract terms are available on this document or its amendment family. Reported only for workspace detail requests when contract tracking is enabled; <see langword="null"/> means unknown.</summary>
+    [JsonPropertyName("has_contract")]
+    public bool? HasContract { get; init; }
+
     /// <summary>The document's recorded activity (audit-log) entries, or <see langword="null"/> when not included.</summary>
     [JsonPropertyName("activities")]
     public IReadOnlyList<DocumentActivity>? Activities { get; init; }
@@ -348,6 +360,19 @@ public sealed class SendDocumentTokenRequest
 
     /// <summary>Required. Delivery channel; <see cref="SendDocumentTokenChannels.Email"/> is the only value the API accepts.</summary>
     public required string Channel { get; set; }
+}
+
+/// <summary>Sort order and pagination for <c>GET /v1/documents/{documentId}/activities</c>.</summary>
+public sealed class DocumentActivityListParams
+{
+    /// <summary>Sort by <c>-id</c> (default, newest first) or <c>id</c> (oldest first).</summary>
+    public string? Sort { get; set; }
+
+    /// <summary>1-based page number.</summary>
+    public int? Page { get; set; }
+
+    /// <summary>Items per page, up to 100.</summary>
+    public int? PerPage { get; set; }
 }
 
 /// <summary>Channels accepted by <c>PUT /v1/public/documents/{document_id}/send-token</c>.</summary>

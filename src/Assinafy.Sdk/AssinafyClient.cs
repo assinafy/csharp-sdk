@@ -40,6 +40,9 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Document upload, lookup, download, activities, and verification.</summary>
     public DocumentResource Documents { get; }
 
+    /// <summary>Contract terms, amendments, renewals, termination, and workspace contract tracking.</summary>
+    public ContractResource Contracts { get; }
+
     /// <summary>Account-scoped signer management and signer self-service endpoints.</summary>
     public SignerResource Signers { get; }
 
@@ -114,6 +117,7 @@ public sealed class AssinafyClient : IDisposable
             Accounts = new AccountResource(_http, options.AccountId, authenticate);
             Users = new UserResource(_http, authenticate);
             Documents = new DocumentResource(_http, options.AccountId, authenticate);
+            Contracts = new ContractResource(_http, options.AccountId, authenticate);
             Signers = new SignerResource(_http, options.AccountId, authenticate);
             Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
             Templates = new TemplateResource(_http, options.AccountId, authenticate);

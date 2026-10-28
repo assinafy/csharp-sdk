@@ -14,6 +14,14 @@ public sealed record WebhookSubscription
     [JsonPropertyName("is_active")]
     public bool IsActive { get; init; }
 
+    /// <summary>Whether deliveries are paused after ten consecutive failures while the API probes for recovery.</summary>
+    [JsonPropertyName("is_held")]
+    public bool IsHeld { get; init; }
+
+    /// <summary>Unix timestamp in seconds when the delivery pause began, or <see langword="null"/> while deliveries run.</summary>
+    [JsonPropertyName("held_since")]
+    public long? HeldSince { get; init; }
+
     /// <summary>Webhook endpoint URL that receives events, or <see langword="null"/> when unset.</summary>
     [JsonPropertyName("url")]
     public string? Url { get; init; }
@@ -73,6 +81,22 @@ public sealed record WebhookDispatch
     /// <summary>Whether delivery succeeded.</summary>
     [JsonPropertyName("delivered")]
     public bool Delivered { get; init; }
+
+    /// <summary>The request's webhook-id header, unchanged across attempts for the same event and endpoint; absent on older history entries.</summary>
+    [JsonPropertyName("webhook_id")]
+    public string? WebhookId { get; init; }
+
+    /// <summary>Attempt number for this event and endpoint, starting at one; absent on older history entries.</summary>
+    [JsonPropertyName("attempt")]
+    public int? Attempt { get; init; }
+
+    /// <summary>Delivery kind: scheduled, probe for a paused endpoint, or manual retry; absent on older history entries.</summary>
+    [JsonPropertyName("kind")]
+    public string? Kind { get; init; }
+
+    /// <summary>Whether another attempt follows this one; false for successful deliveries and the last failed attempt.</summary>
+    [JsonPropertyName("will_retry")]
+    public bool WillRetry { get; init; }
 
     /// <summary>HTTP status code returned by the endpoint, or <see langword="null"/> when the connection failed.</summary>
     [JsonPropertyName("http_status")]
@@ -139,6 +163,10 @@ public sealed class ListDispatchesParams
 /// <summary>A URL that receives the account's webhook events. Every active endpoint subscribed to an event receives it.</summary>
 public sealed record WebhookEndpoint
 {
+    /// <summary>Resource type discriminator, present in single-resource responses.</summary>
+    [JsonPropertyName("resource")]
+    public string? Resource { get; init; }
+
     /// <summary>Endpoint ID.</summary>
     [JsonPropertyName("id")]
     public string Id { get; init; } = string.Empty;
@@ -147,7 +175,7 @@ public sealed record WebhookEndpoint
     [JsonPropertyName("name")]
     public string? Name { get; init; }
 
-    /// <summary>URL that receives the events (http or https).</summary>
+    /// <summary>HTTPS URL that receives the events.</summary>
     [JsonPropertyName("url")]
     public string Url { get; init; } = string.Empty;
 
@@ -163,11 +191,19 @@ public sealed record WebhookEndpoint
     [JsonPropertyName("is_active")]
     public bool IsActive { get; init; }
 
+    /// <summary>Whether deliveries are paused after ten consecutive failures. Updating the URL or sending is_active: true lifts the pause.</summary>
+    [JsonPropertyName("is_held")]
+    public bool IsHeld { get; init; }
+
+    /// <summary>Unix timestamp in seconds when the delivery pause began, or <see langword="null"/> while deliveries run.</summary>
+    [JsonPropertyName("held_since")]
+    public long? HeldSince { get; init; }
+
     /// <summary>Whether deliveries carry a <c>webhook-signature</c> header (see <see cref="Webhooks.WebhookSignature"/>).</summary>
     [JsonPropertyName("signing_enabled")]
     public bool SigningEnabled { get; init; }
 
-    /// <summary>Signing secret returned once when creating a signing-enabled endpoint; absent from list and view responses. Store it securely, especially for OAuth integrations that cannot read or rotate secrets.</summary>
+    /// <summary>Signing secret returned once when creating a signed endpoint or enabling signing; absent from list and view responses. Store it securely. OAuth integrations cannot read it later but can rotate it with webhooks:write.</summary>
     [JsonPropertyName("secret")]
     public string? Secret { get; init; }
 
@@ -191,7 +227,7 @@ public sealed record WebhookEndpointSecret
 /// <summary>Body for <c>POST /accounts/{account_id}/webhooks/endpoints</c>.</summary>
 public sealed class CreateWebhookEndpointRequest
 {
-    /// <summary>URL that receives the events (http or https). Must differ from every other endpoint of the workspace.</summary>
+    /// <summary>HTTPS URL that receives the events. Must differ from every other endpoint of the workspace.</summary>
     public required string Url { get; set; }
 
     /// <summary>Contact email for delivery-failure notices.</summary>

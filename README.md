@@ -4,7 +4,7 @@
 
 Cliente .NET tipado para a API de assinatura eletrônica da
 [Assinafy](https://api.assinafy.com.br/v1/docs) — plataforma brasileira de assinatura de documentos.
-Cobre toda a superfície HTTP documentada — documentos, templates, signatários, assignments, o fluxo
+Cobre toda a superfície HTTP documentada — documentos, gestão de contratos, templates, signatários, assignments, o fluxo
 de assinatura do signatário, imagens de assinatura, tags, campos, webhooks, contas, usuários e o
 fluxo OAuth 2.1 — como recursos fortemente tipados em um único `AssinafyClient`, com uma hierarquia
 de exceções, tratamento de envelope e paginação já resolvidos.
@@ -34,11 +34,12 @@ corpos de requisição, respostas e erros, está em [docs/API.md](docs/API.md#sd
 16. [Testes](#testes)
 17. [Suporte e versionamento](#suporte-e-versionamento)
 18. [Documentação](#documentação)
+19. [Gestão de contratos](#gestão-de-contratos)
 
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.6.1
+dotnet add package Assinafy.Sdk --version 2.7.0
 ```
 
 Aplicações precisam de um runtime compatível com `net8.0`, `net9.0` ou `net10.0`. Quem contribui
@@ -980,6 +981,91 @@ var ok = await client.Fields.ValidateAsWorkspaceAsync(campo.Id,
     new ValidateFieldValueRequest { Value = "000.000.000-00" });
 ```
 
+## Gestão de contratos
+
+O acompanhamento do contrato é independente da assinatura. Envie o documento, aguarde seu
+processamento e grave os termos com `Contracts.SetAsync`. Leituras exigem `documents:read`;
+escritas exigem `documents:write` e um plano com gestão de contratos. As leituras continuam
+disponíveis quando o plano deixa de incluir o recurso.
+
+```csharp
+using Assinafy.Sdk.Models;
+
+using var pdf = File.OpenRead("contrato.pdf");
+var enviado = await client.Documents.UploadAsync(pdf, "contrato.pdf");
+var pronto = await client.Documents.WaitUntilReadyAsync(enviado.Id);
+var termos = (DocumentContract)await client.Contracts.SetAsync(pronto.Id,
+    new Dictionary<string, object?>
+    {
+        ["status"] = "active",
+        ["counterparty_name"] = "Empresa Exemplo",
+        ["value"] = 12000.50m,
+        ["currency"] = "BRL",
+        ["start_date"] = "2026-11-01",
+        ["end_date"] = "2027-10-31",
+        ["auto_renew"] = false,
+        ["renewal_term_months"] = 12,
+        ["notice_period_days"] = 30,
+        ["metadata"] = new Dictionary<string, string> { ["crm_stage"] = "won" },
+        ["external_references"] = new[]
+        {
+            new ContractExternalReference { System = "crm", Id = "negocio-123" },
+        },
+    });
+
+var pagina = await client.Contracts.ListAsync(new Dictionary<string, string?>
+{
+    ["status"] = "active,expired", ["ending_within_days"] = "30",
+    ["expand"] = "document", ["sort"] = "-updated_at", ["per-page"] = "50",
+});
+
+// Envie apenas alterações. Null explícito limpa um termo; chaves omitidas permanecem iguais.
+termos = (DocumentContract)await client.Contracts.SetAsync(pronto.Id,
+    new Dictionary<string, object?>
+    {
+        ["counterparty_name"] = null,
+        ["updated_at"] = termos.UpdatedAt,
+    });
+
+termos = await client.Contracts.RenewAsync(pronto.Id, new Dictionary<string, object?>
+{
+    ["term"] = termos.Term, ["updated_at"] = termos.UpdatedAt,
+});
+termos = await client.Contracts.TerminateAsync(pronto.Id, new Dictionary<string, object?>
+{
+    ["reason"] = "Contrato encerrado", ["updated_at"] = termos.UpdatedAt,
+});
+```
+
+Use chaves snake_case da API nos dicionários para preservar a diferença entre atributos omitidos
+e `null` explícito. `metadata` e `external_references` substituem suas coleções inteiras. Datas
+usam `YYYY-MM-DD` no calendário de Brasília; valores monetários usam `decimal`. Um `updated_at`
+desatualizado retorna 409 com `ContractChanged` em `ApiException.Details`. Erros de validação
+preservam a lista `errors`, com campos e códigos estáveis. A renovação exige o `term` atual ou um
+`end_date` posterior. Após uma resposta incerta, verifique se a renovação ocorreu antes de enviar
+outra com valores recém-lidos. O SDK não repete escritas automaticamente.
+
+Para registrar um aditivo assinado, envie outro documento e chame `SetAsync` no ID dele com
+`parent_document_id`, `relation_type` (`amendment`, `renewal` ou `termination`) e apenas os termos
+alterados. Conclua o fluxo normal de assinatura desse instrumento. O delta é aplicado na ordem
+das assinaturas quando o documento estiver `certificated` e o plano permitir. `GetAsync` retorna
+`DocumentContract` ou `DocumentContractAmendment`; verifique o tipo retornado. `GetRelatedAsync`
+traz o contrato raiz com seus instrumentos. Aditivos pendentes permitem alterações no delta:
+`null` remove uma chave, e `parent_document_id: null` desvincula o instrumento. Aditivos aplicados
+são somente leitura; consulte `ApplyError` se um instrumento assinado continuar pendente.
+
+Assine os eventos `document_contract_updated`, `document_contract_renewal_notice`,
+`document_contract_expiring`, `document_contract_expired`, `document_contract_renewed`,
+`document_contract_terminated`, `document_contract_amendment_updated` e
+`document_contract_amended`. Elimine entregas duplicadas pelo `webhook-id` e leia os termos atuais.
+Para recuperar eventos perdidos, pagine contratos por `-updated_at` e consulte as atividades do
+documento. A rotina horária cuida de avisos, expiração e renovação automática; pausa quando o plano
+não permite o recurso e atualiza os contratos quando ele volta. As quatro preferências `Contract*`
+controlam os emails do ciclo de vida.
+
+Filtros, limites, semântica de null, payloads completos e erros estão na
+[referência da API](docs/API.md#full-operation-request-and-response-payloads).
+
 ## Webhooks
 
 Uma conta cadastra um endpoint de webhook, ou até três nos planos pagos. Todo endpoint ativo inscrito
@@ -1029,10 +1115,11 @@ Criar um endpoint além do limite do plano retorna 403, e cada endpoint precisa 
 (400). `GetAsync`, `UpdateSubscriptionAsync` e `InactivateAsync` atuam sobre o endpoint mais antigo
 da conta; `UpdateSubscriptionAsync` o cria quando a conta não tem nenhum.
 
-`Secret` aparece apenas na resposta de criação com assinatura habilitada. Aplicações OAuth devem
-armazená-lo nesse momento: não podem ler nem rotacionar o segredo depois. Se o perderem, precisam
-excluir o endpoint e criar outro. Com API key, `GetEndpointSecretAsync` e `RotateEndpointSecretAsync`
-estão disponíveis. Para localizar ou excluir pelo endereço exato, use
+`Secret` é retornado uma vez ao criar um endpoint assinado ou habilitar a assinatura em um existente.
+Armazene-o com segurança. Aplicações OAuth não podem ler o segredo atual, mas podem obter outro com
+`RotateEndpointSecretAsync` e `webhooks:write`. A rotação é imediata: armazene o novo segredo antes
+de processar as próximas entregas. Com API key, `GetEndpointSecretAsync` também está disponível.
+Para localizar ou excluir pelo endereço exato, use
 `ListEndpointsByUrlAsync(url)` ou `DeleteEndpointByUrlAsync(url)`.
 
 ### Recebendo e verificando entregas

@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.7.0] - 2026-10-28
+
+### Added
+
+- Contract lifecycle management: list and edit terms, link signed instruments, read contract
+  families, renew safely, terminate, and preserve optimistic concurrency and explicit nulls.
+- Contract notification preferences, document verification links, webhook pause and retry state,
+  account webhook limits, and nullable resend credit balances.
+- Template signer creation by email, assignment workspace/sort filters, document search sorting,
+  and paginated activity queries.
+
+### Fixed
+
+- Read ISO-8601 WhatsApp notification timestamps while preserving the Unix-seconds property.
+- Isolate Bearer authentication challenges and decode escaped authentication parameters.
+- Keep invalid response charset failures within SDK exceptions and preserve structured contract
+  validation and conflict details.
+
+### Documentation
+
+- Add the contract tracking flow and full contract/event payloads.
+- Describe OAuth webhook-secret rotation and notification delivery recovery.
+
 ## [2.6.1] - 2026-10-19
 
 ### Fixed
