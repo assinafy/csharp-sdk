@@ -11,13 +11,13 @@ on:
         required: true
 
 permissions:
-  contents: read
+  contents: write
   packages: write
   id-token: write        # provenance attestation
   attestations: write    # provenance attestation
 
 concurrency:
-  group: publish-${{ github.ref }}
+  group: publish-${{ inputs.version && format('v{0}', inputs.version) || github.ref_name }}
   cancel-in-progress: false   # never interrupt an in-flight release
 
 jobs:
@@ -34,12 +34,13 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/v{0}', inputs.version) || github.ref }}
 
       - name: Verify release commit is on main
         shell: bash
         run: |
           git fetch --no-tags origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+          if ! git merge-base --is-ancestor HEAD FETCH_HEAD; then
             echo "::error::Release commit must be reachable from main"
             exit 1
           fi
@@ -125,3 +126,34 @@ jobs:
         with:
           name: nupkg-${{ steps.version.outputs.version }}
           path: ./artifacts/*.nupkg
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          tag="v$VERSION"
+          notes="$RUNNER_TEMP/release-notes.md"
+          awk -v version="$VERSION" '
+            index($0, "## [") == 1 {
+              if (found) exit
+              found = index($0, "## [" version "]") == 1
+              next
+            }
+            found { print }
+          ' CHANGELOG.md > "$notes"
+          if [ ! -s "$notes" ]; then
+            echo "::error::No changelog entry for $VERSION"
+            exit 1
+          fi
+          prerelease=false
+          if [[ "$VERSION" == *-* ]]; then prerelease=true; fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --title "$tag" --notes-file "$notes" --prerelease="$prerelease"
+            gh release upload "$tag" ./artifacts/*.nupkg --clobber
+          else
+            gh release create "$tag" ./artifacts/*.nupkg --verify-tag \
+              --title "$tag" --notes-file "$notes" --prerelease="$prerelease"
+          fi
