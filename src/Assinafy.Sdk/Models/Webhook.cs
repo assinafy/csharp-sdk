@@ -117,6 +117,9 @@ public sealed record WebhookDispatch
     /// <summary>ISO-8601 date-time when the dispatch was last updated, or <see langword="null"/> when unset.</summary>
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the delivered payload.</summary>
+    public override string ToString() => $"{nameof(WebhookDispatch)} {{ <redacted> }}";
 }
 
 /// <summary>Body for <c>PUT /accounts/{account_id}/webhooks/subscriptions</c> — update the account's oldest webhook endpoint, creating it when the account has none.</summary>
@@ -214,6 +217,9 @@ public sealed record WebhookEndpoint
     /// <summary>ISO-8601 date-time when the endpoint was last updated.</summary>
     [JsonPropertyName("updated_at")]
     public string? UpdatedAt { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the signing secret.</summary>
+    public override string ToString() => $"{nameof(WebhookEndpoint)} {{ <redacted> }}";
 }
 
 /// <summary>An endpoint's Standard Webhooks signing secret.</summary>
@@ -222,6 +228,9 @@ public sealed record WebhookEndpointSecret
     /// <summary><c>whsec_</c> followed by the base64-encoded key. Pass it to <see cref="Webhooks.WebhookSignature.Verify"/>.</summary>
     [JsonPropertyName("secret")]
     public string Secret { get; init; } = string.Empty;
+
+    /// <summary>Returns a redacted representation that does not expose the signing secret.</summary>
+    public override string ToString() => $"{nameof(WebhookEndpointSecret)} {{ <redacted> }}";
 }
 
 /// <summary>Body for <c>POST /accounts/{account_id}/webhooks/endpoints</c>.</summary>
@@ -309,4 +318,7 @@ public sealed record WebhookEvent
     /// <summary>ID of the account that owns the event.</summary>
     [JsonPropertyName("account_id")]
     public string AccountId { get; init; } = string.Empty;
+
+    /// <summary>Returns a redacted representation that does not expose event payloads or signing links.</summary>
+    public override string ToString() => $"{nameof(WebhookEvent)} {{ <redacted> }}";
 }

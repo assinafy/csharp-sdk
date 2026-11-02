@@ -92,6 +92,9 @@ public sealed record AuthenticationResult
     /// <summary>The accounts the authenticated user belongs to.</summary>
     [JsonPropertyName("accounts")]
     public IReadOnlyList<UserAccount> Accounts { get; init; } = [];
+
+    /// <summary>Returns a redacted representation that does not expose authentication tokens.</summary>
+    public override string ToString() => $"{nameof(AuthenticationResult)} {{ <redacted> }}";
 }
 
 /// <summary>Result of an API-key operation: the full key on creation (shown only once), a masked value on retrieval, or <see langword="null"/> when no key exists.</summary>
@@ -100,6 +103,9 @@ public sealed record ApiKeyResult
     /// <summary>The API key value — full on creation, masked on retrieval, or <see langword="null"/> when no key has been generated.</summary>
     [JsonPropertyName("api_key")]
     public string? ApiKey { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the API key.</summary>
+    public override string ToString() => $"{nameof(ApiKeyResult)} {{ <redacted> }}";
 }
 
 /// <summary>Result carrying the email address of the account affected by a password operation (change, reset request, or reset).</summary>

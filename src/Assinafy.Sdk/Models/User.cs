@@ -170,6 +170,9 @@ public sealed record TotpEnrollment
     /// <summary><c>otpauth://</c> URI to render as a QR code.</summary>
     [JsonPropertyName("provisioning_uri")]
     public string ProvisioningUri { get; init; } = string.Empty;
+
+    /// <summary>Returns a redacted representation that does not expose the enrollment secret.</summary>
+    public override string ToString() => $"{nameof(TotpEnrollment)} {{ <redacted> }}";
 }
 
 /// <summary>A fresh set of recovery codes, shown only once.</summary>
@@ -178,6 +181,9 @@ public sealed record MfaRecoveryCodes
     /// <summary>The recovery codes (e.g. <c>ABCD-EFGH-JKMN</c>).</summary>
     [JsonPropertyName("recovery_codes")]
     public IReadOnlyList<string> RecoveryCodes { get; init; } = [];
+
+    /// <summary>Returns a redacted representation that does not expose recovery codes.</summary>
+    public override string ToString() => $"{nameof(MfaRecoveryCodes)} {{ <redacted> }}";
 }
 
 /// <summary>Result of removing a two-factor method.</summary>

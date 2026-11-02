@@ -8,6 +8,9 @@ public sealed record CertificateStartResult
     /// <summary>Web PKI signing token to sign and pass to the completion endpoint.</summary>
     [JsonPropertyName("token")]
     public string Token { get; init; } = string.Empty;
+
+    /// <summary>Returns a redacted representation that does not expose the signing token.</summary>
+    public override string ToString() => $"{nameof(CertificateStartResult)} {{ <redacted> }}";
 }
 
 /// <summary>Result of completing an ICP-Brasil digital-certificate signature.</summary>

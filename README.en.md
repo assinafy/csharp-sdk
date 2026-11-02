@@ -40,7 +40,7 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.7.0
+dotnet add package Assinafy.Sdk --version 2.7.1
 ```
 
 Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
@@ -61,7 +61,7 @@ The first two are mutually exclusive; supplying both throws a `ValidationExcepti
 access token is supplied as `Token`, exactly like any other bearer credential — see
 [OAuth 2.1 for multi-workspace apps](#oauth-21-for-multi-workspace-apps). Create a *separate*
 user for an API-key integration so it can be granted only the access it needs, and never commit the
-key.
+key. Results carrying credentials or bearer links redact those values from `ToString()`.
 
 Develop against the sandbox, then switch a single option to go live:
 
@@ -1331,11 +1331,12 @@ app.MapPost("/webhooks/assinafy", async (HttpRequest request) =>
 and rejects timestamps more than five minutes from the local clock (pass `tolerance` to change it).
 The body is `{ id, event, message, payload, origin, created_at, subject, object, account_id }`, not
 the REST envelope. `subject` and `object` are polymorphic — read their `type` property — and carry
-Unix-second timestamps. Answer with a `2xx` quickly: each event gets up to two attempts three seconds
-apart, and ten consecutive failed events pause delivery until one succeeds. `assignment_created` and
-`document_metadata_ready` have no guaranteed ordering, and unknown fields are forward-compatible
-additions. The event catalog and delivery contract are in
-[docs/API.md](docs/API.md#webhook-payloads).
+Unix-second timestamps. Answer with a `2xx` quickly: each event gets up to six attempts about ten
+minutes apart, and ten consecutive failed deliveries pause the endpoint until one succeeds. An
+object deleted before delivery retains its deletion-time fields with empty relationships; a deleted
+subject contains only `type`. `assignment_created` and `document_metadata_ready` have no guaranteed
+ordering, and unknown fields are forward-compatible additions. The event catalog and delivery
+contract are in [docs/API.md](docs/API.md#webhook-payloads).
 
 ## Accounts and users
 

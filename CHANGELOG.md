@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.1] - 2026-11-02
+
+### Fixed
+
+- Reject webhook timestamps outside the replay window without overflowing on extreme signed values.
+- Redact credentials, signing links, and one-time secrets from record string formatting.
+
+### Documentation
+
+- Clarify document-verification timestamps and webhook payloads for deleted subjects and objects.
+- Keep the Portuguese package guide concise while retaining the complete signing and OAuth flows.
+
 ## [2.7.0] - 2026-10-28
 
 ### Added

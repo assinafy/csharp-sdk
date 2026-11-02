@@ -24,6 +24,9 @@ public sealed record IdentityVerificationStatus
     /// <summary>ISO-8601 completion time, or null while incomplete.</summary>
     [JsonPropertyName("completed_at")]
     public string? CompletedAt { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the hosted capture URL.</summary>
+    public override string ToString() => $"{nameof(IdentityVerificationStatus)} {{ <redacted> }}";
 }
 
 /// <summary>A hosted capture session from <c>POST /signers/identity-verification</c>.</summary>
@@ -40,6 +43,9 @@ public sealed record IdentityVerificationSession
     /// <summary>ISO-8601 capture-link expiration, or null when not reported.</summary>
     [JsonPropertyName("expires_at")]
     public string? ExpiresAt { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the hosted capture URL.</summary>
+    public override string ToString() => $"{nameof(IdentityVerificationSession)} {{ <redacted> }}";
 }
 
 /// <summary>Account-facing identity review summary. Raw evidence images are available only while InReview.</summary>

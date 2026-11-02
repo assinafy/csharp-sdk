@@ -269,6 +269,14 @@ public sealed class WebhookEndpointAndMfaTests
     }
 
     [Fact]
+    public void Verify_RejectsTimestampWhoseDistanceOverflowsInt64()
+    {
+        var timestamp = unchecked(Now.ToUnixTimeSeconds() - long.MinValue);
+
+        Verify("msg_1", timestamp.ToString(), Sign("msg_1", timestamp, Body)).Should().BeFalse();
+    }
+
+    [Fact]
     public void Verify_RejectsMalformedSecret()
     {
         var act = () => Verify("msg_1", "1", "v1,x", secret: "whsec_not base64!");

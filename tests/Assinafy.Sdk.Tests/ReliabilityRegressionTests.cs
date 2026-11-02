@@ -91,6 +91,39 @@ public sealed class ReliabilityRegressionTests
     }
 
     [Fact]
+    public void SecretBearingRecords_RedactStringFormatting()
+    {
+        const string secret = "sensitive-value";
+        object[] values =
+        [
+            new OAuthPkcePair { CodeVerifier = secret, CodeChallenge = secret },
+            new OAuthTokenResult { AccessToken = secret, RefreshToken = secret, IdToken = secret },
+            new AuthenticationResult { AccessToken = secret, MfaToken = secret },
+            new ApiKeyResult { ApiKey = secret },
+            new WebhookEndpoint { Secret = secret },
+            new WebhookEndpointSecret { Secret = secret },
+            new WebhookDispatch { Payload = JsonSerializer.SerializeToElement(new { signing_url = secret }) },
+            new WebhookEvent { Object = JsonSerializer.SerializeToElement(new { signing_url = secret }) },
+            new TotpEnrollment { Secret = secret, ProvisioningUri = secret },
+            new MfaRecoveryCodes { RecoveryCodes = [secret] },
+            new IdentityVerificationStatus { Url = secret },
+            new IdentityVerificationSession { Url = secret },
+            new CertificateStartResult { Token = secret },
+            new SigningUrl { Url = secret },
+            new WhatsAppNotificationButton { Url = secret },
+            new DocumentListItem { SigningUrl = secret },
+            new DocumentDetails { SigningUrl = secret },
+        ];
+
+        foreach (var value in values)
+        {
+            var formatted = value.ToString();
+            formatted.Should().Contain("<redacted>");
+            formatted.Should().NotContain(secret);
+        }
+    }
+
+    [Fact]
     public async Task WaitUntilReady_RetriesNotFoundUntilDeadlineAndPreservesFailure()
     {
         var handler = new FakeHttpMessageHandler();

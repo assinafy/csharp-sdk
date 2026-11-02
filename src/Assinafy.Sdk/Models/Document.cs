@@ -155,6 +155,9 @@ public record DocumentListItem
     /// <summary>Workspace tags attached to the document.</summary>
     [JsonPropertyName("tags")]
     public IReadOnlyList<Tag> Tags { get; init; } = [];
+
+    /// <summary>Returns a redacted representation that does not expose the signing link.</summary>
+    public override string ToString() => $"{nameof(DocumentListItem)} {{ <redacted> }}";
 }
 
 /// <summary>
@@ -175,6 +178,9 @@ public sealed record DocumentDetails : DocumentListItem
     /// <summary>The signer whose turn it currently is to sign, or <see langword="null"/> when none applies.</summary>
     [JsonPropertyName("current_signer")]
     public AssignmentSigner? CurrentSigner { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose the signing link.</summary>
+    public override string ToString() => $"{nameof(DocumentDetails)} {{ <redacted> }}";
 }
 
 /// <summary>A single entry in a document's activity (audit) log.</summary>
@@ -282,11 +288,11 @@ public sealed record DocumentVerificationResult
     [JsonNumberHandling(JsonNumberHandling.AllowReadingFromString)]
     public int? CompletedCount { get; init; }
 
-    /// <summary>ISO-8601 date-time signing was completed, or <see langword="null"/>.</summary>
+    /// <summary>ISO-8601 date-time the last signature was made, or <see langword="null"/>.</summary>
     [JsonPropertyName("completed_at")]
     public string? CompletedAt { get; init; }
 
-    /// <summary>ISO-8601 date-time the document was verified, or <see langword="null"/>.</summary>
+    /// <summary>ISO-8601 date-time this verification request ran; not the signing or certification time.</summary>
     [JsonPropertyName("verified_at")]
     public string? VerifiedAt { get; init; }
 

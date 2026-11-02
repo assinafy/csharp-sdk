@@ -118,6 +118,9 @@ public sealed record SigningUrl
     /// <summary>The direct link the signer uses to open and sign the document.</summary>
     [JsonPropertyName("url")]
     public string Url { get; init; } = string.Empty;
+
+    /// <summary>Returns a redacted representation that does not expose the signing link.</summary>
+    public override string ToString() => $"{nameof(SigningUrl)} {{ <redacted> }}";
 }
 
 /// <summary>A request for signers to sign a document, with its signers, collected items, progress summary, and signing links.</summary>
@@ -525,6 +528,9 @@ public sealed record WhatsAppNotificationButton
     /// <summary>The link the button opens (in sandbox/stage this includes access/verification codes for simulating the signing flow), or <see langword="null"/>.</summary>
     [JsonPropertyName("url")]
     public string? Url { get; init; }
+
+    /// <summary>Returns a redacted representation that does not expose embedded access or verification codes.</summary>
+    public override string ToString() => $"{nameof(WhatsAppNotificationButton)} {{ <redacted> }}";
 }
 
 /// <summary>Maps a signer to a template role by existing ID or email when creating a document from a template.</summary>

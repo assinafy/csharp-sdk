@@ -63,6 +63,9 @@ public sealed record OAuthPkcePair
 
     /// <summary>The challenge method, always <c>S256</c>: the authorization server accepts no other.</summary>
     public string CodeChallengeMethod => "S256";
+
+    /// <summary>Returns a redacted representation that does not expose the verifier.</summary>
+    public override string ToString() => $"{nameof(OAuthPkcePair)} {{ <redacted> }}";
 }
 
 /// <summary>
@@ -164,6 +167,9 @@ public sealed record OAuthTokenResult
     /// <returns><see langword="true"/> when the token carries the scope.</returns>
     public bool HasScope(string scope) =>
         GrantedScopes.Contains(scope, StringComparer.Ordinal);
+
+    /// <summary>Returns a redacted representation that does not expose tokens.</summary>
+    public override string ToString() => $"{nameof(OAuthTokenResult)} {{ <redacted> }}";
 }
 
 /// <summary>Body for <c>POST /oauth/token</c> with <c>grant_type=authorization_code</c> — exchange the one-time code for tokens.</summary>

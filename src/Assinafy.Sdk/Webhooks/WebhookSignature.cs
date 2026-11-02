@@ -60,7 +60,9 @@ public static class WebhookSignature
             return false;
 
         var now = (timeProvider ?? TimeProvider.System).GetUtcNow().ToUnixTimeSeconds();
-        if (Math.Abs(now - seconds) > (long)(tolerance ?? DefaultTolerance).TotalSeconds)
+        var allowedSeconds = (long)(tolerance ?? DefaultTolerance).TotalSeconds;
+        var difference = now >= seconds ? (ulong)now - (ulong)seconds : (ulong)seconds - (ulong)now;
+        if (allowedSeconds < 0 || difference > (ulong)allowedSeconds)
             return false;
 
         var expected = HMACSHA256.HashData(key, Encoding.UTF8.GetBytes($"{webhookId}.{webhookTimestamp}.{rawBody}"));

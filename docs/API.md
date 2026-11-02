@@ -5,7 +5,7 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `22464b434800931065e0941d7da1fbd4dbfd904032e14717b74e623f0fb54ead`
+- Snapshot SHA-256: `aff93121e925c436a67869791750a31042d287ed564c4b84ceeddff08a42cd1a`
 - OpenAPI: `3.1.0`; API info version: `1.0.0`
 - API surface: 118 documented production operations across 90 paths, 49 component schemas, and 31 webhook event payloads.
 
@@ -845,7 +845,7 @@ Every webhook body shares the same top-level structure:
 
 ### About `subject` and `object`
 
-Both are **polymorphic**: their shape depends on which entity they represent. We always add a `type` property with the entity class name, one of `User`, `Signer`, `Account`, `Document`, or `Template`. The remaining properties match the same fields the REST API returns for that resource. The `object` is serialized with its extra relationships expanded (e.g. a `Document` includes `assignment` and `pages`); the `subject` carries its base fields only. Whenever `subject` or `object` is an `Account`, the `integration` property (which includes dispatch history) is removed before sending.
+Both are **polymorphic**: their shape depends on which entity they represent. We always add a `type` property with the entity class name, one of `User`, `Signer`, `Account`, `Document`, or `Template`. The remaining properties match the same fields the REST API returns for that resource. The `object` is serialized with its extra relationships expanded (e.g. a `Document` includes `assignment` and `pages`); the `subject` carries its base fields only. An `object` deleted before the delivery is sent still arrives with its fields as they were when it was deleted (a document cancelled by deleting it has status `rejected_by_user`), and the relationships deleted with it come back empty (`assignment: null`, `pages: []`); a `subject` deleted before the delivery carries only its `type`. Whenever `subject` or `object` is an `Account`, the `integration` property (which includes dispatch history) is removed before sending.
 
 For `document_ready`, `document_processing_failed` and `template_processing_failed`, the `subject` is the `Account` itself — these events are emitted by the system when processing finishes, not by a particular user.
 
@@ -17037,6 +17037,7 @@ Full schema:
       "example": 1
     },
     "completed_at": {
+      "description": "When the last signature was made.",
       "type": [
         "string",
         "null"
@@ -17045,6 +17046,7 @@ Full schema:
       "example": "2023-01-27T19:27:44Z"
     },
     "verified_at": {
+      "description": "When this check ran (the time of the request). It says nothing about when the document was signed or certified.",
       "type": "string",
       "format": "date-time",
       "example": "2023-01-27T19:27:46Z"
