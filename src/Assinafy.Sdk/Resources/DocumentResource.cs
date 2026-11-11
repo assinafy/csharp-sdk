@@ -411,7 +411,7 @@ public sealed class DocumentResource : BaseResource
             HttpMethod.Post,
             body,
             cancellationToken: cancellationToken,
-            requestHeaders: IdempotencyHeaders(options?.IdempotencyKey));
+            idempotencyKey: options?.IdempotencyKey);
     }
 
     /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents/estimate-cost</c> — preview the credit cost of <see cref="CreateFromTemplateAsync"/>.</summary>

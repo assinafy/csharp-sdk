@@ -120,14 +120,6 @@ public abstract class BaseResource
     private protected static Dictionary<string, string?> AccessCodeQuery(string code) =>
         new() { [SignerAccessCodeParam] = code };
 
-    private protected static IDictionary<string, string>? IdempotencyHeaders(string? key)
-    {
-        if (key is null) return null;
-        if (string.IsNullOrWhiteSpace(key) || key.Any(char.IsControl))
-            throw new ValidationException("Idempotency key must be nonempty and contain no control characters.");
-        return new Dictionary<string, string> { ["Idempotency-Key"] = key };
-    }
-
     private protected static MediaTypeHeaderValue ParseContentType(string contentType)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
@@ -147,23 +139,25 @@ public abstract class BaseResource
         object? body = null,
         CancellationToken cancellationToken = default,
         bool authenticate = true,
-        IDictionary<string, string>? requestHeaders = null)
+        string? idempotencyKey = null)
     {
+        if (idempotencyKey is not null && (string.IsNullOrWhiteSpace(idempotencyKey) || idempotencyKey.Any(char.IsControl)))
+            throw new ValidationException("Idempotency key must be nonempty and contain no control characters.");
+
         var result = await SendEnvelopeAsync<T>(
             () =>
             {
                 var request = BuildRequest(path, method, body);
                 try
                 {
-                    if (requestHeaders is not null)
-                        foreach (var header in requestHeaders)
-                            request.Headers.Add(header.Key, header.Value);
+                    if (idempotencyKey is not null)
+                        request.Headers.Add("Idempotency-Key", idempotencyKey);
                     return request;
                 }
                 catch (FormatException ex)
                 {
                     request.Dispose();
-                    throw new ValidationException("Request header is invalid.", null, ex);
+                    throw new ValidationException("Idempotency key is invalid.", null, ex);
                 }
             },
             cancellationToken,

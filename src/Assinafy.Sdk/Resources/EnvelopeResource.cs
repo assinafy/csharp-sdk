@@ -32,7 +32,7 @@ public sealed class EnvelopeResource : BaseResource
         if (request.MaxTotalCredits < 0) throw new ValidationException("Credit ceiling must not be negative.");
         return CallAsync<DocumentEnvelope>($"accounts/{AccountId(accountId)}/envelopes", HttpMethod.Post, request,
             cancellationToken: cancellationToken,
-            requestHeaders: IdempotencyHeaders(idempotencyKey));
+            idempotencyKey: idempotencyKey);
     }
 
     /// <summary><c>POST /accounts/{accountId}/envelopes/estimate-cost</c> — validate and price an envelope without creating or charging anything.</summary>

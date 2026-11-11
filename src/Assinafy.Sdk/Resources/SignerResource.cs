@@ -234,12 +234,13 @@ public sealed partial class SignerResource : BaseResource
 
     /// <summary>
     /// <c>PUT /documents/{document_id}/signers/confirm-data</c> — signer-facing endpoint:
-    /// confirm or supply the signer's full name, email, and government ID for a virtual assignment.
+    /// confirm the signer's email or WhatsApp number and optionally record terms acceptance.
     /// Virtual assignments require this call to succeed before <see cref="SigningResource.SignAsync"/>.
+    /// Set the name and government ID through workspace signer management; their request fields are retained for older deployments.
     /// </summary>
     /// <param name="documentId">Document the signer is party to.</param>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
-    /// <param name="request">The full name, email, and/or government ID to confirm; when present, <c>Email</c> must be a valid address.</param>
+    /// <param name="request">Contact details required by the signer's verification or notification channel, and optional terms acceptance. Existing contact details must match the signer.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes after the signer data is confirmed. Use <see cref="ConfirmDataWithResultAsync"/> to receive the updated signer payload.</returns>
     public Task ConfirmDataAsync(
