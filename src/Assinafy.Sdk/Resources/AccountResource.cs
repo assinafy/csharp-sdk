@@ -1,4 +1,5 @@
 using Assinafy.Sdk.Models;
+using Assinafy.Sdk.Exceptions;
 using Assinafy.Sdk.Support;
 
 namespace Assinafy.Sdk.Resources;
@@ -186,4 +187,44 @@ public sealed class AccountResource : BaseResource
         var id = AccountId(accountId);
         return CallVoidAsync($"accounts/{id}/logo", HttpMethod.Delete, cancellationToken: cancellationToken);
     }
+    /// <summary><c>GET /accounts/{accountId}?expand=signing_features</c> — read the workspace and the signing features its plan allows.</summary>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The account with its signing_features map.</returns>
+    public Task<Account> GetWithSigningFeaturesAsync(string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallAsync<Account>($"accounts/{AccountId(accountId)}?expand=signing_features", HttpMethod.Get,
+            cancellationToken: cancellationToken);
+
+    /// <summary><c>GET /accounts/{accountId}/usage</c> — read plan and allowance balances, without prices or payments. Third-party OAuth applications receive 403.</summary>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The plan name, next document renewal date and balances.</returns>
+    public Task<AccountUsage> GetUsageAsync(string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallAsync<AccountUsage>($"accounts/{AccountId(accountId)}/usage", HttpMethod.Get,
+            cancellationToken: cancellationToken);
+
+    /// <summary><c>GET /accounts/{accountId}/notification-policy</c> — read workspace notification rules and whether the user can edit them. Unavailable to third-party OAuth applications.</summary>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The complete policy.</returns>
+    public Task<NotificationPolicy> GetNotificationPolicyAsync(string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallAsync<NotificationPolicy>($"accounts/{AccountId(accountId)}/notification-policy", HttpMethod.Get,
+            cancellationToken: cancellationToken);
+
+    /// <summary><c>PUT /accounts/{accountId}/notification-policy</c> — merge selected workspace notification rules. Owners only; third-party OAuth applications receive 403.</summary>
+    /// <remarks>A disabled event reaches nobody, regardless of individual preferences. Identity review email is always sent; its event switch controls push only.</remarks>
+    /// <param name="request">Event keys to change and/or owners_receive_all. Omitted fields remain unchanged.</param>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The full updated policy.</returns>
+    public Task<NotificationPolicy> UpdateNotificationPolicyAsync(UpdateNotificationPolicyRequest request,
+        string? accountId = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Events is not { Count: > 0 } && request.OwnersReceiveAll is null)
+            throw new ValidationException("At least one notification-policy setting is required.");
+        return CallAsync<NotificationPolicy>($"accounts/{AccountId(accountId)}/notification-policy", HttpMethod.Put,
+            request, cancellationToken: cancellationToken);
+    }
+
 }

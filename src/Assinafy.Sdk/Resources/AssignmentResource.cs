@@ -185,7 +185,7 @@ public sealed class AssignmentResource : BaseResource
             HttpMethod.Get,
             cancellationToken: cancellationToken);
 
-    /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}</c> — fetch evidence directly from the provider while the verification is InReview. Returns 404 after a decision.</summary>
+    /// <summary><c>GET /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}</c> — fetch evidence directly from the provider while the verification is InReview. Returns 404 after a decision. Third-party OAuth applications cannot fetch evidence.</summary>
     /// <param name="documentId">Document that owns the assignment.</param>
     /// <param name="assignmentId">Assignment containing the signer.</param>
     /// <param name="signerId">Signer whose evidence to fetch.</param>
@@ -204,7 +204,7 @@ public sealed class AssignmentResource : BaseResource
             cancellationToken);
 
     /// <summary><c>POST /documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review</c> — approve or reject an InReview verification on a pending_signature or pending_identity_review document.</summary>
-    /// <remarks>Approval permits certification once all signers have signed and all reviews are approved. Rejection cancels the document as rejected_by_user and notifies signers and copy receivers. The signer receives no separate decision message.</remarks>
+    /// <remarks>Approval permits certification once all signers have signed and all reviews are approved. Rejection cancels the document as rejected_by_user and notifies signers and copy receivers. The signer receives no separate decision message. Requires an API key or user session; third-party OAuth applications cannot decide reviews.</remarks>
     /// <param name="documentId">Document that owns the assignment.</param>
     /// <param name="assignmentId">Assignment containing the signer.</param>
     /// <param name="signerId">Signer whose identity to review.</param>
@@ -252,6 +252,8 @@ public sealed class AssignmentResource : BaseResource
             ["signers"] = signers,
         };
 
+        if (request.MaxTotalCredits is < 0) throw new ValidationException("Maximum total credits must be non-negative.");
+        if (request.MaxTotalCredits is not null) body["max_total_credits"] = request.MaxTotalCredits;
         if (request.Message is not null) body["message"] = request.Message;
         if (request.ExpiresAt is not null) body["expires_at"] = request.ExpiresAt;
         if (request.CopyReceivers?.Length > 0) body["copy_receivers"] = request.CopyReceivers;
@@ -355,6 +357,8 @@ public sealed class AssignmentResource : BaseResource
 
         if (reference.NotificationMethods is not null)
             result["notification_methods"] = reference.NotificationMethods;
+
+        if (reference.Embedded.HasValue) result["embedded"] = reference.Embedded.Value;
 
         if (reference.Step.HasValue)
             result["step"] = reference.Step.Value;

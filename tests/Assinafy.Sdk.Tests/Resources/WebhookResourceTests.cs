@@ -127,4 +127,113 @@ public sealed class WebhookResourceTests
 
         await act.Should().ThrowAsync<ApiException>().Where(exception => exception.StatusCode == 404);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task RotateEndpointSecret_SendsOverlapChoiceAndReadsExpiry(bool keepPrevious)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/secret/rotate", FakeHttpMessageHandler.ApiOk(new
+        {
+            secret = "whsec_ZXhhbXBsZQ==",
+            previous_secret_expires_at = keepPrevious ? "2026-11-12T15:00:00Z" : null,
+        }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(new AssinafyClientOptions { Token = "oauth-token", AccountId = "default" }, http);
+
+        var result = await client.Webhooks.RotateEndpointSecretWithOptionsAsync("ep/1", keepPrevious, "acc?1");
+
+        var request = handler.Requests.Should().ContainSingle().Subject;
+        request.Method.Should().Be(HttpMethod.Post);
+        request.RequestUri!.PathAndQuery.Should().Be("/v1/accounts/acc%3F1/webhooks/endpoints/ep%2F1/secret/rotate");
+        request.Headers.Authorization!.Parameter.Should().Be("oauth-token");
+        using var body = JsonDocument.Parse(handler.RequestBodies.Single());
+        body.RootElement.EnumerateObject().Should().ContainSingle();
+        body.RootElement.GetProperty("keep_previous").GetBoolean().Should().Be(keepPrevious);
+        result.Secret.Should().Be("whsec_ZXhhbXBsZQ==");
+        result.PreviousSecretExpiresAt.Should().Be(keepPrevious ? "2026-11-12T15:00:00Z" : null);
+        result.ToString().Should().NotContain(result.Secret);
+    }
+
+    [Fact]
+    public async Task RotateEndpointSecret_ExistingOverloadRemainsBodyless()
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/secret/rotate", FakeHttpMessageHandler.ApiOk(new { secret = "new-secret" }));
+
+        var result = await CreateResource(handler).RotateEndpointSecretAsync("ep", null);
+
+        handler.RequestBodies.Should().Equal(string.Empty);
+        result.PreviousSecretExpiresAt.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(184L)]
+    [InlineData(null)]
+    public async Task TestEndpoint_PostsToEscapedPathAndReadsDelivery(long? durationMs)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/test", FakeHttpMessageHandler.ApiOk(new
+        {
+            id = "dispatch",
+            @event = "webhook_test",
+            kind = "manual",
+            delivered = false,
+            will_retry = false,
+            duration_ms = durationMs,
+            http_status = 503,
+            error = "Receiver unavailable",
+        }));
+        using var http = FakeHttpMessageHandler.CreateClient(handler);
+        using var client = new AssinafyClient(new AssinafyClientOptions { ApiKey = "workspace-key", AccountId = "default" }, http);
+
+        var result = await client.Webhooks.TestEndpointAsync("ep/1", "acc?1");
+
+        var request = handler.Requests.Should().ContainSingle().Subject;
+        request.Method.Should().Be(HttpMethod.Post);
+        request.RequestUri!.PathAndQuery.Should().Be("/v1/accounts/acc%3F1/webhooks/endpoints/ep%2F1/test");
+        request.Headers.GetValues("X-Api-Key").Should().Equal("workspace-key");
+        handler.RequestBodies.Should().Equal(string.Empty);
+        result.Event.Should().Be("webhook_test");
+        result.Kind.Should().Be("manual");
+        result.Delivered.Should().BeFalse();
+        result.WillRetry.Should().BeFalse();
+        result.DurationMs.Should().Be(durationMs);
+        result.HttpStatus.Should().Be(503);
+        result.Error.Should().Be("Receiver unavailable");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("..")]
+    public async Task TestAndRotation_RejectInvalidIdsBeforeSending(string endpointId)
+    {
+        var handler = new FakeHttpMessageHandler();
+        var resource = CreateResource(handler);
+
+        await ((Func<Task>)(() => resource.TestEndpointAsync(endpointId))).Should().ThrowAsync<ValidationException>();
+        await ((Func<Task>)(() => resource.RotateEndpointSecretWithOptionsAsync(endpointId, true))).Should().ThrowAsync<ValidationException>();
+        handler.Requests.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TestAndRotation_ExposeRateLimitWithoutRetry(bool rotate)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/webhooks/endpoints/ep", new { status = 429, message = "Rate limited" },
+            System.Net.HttpStatusCode.TooManyRequests, new Dictionary<string, string> { ["Retry-After"] = "60" });
+        var resource = CreateResource(handler);
+        Func<Task> action = rotate
+            ? () => resource.RotateEndpointSecretWithOptionsAsync("ep", true)
+            : () => resource.TestEndpointAsync("ep");
+
+        var error = (await action.Should().ThrowAsync<ApiException>()).Which;
+
+        error.StatusCode.Should().Be(429);
+        error.RetryAfter.Should().Be(TimeSpan.FromSeconds(60));
+        handler.Requests.Should().ContainSingle();
+    }
 }

@@ -112,7 +112,8 @@ public sealed class SignerResourceTests
     public async Task ConfirmData_PutsDocumentedFieldsAndReturnsUpdatedSigner()
     {
         var handler = new FakeHttpMessageHandler();
-        handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data", FakeHttpMessageHandler.ApiOk(new
+        handler.AddJsonResponse(HttpMethod.Put, "/signers/confirm-data", FakeHttpMessageHandler.ApiOk(Array.Empty<object>()));
+        handler.AddJsonResponse(HttpMethod.Get, "/signers/self", FakeHttpMessageHandler.ApiOk(new
         {
             id = "signer-1",
             full_name = "John Doe",

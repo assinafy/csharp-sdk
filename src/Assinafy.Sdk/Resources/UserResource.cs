@@ -202,4 +202,24 @@ public sealed class UserResource : BaseResource
         if (string.IsNullOrWhiteSpace(request.Password) && string.IsNullOrWhiteSpace(request.Code))
             throw new ValidationException("A password or a two-factor code is required.");
     }
+    /// <summary><c>GET /users/self/push-preferences</c> — read phone push preferences, separate from email. Unavailable to third-party OAuth applications.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>All push event codes and their enabled flags; new keys may be added.</returns>
+    public Task<IReadOnlyDictionary<string, bool>> GetPushPreferencesAsync(CancellationToken cancellationToken = default) =>
+        CallAsync<IReadOnlyDictionary<string, bool>>("users/self/push-preferences", HttpMethod.Get,
+            cancellationToken: cancellationToken);
+
+    /// <summary><c>PUT /users/self/push-preferences</c> — merge phone push preferences across all workspaces without changing email preferences. Unavailable to third-party OAuth applications.</summary>
+    /// <param name="preferences">Nonempty map using exact event names, such as SignerViewed, SignerSigned, DocumentCompleted and SignerIdentityReviewRequired. Omitted keys remain unchanged.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The complete updated push-preference map.</returns>
+    public Task<IReadOnlyDictionary<string, bool>> UpdatePushPreferencesAsync(IReadOnlyDictionary<string, bool> preferences,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+        if (preferences.Count == 0) throw new ValidationException("At least one push preference is required.");
+        return CallAsync<IReadOnlyDictionary<string, bool>>("users/self/push-preferences", HttpMethod.Put,
+            preferences, cancellationToken: cancellationToken);
+    }
+
 }

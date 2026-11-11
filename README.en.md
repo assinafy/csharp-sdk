@@ -3,7 +3,7 @@
 *[Leia em português](README.md) · English*
 
 A typed .NET client for the [Assinafy](https://api.assinafy.com.br/v1/docs) electronic-signature
-API. It covers the complete documented HTTP surface — documents, contract tracking, templates, signers, assignments,
+API. It covers the complete documented HTTP surface — documents, envelopes, embedded signing, contract tracking, templates, signers, assignments,
 the signer-facing signing flow, signature images, tags, fields, webhooks, accounts, users, and the
 OAuth 2.1 authorization-code flow — as strongly-typed resources on a single `AssinafyClient`, with
 one exception hierarchy, envelope handling, and pagination already taken care of.
@@ -36,16 +36,19 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 22. [Support matrix and versioning](#support-matrix-and-versioning)
 23. [Further reading](#further-reading)
 24. [Contract lifecycle management](#contract-lifecycle-management)
+25. [Envelopes](#envelopes)
+26. [Embedded signing](#embedded-signing)
 
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.7.1
+dotnet add package Assinafy.Sdk --version 2.8.0
 ```
 
-Applications need a runtime compatible with `net8.0`, `net9.0`, or `net10.0`. Contributors need
-.NET SDKs 8.0.426, 9.0.319, and 10.0.402; [`global.json`](global.json) selects .NET 10 for
-repository commands.
+Use .NET 10 LTS for supported production deployments. The package retains `net8.0` and `net9.0`
+compatibility targets, but Microsoft support for those runtimes ended on November 10, 2026.
+Contributors use .NET SDKs 8.0.426, 9.0.319, and 10.0.404; [`global.json`](global.json) selects .NET 10
+for repository commands.
 
 ## Credentials and environments
 
@@ -468,22 +471,27 @@ Inject it as `[FromKeyedServices("AssinafyOAuth")] AssinafyClient oauth`.
 
 ## How requests and responses work
 
-**The envelope.** Every Assinafy response is `{ status, message, data }`. The SDK unwraps it: your
+**Response envelopes.** Normal JSON responses are `{ status, message, data }`; OAuth responses
+are flat JSON and download routes return bytes. The SDK unwraps normal JSON: your
 method returns the `data` payload, already typed. A `status` of 400 or above becomes an
 `ApiException` regardless of the HTTP status line, so a "200 OK" carrying an error envelope still
 throws.
 
-**Naming.** Request and response bodies use `snake_case`, handled for you. The single exception is
-the signer sign body, which the API defines in camelCase; `SignAssignmentValue` applies that
-automatically.
+**Naming.** Request and response bodies generally use `snake_case`, handled for you. The signer
+sign body uses camelCase; `SignAssignmentValue` applies that automatically. Notification preference
+and policy dictionaries preserve the exact PascalCase event codes returned by the API.
 
 **Lists.** Two shapes exist, and the return type tells you which:
 
-- `IReadOnlyList<T>` — the endpoint returns a complete array (tags, activities, statistics, event
+- `IReadOnlyList<T>` — the endpoint returns an array (tags, statistics, event
   types, field types, statuses).
 - `PaginatedResult<T>` — the endpoint pages. `Data` holds the page; `Meta` carries `CurrentPage`,
   `PerPage`, `Total`, and `LastPage`, parsed from the `X-Pagination-*` response headers. `Meta` is
   `null` when the response carried no such headers.
+
+Document activities are paginated. Use the `ActivitiesAsync` overload taking
+`DocumentActivityListParams` to retain pagination metadata; the legacy overload returns the first
+page as an array.
 
 Paging parameters are `page` (1-based) and `per-page` (max 100), alongside `search` and `sort`
 where the endpoint supports them:
@@ -749,11 +757,18 @@ var estimate = await client.Assignments.EstimateCostAsync(document.Id, request);
 if (!estimate.HasSufficientResources)
     throw new InvalidOperationException(estimate.BlockingReason);
 
-Console.WriteLine($"{estimate.TotalCredits} credits, {estimate.CreditBalance} available");
+var balance = estimate.AvailableCreditBalance?.ToString() ?? "unlimited";
+Console.WriteLine($"{estimate.TotalCredits} credits, {balance} available");
 ```
 
 `Documents.EstimateCostFromTemplateAsync` and `Assignments.EstimateResendCostAsync` do the same for
-the template and resend flows.
+the template and resend flows. `Envelopes.EstimateCostAsync` prices a multi-document envelope.
+`AvailableDocumentBalance` and `AvailableCreditBalance` distinguish unlimited (`null`) from zero.
+Set `MaxTotalCredits` on assignment, template, envelope, or upload-helper requests to the approved
+nonnegative ceiling; zero allows only operations costing no credits. A higher actual cost returns
+409 `CreditCeilingExceeded` without creating or charging. Estimates ignore the ceiling and do not
+reserve the quoted price. Template creation also accepts `CreateDocumentFromTemplateOptions.IdempotencyKey`;
+persist and reuse the same key for the same intended creation after an uncertain response.
 
 ## Documents
 
@@ -785,8 +800,20 @@ await client.Documents.DeleteAsync(document.Id);
 ```
 
 `ListAsync` accepts `status`, `method`, `search`, `tags` (comma-separated tag IDs, matching
-documents that carry all of them), `sort`, `page`, and `per-page`. `SearchAsync` hits the compact
-search route, which omits the expanded `assignment` and `pages` that `ListAsync` returns.
+documents that carry all of them), `envelope_id`, `sort`, `page`, and `per-page`. `SearchAsync` hits
+the compact search route, which omits the expanded `assignment` and `pages` that `ListAsync` returns.
+Use `SearchWithOptionsAsync` for envelope filters. `GetExpandedAsync` includes `EnvelopeId` and
+`Envelope` (ID and name).
+
+`ThumbnailWithOptionsAsync(documentId, signed: true)` and
+`DownloadPageWithOptionsAsync(documentId, pageId, signed: true)` render the certificated artifact
+for a workspace caller. The document must be certificated; 503 with `Retry-After` means rendering
+is pending or busy. The SDK does not retry it. Appended certificate pages have no original page IDs.
+`GetAsSignerAsync`, `DownloadAsSignerAsync`, `ThumbnailAsSignerAsync`, and
+`DownloadPageAsSignerAsync` require a nonblank signer access code and omit workspace credentials.
+The signer download method allows the original only; certified copies use the sent-link flow below.
+Public verification exposes `CompletedAt` (last signature), `CertificatedAt` (certificate creation),
+and `VerifiedAt` (when verification ran) as distinct timestamps.
 
 Three local helpers save round trips of your own:
 
@@ -925,9 +952,8 @@ await client.Signers.VerifyAsync(signerAccessCode, verificationCode);
 // Virtual assignments require confirmed signer data before signing; otherwise the API returns 400.
 await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmSignerDataRequest
 {
-    FullName = "John Doe",
     Email = "john@example.com",
-    GovernmentId = "00000000000",
+    HasAcceptedTerms = true,
 });
 
 // For collect, select an item from toSign.Assignment.Items.
@@ -950,8 +976,13 @@ await client.Signing.SignAsync(documentId, assignmentId, signerAccessCode,
 await client.Signing.DeclineAsync(documentId, assignmentId, signerAccessCode, "Wrong counterparty");
 ```
 
+`ConfirmDataAsync` confirms contact details and accepted terms and returns no data. Set the
+signer's name and CPF/CNPJ with workspace `Signers.CreateAsync` or `Signers.UpdateAsync` before
+creating the assignment; `full_name` and `government_id` are not editable through confirmation.
+`ConfirmDataWithResultAsync` performs confirmation followed by a separate profile read.
+
 A signer with several pending documents can act on them in bulk, browse their own documents, and
-download finished artifacts:
+download originals:
 
 ```csharp
 await client.Signing.SignMultipleAsync(signerAccessCode, [documentId1, documentId2]);
@@ -965,9 +996,45 @@ var found   = await client.Signing.SearchDocumentsAsync(signerId, signerAccessCo
 // With the workspace credential instead of an access code, use the explicit methods:
 var theirs  = await client.Signing.ListDocumentsAsWorkspaceAsync(signerId);
 
-var artifact = await client.Signing.DownloadPublicAsync(
-    signerId, documentId, DocumentArtifactNames.Certificated);
+var artifact = await client.Signing.DownloadOriginalAsync(
+    signerId, documentId, signerAccessCode);
 ```
+
+### Closed access and certified copies
+
+After a signer's access closes, `Signing.GetAsync` returns a minimal document with
+`IsSignerAccessClosed`, `CurrentSigner`, and `CertifiedCopy`. Ordinary signer actions return 410.
+Use `Signing.GetWithOptionsAsync(code, new SigningDocumentParams { ExpandEnvelope = true, DocumentId = id })`
+to select another envelope document; only documents assigned to that signer are visible.
+`GetCurrentDocumentWithEnvelopeAsync` expands the current document's envelope, and
+`SignerDocumentListParams.EnvelopeId` filters signer list/search results.
+
+```csharp
+using Assinafy.Sdk;
+using Assinafy.Sdk.Models;
+
+static async Task<CertifiedCopyStatus?> RequestCopyAsync(
+    AssinafyClient client, string signerAccessCode, string documentId)
+{
+    var details = await client.Signing.GetAsync(signerAccessCode);
+    if (details.CertifiedCopy is not { Available: true }) return details.CertifiedCopy;
+    return await client.Signing.SendCertifiedCopyAsync(signerAccessCode, documentId);
+}
+
+static Task<byte[]> DownloadCopyAsync(AssinafyClient client, string receivedLinkToken) =>
+    client.Signing.DownloadCertifiedCopyAsync(receivedLinkToken);
+```
+
+`SendCertifiedCopyAsync` also works after signer access closes and sends to the original signing
+contact, even if the signer's profile has changed. Inspect `NotificationMethod`, `ResendsLeft`,
+and the masked `SentTo` returned after delivery. Certified-copy tokens are bearer credentials:
+never log them. `DownloadCertifiedCopyAsync(token, pades: true)` requests PAdES when present.
+Completion-message links last seven days; links from send/resend requests last thirty minutes.
+`ResendCertifiedCopyAsync(token)` can resend an expired signer's link. Email resends allow one
+per two minutes and ten per 24 hours; WhatsApp allows one per signature request. Copy receivers
+cannot request resends through this route (409). Unknown or expired downloads return a 302
+expired-link response, surfaced as `ApiException` because SDK redirects are disabled.
+The legacy `DownloadPublicAsync` has the same expired-link behavior without an access credential.
 
 ### Digital-certificate signing
 
@@ -976,11 +1043,10 @@ exchange instead of a field submission. It requires a `virtual` assignment; temp
 fields produce `collect` and are incompatible:
 
 ```csharp
-// Confirm identity and terms before Signing.GetAsync for certificate signers.
+// Set the workspace signer's CPF/CNPJ before creating this assignment.
+// Confirm contact details and terms before Signing.GetAsync for certificate signers.
 await client.Signers.ConfirmDataAsync(documentId, signerAccessCode, new ConfirmSignerDataRequest
 {
-    FullName = "John Doe",
-    GovernmentId = governmentId,   // CPF/CNPJ matching the signer's certificate
     HasAcceptedTerms = true,
 });
 var toSignWithCertificate = await client.Signing.GetAsync(signerAccessCode);
@@ -1000,7 +1066,8 @@ absent from the published OpenAPI document. They require a real production certi
 and a browser-signed Web PKI token.
 `Signing.GetAsync` returns `400` for certificate signers before data confirmation and terms
 acceptance; its `hasAcceptedTerms` parameter cannot replace those steps. Download `pades` after
-completion to receive the qualified PAdES signature.
+completion to receive the qualified PAdES signature. The certificate holder must match the
+CPF/CNPJ already stored on the workspace signer; confirmation cannot change that identity.
 
 ### Identity document and face-match verification
 
@@ -1235,6 +1302,143 @@ when it returns. The four `Contract*` notification preferences control lifecycle
 Full filters, limits, null semantics, request/response payloads and errors are in
 [the API reference](docs/API.md#full-operation-request-and-response-payloads).
 
+## Envelopes
+
+An envelope sends up to twenty documents to up to twenty shared signers. Upload and wait for every
+document to reach `metadata_ready`; none may already have an assignment. Create workspace signers
+first, including CPF/CNPJ where verification needs it. Every signer must appear on at least one
+document. Envelopes require the plan's Envelopes feature and do not support signing-order steps.
+
+```csharp
+using Assinafy.Sdk;
+using Assinafy.Sdk.Models;
+
+static async Task<DocumentEnvelope> SendEnvelopeAsync(
+    AssinafyClient client, IReadOnlyList<string> readyDocumentIds, string signerId,
+    string persistedRequestKey, decimal approvedCreditCeiling)
+{
+    var request = new CreateEnvelopeRequest
+    {
+        Name = "Agreement and attachments",
+        Message = "Please review every document before signing.",
+        Signers = [new EnvelopeSignerRequest
+        {
+            Id = signerId,
+            VerificationMethod = SignerChannels.Email,
+            NotificationMethods = [SignerChannels.Email],
+        }],
+        Documents = readyDocumentIds.Select(id => new EnvelopeDocumentRequest
+        {
+            Id = id,
+            SignerIds = [signerId],
+            Method = AssignmentMethods.Virtual,
+        }).ToArray(),
+        MaxTotalCredits = approvedCreditCeiling,
+    };
+    var estimate = await client.Envelopes.EstimateCostAsync(request);
+    if (!estimate.HasSufficientResources || estimate.TotalCredits > approvedCreditCeiling)
+        throw new InvalidOperationException(estimate.BlockingReason ?? "Credit ceiling exceeded.");
+    return await client.Envelopes.CreateAsync(request, idempotencyKey: persistedRequestKey);
+}
+```
+
+An envelope consumes one plan document; notification and biometric costs apply once per signer.
+Certificate charges apply per document, and a certificate signer must be alone on each of their
+virtual documents. Biometric verification is shared across the envelope. Estimates charge nothing
+and ignore `MaxTotalCredits`; creation refuses a higher actual cost with 409 `CreditCeilingExceeded`
+without creating or charging anything.
+
+Persist a unique idempotency key for each intended creation before sending it. Reuse that exact
+case-sensitive key after an uncertain response: a replay returns the original envelope regardless
+of the new body. A still-running request returns 409 `IdempotencyKeyInUse`. Keys are workspace-scoped;
+the SDK never retries automatically. A successful creation does not guarantee notification delivery:
+inspect each document assignment's signer `NotificationHistory` and resend when appropriate.
+
+Read `Envelopes.ListAsync` with `search`, `status` (`open` or `closed`), `page`, and `per-page`;
+`GetAsync` returns documents in envelope order. The following optional edits are independent actions:
+
+```csharp
+using Assinafy.Sdk;
+using Assinafy.Sdk.Models;
+
+static Task<DocumentEnvelope> AppendAsync(
+    AssinafyClient client, string envelopeId, string readyDocumentId, string existingSignerId) =>
+    client.Envelopes.AddDocumentAsync(envelopeId, new EnvelopeDocumentRequest
+    {
+        Id = readyDocumentId,
+        SignerIds = [existingSignerId],
+        Method = AssignmentMethods.Virtual,
+    }, maxTotalCredits: 0);
+
+static Task<DocumentEnvelope> ReorderAsync(
+    AssinafyClient client, string envelopeId, IReadOnlyList<string> allDocumentIdsInOrder) =>
+    client.Envelopes.UpdateAsync(envelopeId, new Dictionary<string, object?>
+    {
+        ["document_ids"] = allDocumentIdsInOrder,
+        ["message"] = null,
+    });
+
+static Task<DocumentEnvelope> RemoveAsync(
+    AssinafyClient client, string envelopeId, string openDocumentId) =>
+    client.Envelopes.RemoveDocumentAsync(envelopeId, openDocumentId);
+
+static Task<byte[]> DownloadEnvelopeAsync(AssinafyClient client, string envelopeId) =>
+    client.Envelopes.DownloadAsync(envelopeId, DocumentArtifactNames.Certificated);
+
+static Task<IReadOnlyList<EnvelopeCancellationResult>> CancelEnvelopeAsync(
+    AssinafyClient client, string envelopeId) => client.Envelopes.CancelAsync(envelopeId);
+
+static Task DeleteClosedEnvelopeAsync(AssinafyClient client, string envelopeId) =>
+    client.Envelopes.DeleteAsync(envelopeId);
+```
+
+Adding requires an open envelope and existing envelope signers; it sends updated invitations and
+charges only new certificate signatures. Reordering must include every document exactly once and
+sends no notification; `name` and `message` may also change, including after closure. Removing an
+open document cancels it and notifies its parties; old invitations still reach remaining documents.
+`ActivitiesAsync` pages events from current and removed documents, excluding deleted documents.
+`ResendNotificationAsync(envelopeId, signerId)` sends one reminder covering that signer's pending
+documents, charging paid channels once.
+
+Downloads are ZIP bytes in envelope order. Signed artifacts include only certificated documents;
+`pades` includes only documents that have it, and no matching artifact returns 404. Cancellation
+returns each document's status and `Cancelled` flag; closed or certifying documents stay unchanged.
+Delete only after all documents close (otherwise 409 `EnvelopeOpen`). Deleting an envelope leaves
+the documents and certificates intact and removes its idempotency-key lookup.
+
+## Embedded signing
+
+Embedded signing requires the Embed feature and Email or Whatsapp verification. Register each exact
+application origin once through `Embed.AddOriginAsync("https://example.com")`; list, update, and
+remove registrations through `ListOriginsAsync`, `UpdateOriginAsync`, and `DeleteOriginAsync`.
+Origins cannot contain paths, queries, fragments, user information, or wildcards. HTTPS is required,
+except HTTP for localhost or 127.0.0.1 development. A workspace allows ten origins; duplicate origins
+return 400. Origin management is unavailable to third-party OAuth applications.
+
+Set `Embedded = true` on the assignment `SignerRef`, template `TemplateSigner`, or
+`EnvelopeSignerRequest`. The returned `SigningUrl` has `Embedded = true` and a null `Url`.
+Create a session for each opening after your backend verifies that its authenticated application
+user is authorized to act as that signer:
+
+```csharp
+using Assinafy.Sdk;
+
+static async Task<string> CreateSigningFrameAsync(
+    AssinafyClient client, string documentId, string assignmentId, string authorizedSignerId)
+{
+    var session = await client.Embed.CreateSessionAsync(documentId, assignmentId, authorizedSignerId);
+    return session.Url;
+}
+```
+
+Return this URL only to that user's page and set it as the iframe `src` on a registered origin.
+Each URL is single-use and expires after five minutes: mint a new one for another opening, and never
+log or persist it in browser storage. The Assinafy iframe performs the token exchange and enforces
+the allowed parent origin; `ExchangeSessionAsync` implements that page protocol. An exchange consumes
+the token even when signing is not ready (409). Session creation allows thirty attempts per signer
+per hour (429), and returns 409 when the assignment is unavailable, pending, completed, or lacks
+registered origins. Keep API credentials and signer access codes out of the embedding application page.
+
 ## Webhooks
 
 An account registers one webhook endpoint, or up to three on paid plans. Every active endpoint
@@ -1261,9 +1465,12 @@ await client.Webhooks.UpdateEndpointAsync(endpoint.Id, new UpdateWebhookEndpoint
     Events = ["document_ready"],                                      // only sent fields change
 });
 
-// With an API key: read and rotate. Rotation invalidates the old secret immediately.
+// Existing secrets can be read with an API key. OAuth may rotate with webhooks:write.
 var current = await client.Webhooks.GetEndpointSecretAsync(endpoint.Id);
-var rotated = await client.Webhooks.RotateEndpointSecretAsync(endpoint.Id);
+var rotated = await client.Webhooks.RotateEndpointSecretWithOptionsAsync(
+    endpoint.Id, keepPrevious: true);
+// Atomically store rotated.Secret in the receiver before PreviousSecretExpiresAt.
+var testDelivery = await client.Webhooks.TestEndpointAsync(endpoint.Id);
 
 // Delivery history (optionally for one endpoint) and replay to that entry's endpoint.
 var history = await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams
@@ -1286,8 +1493,17 @@ Creating an endpoint past the plan's limit returns 403, and each endpoint needs 
 
 `Secret` is returned once when creating a signed endpoint or enabling signing on an existing one.
 Store it securely. OAuth applications cannot read the existing secret, but can obtain a replacement
-with `RotateEndpointSecretAsync` and `webhooks:write`. Rotation takes effect immediately; store the
-new secret before processing subsequent deliveries. API-key integrations can also use `GetEndpointSecretAsync`.
+with rotation and `webhooks:write`. `RotateEndpointSecretAsync` invalidates the old secret
+immediately. `RotateEndpointSecretWithOptionsAsync(id, keepPrevious: true)` retains it for 24 hours
+and signs each delivery with both keys until `PreviousSecretExpiresAt`. Atomically store the new
+secret in your receiver before that deadline; another rotation replaces the retained key.
+API-key integrations can also use `GetEndpointSecretAsync`.
+
+`TestEndpointAsync` delivers a signed `webhook_test` even to inactive or paused endpoints, with a
+ten-second deadline and a limit of ten tests per user per ten minutes. It returns a dispatch with
+`Kind = "manual"` and nullable `DurationMs`. It does not resume delivery or change pause counters.
+The test event has null `payload` and `origin`, cannot be subscribed to, and is absent from the event
+catalog. Handle it in the receiver without treating it as a document lifecycle event.
 Use `ListEndpointsByUrlAsync(url)` or `DeleteEndpointByUrlAsync(url)` to find or remove an endpoint
 by its exact registered address.
 
@@ -1383,6 +1599,44 @@ var daily = await client.Users.GetStatsAsync(new DocumentStatsParams
 foreach (var row in monthly)
     Console.WriteLine($"{row.Period}: {row.DocumentsSent} sent, {row.DocumentsCertified} certified");
 ```
+
+### Usage, signing features, and notification preferences
+
+```csharp
+using Assinafy.Sdk;
+using Assinafy.Sdk.Models;
+
+static async Task ConfigureAlertsAsync(AssinafyClient client)
+{
+    var features = await client.Accounts.GetWithSigningFeaturesAsync();
+    var usage = await client.Accounts.GetUsageAsync();
+    var credits = usage.Balances.Credits.Balance?.ToString() ?? "unlimited";
+    Console.WriteLine($"{usage.Plan}: {credits} credits available");
+
+    var policy = await client.Accounts.GetNotificationPolicyAsync();
+    if (policy.Editable)
+        await client.Accounts.UpdateNotificationPolicyAsync(new UpdateNotificationPolicyRequest
+        {
+            Events = new Dictionary<string, bool> { ["DocumentCompleted"] = true },
+            OwnersReceiveAll = true,
+        });
+
+    var push = await client.Users.GetPushPreferencesAsync();
+    await client.Users.UpdatePushPreferencesAsync(
+        new Dictionary<string, bool> { ["DocumentCompleted"] = true });
+}
+```
+
+`Account.SigningFeatures` contains the feature flags available to the workspace. Usage exposes the
+plan, next document renewal date, and document/credit balances, limits, and spending; null balances
+mean unlimited. Usage, notification policy, and personal push preferences return 403 for third-party
+OAuth applications regardless of scopes. Policy changes are owner-only; check `Editable` first.
+
+Policy and preference updates merge only supplied keys, using the exact PascalCase event codes.
+A policy event set to false disables it on every channel for the workspace, except the mandatory
+identity-review email. `OwnersReceiveAll` extends owners' push alerts to other members' documents,
+subject to their own preferences. Push preferences apply to the user across all workspaces,
+independently of email preferences; unknown future keys are preserved when reading the map.
 
 ### Two-factor authentication
 
@@ -1500,8 +1754,8 @@ flow needs a production certificate assignment and a browser-signed Web PKI toke
 
 | Target | .NET support | Ends |
 |---|---|---|
-| `net8.0` | LTS, maintenance | 2026-11-10 |
-| `net9.0` | STS, maintenance | 2026-11-10 |
+| `net8.0` | Out of support; compatibility target | 2026-11-10 |
+| `net9.0` | Out of support; compatibility target | 2026-11-10 |
 | `net10.0` | LTS, active | 2028-11-14 |
 
 The package has no NuGet dependencies, so it never constrains which `Microsoft.Extensions.*`
@@ -1519,7 +1773,7 @@ packages your ASP.NET Core app already references.
 ## Further reading
 
 - **[docs/API.md](docs/API.md)** — the complete reference: every public SDK method with its full
-  signature, and all 93 production operations with request and response payloads, error bodies,
+  signature, and all 147 production operations with request and response payloads, error bodies,
   authentication, and the webhook contract.
 - **[docs/openapi.json](docs/openapi.json)** — the checked-in production OpenAPI snapshot. CI
   verifies it still matches the live document on every run.

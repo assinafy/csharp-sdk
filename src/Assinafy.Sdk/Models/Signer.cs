@@ -92,22 +92,21 @@ public sealed class UpdateSignerRequest
 /// <summary>Body for <c>PUT /documents/{document_id}/signers/confirm-data</c>.</summary>
 public sealed class ConfirmSignerDataRequest
 {
-    /// <summary>Signer's full name to confirm or supply, or <see langword="null"/> to omit.</summary>
+    /// <summary>Legacy name field retained for older deployments; current confirmation accepts contact details and terms only. Set the name through workspace signer management.</summary>
     public string? FullName { get; set; }
 
     /// <summary>Signer's email address to confirm or supply, or <see langword="null"/> to omit.</summary>
     public string? Email { get; set; }
 
-    /// <summary>Signer's government-issued identity number to confirm or supply, or <see langword="null"/> to omit.</summary>
+    /// <summary>Legacy identity field retained for older deployments; set the government ID through workspace signer management.</summary>
     public string? GovernmentId { get; set; }
 
-    /// <summary>Compatibility field accepted by older deployments for confirming the WhatsApp number.</summary>
+    /// <summary>Required for WhatsApp verification or notification. Saved when absent; otherwise it must match the signer.</summary>
     [JsonPropertyName("whatsapp_phone_number")]
     public string? WhatsAppPhoneNumber { get; set; }
 
     /// <summary>
-    /// Compatibility terms flag. The published schema omits it, but the production signing guide
-    /// still requires it for digital-certificate confirmation.
+    /// Set true to record terms acceptance during data confirmation. Required before a digital-certificate signer opens GET /sign.
     /// </summary>
     public bool? HasAcceptedTerms { get; set; }
 }

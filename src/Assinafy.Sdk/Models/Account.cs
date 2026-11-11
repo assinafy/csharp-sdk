@@ -56,6 +56,10 @@ public sealed record Account
     [JsonPropertyName("limits")]
     public AccountLimits? Limits { get; init; }
 
+    /// <summary>Signing features available to this workspace, returned with expand=signing_features. Keys retain their API casing.</summary>
+    [JsonPropertyName("signing_features")]
+    public IReadOnlyDictionary<string, bool>? SigningFeatures { get; init; }
+
     /// <summary>ISO-8601 date-time when the account was created.</summary>
     [JsonPropertyName("created_at")]
     public string CreatedAt { get; init; } = string.Empty;

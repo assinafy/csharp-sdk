@@ -110,9 +110,12 @@ public sealed class ReliabilityRegressionTests
             new IdentityVerificationSession { Url = secret },
             new CertificateStartResult { Token = secret },
             new SigningUrl { Url = secret },
+            new EmbedSession { Url = secret },
+            new EmbedSessionExchange { SignerAccessCode = secret },
             new WhatsAppNotificationButton { Url = secret },
             new DocumentListItem { SigningUrl = secret },
             new DocumentDetails { SigningUrl = secret },
+            new DocumentEnvelope { SigningUrls = [new SigningUrl { Url = secret }] },
         ];
 
         foreach (var value in values)

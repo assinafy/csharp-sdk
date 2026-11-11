@@ -296,6 +296,45 @@ public sealed class WebhookResource : BaseResource
             cancellationToken: cancellationToken);
     }
 
+    /// <summary>
+    /// <c>POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/secret/rotate</c> — replace the signing
+    /// secret with an optional 24-hour overlap. With keepPrevious, deliveries carry signatures from both keys
+    /// until PreviousSecretExpiresAt. Rotating again stops the previously retained key. OAuth scope webhooks:write.
+    /// </summary>
+    /// <param name="endpointId">Endpoint whose secret to rotate.</param>
+    /// <param name="keepPrevious">Keep the replaced secret signing for 24 hours; false stops it immediately.</param>
+    /// <param name="accountId">Workspace account ID; falls back to the client's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The new signing secret and, with overlap, the replaced secret's expiry.</returns>
+    public Task<WebhookEndpointSecret> RotateEndpointSecretWithOptionsAsync(
+        string endpointId,
+        bool keepPrevious,
+        string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        CallAsync<WebhookEndpointSecret>(
+            $"{EndpointPath(endpointId, accountId)}/secret/rotate",
+            HttpMethod.Post,
+            new { keep_previous = keepPrevious },
+            cancellationToken: cancellationToken);
+
+    /// <summary>
+    /// <c>POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/test</c> — send one signed webhook_test
+    /// delivery, including to an inactive or paused endpoint, without lifting or counting toward its pause.
+    /// The receiver has 10 seconds to respond. Limited to ten tests per user per ten minutes. OAuth scope webhooks:write.
+    /// </summary>
+    /// <param name="endpointId">Endpoint that receives the test delivery.</param>
+    /// <param name="accountId">Workspace account ID; falls back to the client's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The manual delivery attempt, including success/failure and response details.</returns>
+    public Task<WebhookDispatch> TestEndpointAsync(
+        string endpointId,
+        string? accountId = null,
+        CancellationToken cancellationToken = default) =>
+        CallAsync<WebhookDispatch>(
+            $"{EndpointPath(endpointId, accountId)}/test",
+            HttpMethod.Post,
+            cancellationToken: cancellationToken);
+
     private string EndpointPath(string endpointId, string? accountId) =>
         $"accounts/{AccountId(accountId)}/webhooks/endpoints/{PathSegment(endpointId, "Endpoint ID")}";
 

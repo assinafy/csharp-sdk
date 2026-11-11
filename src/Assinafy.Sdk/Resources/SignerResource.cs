@@ -174,24 +174,22 @@ public sealed partial class SignerResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary><c>PUT /signers/accept-terms</c> — record acceptance of the terms. The API returns no data; the returned <see cref="Signer"/> is a synthetic legacy-compatibility result.</summary>
+    /// <summary><c>PUT /signers/accept-terms</c> — record acceptance of the terms and return the signer name, email, and acceptance flag.</summary>
     /// <param name="signerAccessCode">The signer's per-assignment access code (issued with the signing link) that authorizes this self-service call.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A compatibility result with <see cref="Signer.HasAcceptedTerms"/> set. The current operation returns no data.</returns>
-    public async Task<Signer> AcceptTermsAsync(
+    /// <returns>The signer name, email, and recorded terms acceptance.</returns>
+    public Task<Signer> AcceptTermsAsync(
         string signerAccessCode,
         CancellationToken cancellationToken = default)
     {
         var code = RequireId(signerAccessCode, "Signer access code");
         var path = AppendQueryString("signers/accept-terms", AccessCodeQuery(code));
 
-        await CallVoidAsync(
+        return CallAsync<Signer>(
             path,
             HttpMethod.Put,
             cancellationToken: cancellationToken,
-            authenticate: false).ConfigureAwait(false);
-
-        return new Signer { HasAcceptedTerms = true };
+            authenticate: false);
     }
 
     /// <summary><c>POST /verify</c> — verify an email or WhatsApp one-time code. The API returns no data.</summary>
@@ -244,26 +242,7 @@ public sealed partial class SignerResource : BaseResource
     /// <param name="request">The full name, email, and/or government ID to confirm; when present, <c>Email</c> must be a valid address.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>A task that completes after the signer data is confirmed. Use <see cref="ConfirmDataWithResultAsync"/> to receive the updated signer payload.</returns>
-    public async Task ConfirmDataAsync(
-        string documentId,
-        string signerAccessCode,
-        ConfirmSignerDataRequest request,
-        CancellationToken cancellationToken = default)
-    {
-        _ = await ConfirmDataWithResultAsync(
-            documentId,
-            signerAccessCode,
-            request,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary><c>PUT /documents/{document_id}/signers/confirm-data</c> — confirm signer data and return the complete updated signer payload.</summary>
-    /// <param name="documentId">Document the signer is party to.</param>
-    /// <param name="signerAccessCode">Signer access code.</param>
-    /// <param name="request">Signer values to confirm.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The updated signer returned by the API.</returns>
-    public Task<Signer> ConfirmDataWithResultAsync(
+    public Task ConfirmDataAsync(
         string documentId,
         string signerAccessCode,
         ConfirmSignerDataRequest request,
@@ -274,25 +253,31 @@ public sealed partial class SignerResource : BaseResource
         ArgumentNullException.ThrowIfNull(request);
         AssertOptionalEmail(request.Email);
 
-        var path = AppendQueryString(
-            $"documents/{document}/signers/confirm-data",
-            AccessCodeQuery(code));
-
         var body = new Dictionary<string, object?>();
         if (request.FullName is not null) body["full_name"] = request.FullName;
         if (request.Email is not null) body["email"] = request.Email;
         if (request.GovernmentId is not null) body["government_id"] = request.GovernmentId;
-        if (request.WhatsAppPhoneNumber is not null)
-            body["whatsapp_phone_number"] = request.WhatsAppPhoneNumber;
-        if (request.HasAcceptedTerms.HasValue)
-            body["has_accepted_terms"] = request.HasAcceptedTerms.Value;
+        if (request.WhatsAppPhoneNumber is not null) body["whatsapp_phone_number"] = request.WhatsAppPhoneNumber;
+        if (request.HasAcceptedTerms.HasValue) body["has_accepted_terms"] = request.HasAcceptedTerms.Value;
 
-        return CallAsync<Signer>(
-            path,
-            HttpMethod.Put,
-            body,
-            cancellationToken: cancellationToken,
-            authenticate: false);
+        return CallVoidAsync(AppendQueryString($"documents/{document}/signers/confirm-data", AccessCodeQuery(code)),
+            HttpMethod.Put, body, cancellationToken, authenticate: false);
+    }
+
+    /// <summary><c>PUT /documents/{document_id}/signers/confirm-data</c>, then <c>GET /signers/self</c> — confirm data and fetch the updated signer. Confirmation itself returns no signer payload.</summary>
+    /// <param name="documentId">Document the signer is party to.</param>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="request">Contact values and terms acceptance to confirm.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The signer fetched after successful confirmation. A read failure does not undo confirmation.</returns>
+    public async Task<Signer> ConfirmDataWithResultAsync(
+        string documentId,
+        string signerAccessCode,
+        ConfirmSignerDataRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        await ConfirmDataAsync(documentId, signerAccessCode, request, cancellationToken).ConfigureAwait(false);
+        return await GetSelfAsync(signerAccessCode, cancellationToken).ConfigureAwait(false);
     }
 
     private static void AssertOptionalEmail(string? email)

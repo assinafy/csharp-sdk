@@ -71,7 +71,7 @@ public sealed class DocumentResource : BaseResource
     /// Optional filters. Accepted keys: <c>status</c> (a document status code, e.g. <c>pending_signature</c>);
     /// <c>method</c> (<c>virtual</c> or <c>collect</c>, see <see cref="AssignmentMethods"/>);
     /// <c>search</c> (partial match on document name or a signer's name/email); <c>tags</c> (comma-separated tag IDs,
-    /// returning documents that carry all of them); <c>sort</c> (<c>name</c> or <c>updated_at</c>);
+    /// returning documents that carry all of them); <c>envelope_id</c> (one envelope); <c>sort</c> (<c>name</c> or <c>updated_at</c>);
     /// <c>page</c> (1-based page number); and <c>per-page</c> (page size).
     /// </param>
     /// <param name="accountId">Workspace account whose documents to list; falls back to the client default.</param>
@@ -403,12 +403,15 @@ public sealed class DocumentResource : BaseResource
             body["editor_fields"] = options.EditorFields;
         }
         if (options?.Tags is not null) body["tags"] = options.Tags;
+        if (options?.MaxTotalCredits is < 0) throw new ValidationException("Maximum total credits must be non-negative.");
+        if (options?.MaxTotalCredits is not null) body["max_total_credits"] = options.MaxTotalCredits;
 
         return CallAsync<DocumentDetails>(
             $"accounts/{account}/templates/{template}/documents",
             HttpMethod.Post,
             body,
-            cancellationToken: cancellationToken);
+            cancellationToken: cancellationToken,
+            requestHeaders: IdempotencyHeaders(options?.IdempotencyKey));
     }
 
     /// <summary><c>POST /accounts/{account_id}/templates/{template_id}/documents/estimate-cost</c> — preview the credit cost of <see cref="CreateFromTemplateAsync"/>.</summary>
@@ -457,6 +460,7 @@ public sealed class DocumentResource : BaseResource
                 }
                 else
                     payload["id"] = signer.Id;
+                if (signer.Embedded.HasValue) payload["embedded"] = signer.Embedded.Value;
                 if (signer.Step.HasValue) payload["step"] = signer.Step.Value;
             }
 
@@ -481,4 +485,87 @@ public sealed class DocumentResource : BaseResource
             cancellationToken: cancellationToken,
             authenticate: false);
     }
+    /// <summary><c>GET /documents/{documentId}?expand=...</c> — read workspace document details with envelope metadata.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="expand">envelope_id, envelope, or both separated by a comma.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Document details with the requested envelope information.</returns>
+    public Task<DocumentDetails> GetExpandedAsync(string documentId, string expand = "envelope_id,envelope",
+        CancellationToken cancellationToken = default) =>
+        CallAsync<DocumentDetails>(AppendQueryString($"documents/{PathSegment(documentId, "Document ID")}",
+            new Dictionary<string, string?> { ["expand"] = RequireId(expand, "Expansion") }),
+            HttpMethod.Get, cancellationToken: cancellationToken);
+
+    /// <summary><c>GET /accounts/{accountId}/documents/search</c> — search compact document records, including an envelope_id filter.</summary>
+    /// <param name="queryParams">Optional search, status, envelope_id, sort, page and per-page filters.</param>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A page of matching compact document records.</returns>
+    public Task<PaginatedResult<DocumentListItem>> SearchWithOptionsAsync(IDictionary<string, string?>? queryParams = null,
+        string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallListAsync<DocumentListItem>($"accounts/{AccountId(accountId)}/documents/search", queryParams, cancellationToken);
+
+    /// <summary><c>GET /documents/{documentId}/thumbnail?artifact=certificated</c> — read a workspace thumbnail with signatures and stamps.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="signed">Whether to render the certified artifact. Requires a certified document; 503 with Retry-After means rendering is pending.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Thumbnail image bytes.</returns>
+    public Task<byte[]> ThumbnailWithOptionsAsync(string documentId, bool signed, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync($"documents/{PathSegment(documentId, "Document ID")}/thumbnail" + (signed ? "?artifact=certificated" : ""),
+            HttpMethod.Get, cancellationToken);
+
+    /// <summary><c>GET /documents/{documentId}/pages/{pageId}/download?artifact=certificated</c> — read a workspace page with signatures and stamps.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="pageId">Original document page ID; appended certificate pages have no ID.</param>
+    /// <param name="signed">Whether to render the certified artifact. Requires a certified document; 503 with Retry-After means rendering is pending.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Page image bytes. The digital certificate's visible seal is present only in the PAdES file.</returns>
+    public Task<byte[]> DownloadPageWithOptionsAsync(string documentId, string pageId, bool signed, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync($"documents/{PathSegment(documentId, "Document ID")}/pages/{PathSegment(pageId, "Page ID")}/download" +
+            (signed ? "?artifact=certificated" : ""), HttpMethod.Get, cancellationToken);
+
+    /// <summary><c>GET /documents/{documentId}?signer-access-code=...</c> — read a document using only the signer's access code.</summary>
+    /// <param name="documentId">A document sent to the signer.</param>
+    /// <param name="signerAccessCode">Required signer credential. Workspace credentials are never sent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Document details containing only this signer's assignment items.</returns>
+    public Task<DocumentDetails> GetAsSignerAsync(string documentId, string signerAccessCode, CancellationToken cancellationToken = default) =>
+        CallAsync<DocumentDetails>(SignerDocumentPath(documentId, "", signerAccessCode), HttpMethod.Get,
+            cancellationToken: cancellationToken, authenticate: false);
+
+    /// <summary><c>GET /documents/{documentId}/download/{artifactName}?signer-access-code=...</c> — download the original using only the signer credential.</summary>
+    /// <param name="documentId">A document sent to the signer.</param>
+    /// <param name="signerAccessCode">Required signer credential. Workspace credentials are never sent.</param>
+    /// <param name="artifactName">Only original is available; the API returns 403 for certified artifacts, which are sent through email or WhatsApp.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Original PDF bytes.</returns>
+    public Task<byte[]> DownloadAsSignerAsync(string documentId, string signerAccessCode,
+        string artifactName = DocumentArtifactNames.Original, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(SignerDocumentPath(documentId, $"/download/{PathSegment(artifactName, "Artifact name")}", signerAccessCode),
+            HttpMethod.Get, cancellationToken, authenticate: false);
+
+    /// <summary><c>GET /documents/{documentId}/thumbnail?signer-access-code=...</c> — read the original thumbnail using only the signer credential.</summary>
+    /// <param name="documentId">A document sent to the signer.</param>
+    /// <param name="signerAccessCode">Required signer credential. Workspace credentials are never sent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Thumbnail image bytes; certified renders are workspace-only.</returns>
+    public Task<byte[]> ThumbnailAsSignerAsync(string documentId, string signerAccessCode, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(SignerDocumentPath(documentId, "/thumbnail", signerAccessCode), HttpMethod.Get,
+            cancellationToken, authenticate: false);
+
+    /// <summary><c>GET /documents/{documentId}/pages/{pageId}/download?signer-access-code=...</c> — read an original page using only the signer credential.</summary>
+    /// <param name="documentId">A document sent to the signer.</param>
+    /// <param name="pageId">Page identifier.</param>
+    /// <param name="signerAccessCode">Required signer credential. Workspace credentials are never sent.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Page image bytes; certified renders are workspace-only.</returns>
+    public Task<byte[]> DownloadPageAsSignerAsync(string documentId, string pageId, string signerAccessCode,
+        CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(SignerDocumentPath(documentId, $"/pages/{PathSegment(pageId, "Page ID")}/download", signerAccessCode),
+            HttpMethod.Get, cancellationToken, authenticate: false);
+
+    private static string SignerDocumentPath(string documentId, string suffix, string signerAccessCode) =>
+        AppendQueryString($"documents/{PathSegment(documentId, "Document ID")}{suffix}",
+            AccessCodeQuery(RequireId(signerAccessCode, "Signer access code")));
+
 }

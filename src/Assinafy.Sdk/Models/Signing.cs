@@ -86,6 +86,9 @@ public sealed class DeclineAssignmentRequest
 /// </summary>
 public sealed class SignerDocumentListParams
 {
+    /// <summary>Restrict list or search to documents in this envelope.</summary>
+    public string? EnvelopeId { get; set; }
+
     /// <summary>Legacy status filter sent only when explicitly set.</summary>
     public string? Status { get; set; }
 
@@ -113,4 +116,37 @@ public static class SignatureImageTypes
 
     /// <summary>The signer's initials image.</summary>
     public const string Initial = "initial";
+}
+
+/// <summary>Optional envelope navigation and terms flag for the signer-facing document read.</summary>
+public sealed class SigningDocumentParams
+{
+    /// <summary>Record terms acceptance. Certificate signing still requires data confirmation first.</summary>
+    public bool? HasAcceptedTerms { get; set; }
+
+    /// <summary>Include the code's envelope ID and name, including after access closes.</summary>
+    public bool ExpandEnvelope { get; set; }
+
+    /// <summary>Open another document of the same envelope that this signer is on.</summary>
+    public string? DocumentId { get; set; }
+}
+
+/// <summary>Certified-copy availability, also returned after requesting a new download link.</summary>
+public sealed record CertifiedCopyStatus
+{
+    /// <summary>Whether the signer can request another certified-copy message.</summary>
+    [JsonPropertyName("available")]
+    public bool Available { get; init; }
+
+    /// <summary>Email or Whatsapp, or null when no channel is available.</summary>
+    [JsonPropertyName("notification_method")]
+    public string? NotificationMethod { get; init; }
+
+    /// <summary>Remaining WhatsApp resends, or null for email.</summary>
+    [JsonPropertyName("resends_left")]
+    public int? ResendsLeft { get; init; }
+
+    /// <summary>Masked destination, present after a successful resend.</summary>
+    [JsonPropertyName("sent_to")]
+    public string? SentTo { get; init; }
 }

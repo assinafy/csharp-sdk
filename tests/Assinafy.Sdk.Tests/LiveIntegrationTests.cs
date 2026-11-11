@@ -385,21 +385,10 @@ public sealed class LiveIntegrationTests
                 .Should().NotBeNull();
 
             var eventTypes = await client.Webhooks.ListEventTypesAsync();
-            var eventType = eventTypes.First(type => !string.IsNullOrWhiteSpace(type.Id));
+            eventTypes.Should().Contain(type => !string.IsNullOrWhiteSpace(type.Id));
             (await client.Webhooks.GetAsync()).Should().NotBeNull();
-            var subscription = await client.Webhooks.UpdateSubscriptionAsync(
-                new UpdateWebhookSubscriptionRequest
-                {
-                    Events = [eventType.Id],
-                    IsActive = true,
-                    Url = "https://example.invalid/assinafy-sdk-live-test",
-                    Email = secondaryEmail,
-                });
-            subscription.IsActive.Should().BeTrue();
-            (await client.Webhooks.GetAsync()).Events.Should().Contain(eventType.Id);
             (await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { PerPage = 5 }))
                 .Should().NotBeNull();
-            (await client.Webhooks.InactivateAsync()).IsActive.Should().BeFalse();
 
             await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
             await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(primarySigner.Id));
@@ -462,10 +451,311 @@ public sealed class LiveIntegrationTests
         }
         finally
         {
-            if (document is not null)
-                await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
-            if (signer is not null)
-                await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(signer.Id));
+            try
+            {
+                if (document is not null)
+                    await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
+            }
+            finally
+            {
+                if (signer is not null)
+                    await RetryRateLimitedCleanupAsync(() => client.Signers.DeleteAsync(signer.Id));
+            }
+        }
+    }
+
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task WebhookEndpointLifecycle_RotatesTestsAndDeletesConfiguredReceiver()
+    {
+        var receiverUrl = RequiredEnvironmentVariable("ASSINAFY_TEST_WEBHOOK_URL");
+        if (!Uri.TryCreate(receiverUrl, UriKind.Absolute, out var receiver) || receiver.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("ASSINAFY_TEST_WEBHOOK_URL must be an authorized public HTTPS receiver.");
+
+        using var bootstrap = CreateClient();
+        Account? account = null;
+        try
+        {
+            account = await bootstrap.Accounts.CreateAsync(new CreateAccountRequest
+            {
+                Name = $"sdk-webhook-{Guid.NewGuid():N}",
+            });
+            using var client = CreateClient(account.Id);
+            var endpoint = await client.Webhooks.CreateEndpointAsync(new CreateWebhookEndpointRequest
+            {
+                Url = receiverUrl,
+                Email = TestEmail("ASSINAFY_TEST_EMAIL_SECONDARY", "assinafy-sdk-secondary@example.com"),
+                Events = ["document_ready"],
+                SigningEnabled = true,
+                IsActive = false,
+            });
+            endpoint.Secret.Should().NotBeNullOrWhiteSpace();
+            (await client.Webhooks.GetEndpointAsync(endpoint.Id)).IsActive.Should().BeFalse();
+            (await client.Webhooks.ListEndpointsByUrlAsync(receiverUrl)).Should().ContainSingle();
+
+            var rotated = await client.Webhooks.RotateEndpointSecretWithOptionsAsync(endpoint.Id, keepPrevious: true);
+            (rotated.Secret != endpoint.Secret).Should().BeTrue("rotation must replace the secret");
+            rotated.PreviousSecretExpiresAt.Should().NotBeNullOrWhiteSpace();
+
+            var dispatch = await client.Webhooks.TestEndpointAsync(endpoint.Id);
+            dispatch.Event.Should().Be("webhook_test");
+            dispatch.Kind.Should().Be("manual");
+            dispatch.Delivered.Should().BeTrue();
+            dispatch.WillRetry.Should().BeFalse();
+            dispatch.DurationMs.Should().BeGreaterThanOrEqualTo(0);
+            (await client.Webhooks.GetEndpointAsync(endpoint.Id)).IsActive.Should().BeFalse();
+            (await client.Webhooks.ListDispatchesAsync(new ListDispatchesParams { EndpointId = endpoint.Id }))
+                .Data.Should().Contain(item => item.Id == dispatch.Id);
+
+            await client.Webhooks.DeleteEndpointByUrlAsync(receiverUrl);
+            (await client.Webhooks.ListEndpointsByUrlAsync(receiverUrl)).Should().BeEmpty();
+        }
+        finally
+        {
+            if (account is not null)
+                await RetryRateLimitedCleanupAsync(() => bootstrap.Accounts.DeleteAsync(force: true, accountId: account.Id));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task ContractLifecycle_PreservesTermsConcurrencyAndPendingAmendments()
+    {
+        using var client = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        DocumentDetails? document = null;
+        DocumentDetails? instrument = null;
+        try
+        {
+            using var pdf = new MemoryStream(BuildMinimalPdf());
+            document = await client.Documents.UploadAsync(pdf, $"sdk-contract-{suffix}.pdf");
+            await client.Documents.WaitUntilReadyAsync(document.Id, maxWait: TimeSpan.FromMinutes(2));
+            var contract = (await client.Contracts.SetAsync(document.Id, new Dictionary<string, object?>
+            {
+                ["status"] = "active",
+                ["counterparty_name"] = $"SDK {suffix}",
+                ["value"] = 123.45m,
+                ["start_date"] = DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"),
+                ["end_date"] = DateTimeOffset.UtcNow.AddYears(1).ToString("yyyy-MM-dd"),
+                ["external_references"] = new[] { new { system = "sdk", id = suffix } },
+            })).Should().BeOfType<DocumentContract>().Subject;
+            contract.Value.Should().Be(123.45m);
+            contract.Currency.Should().Be("BRL");
+            var staleUpdatedAt = DateTimeOffset.Parse(contract.UpdatedAt!, System.Globalization.CultureInfo.InvariantCulture)
+                .AddSeconds(-1).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+            contract = (DocumentContract)await client.Contracts.SetAsync(document.Id, new Dictionary<string, object?>
+            {
+                ["counterparty_name"] = $"SDK changed {suffix}",
+                ["value"] = null,
+                ["updated_at"] = contract.UpdatedAt,
+            });
+            contract.Value.Should().BeNull();
+            var staleWrite = () => client.Contracts.SetAsync(document.Id, new Dictionary<string, object?>
+            {
+                ["value"] = 999m,
+                ["updated_at"] = staleUpdatedAt,
+            });
+            (await staleWrite.Should().ThrowAsync<ApiException>()).Which.StatusCode.Should().Be(409);
+            ((DocumentContract)await client.Contracts.GetAsync(document.Id)).Value.Should().BeNull();
+            (await client.Contracts.ListAsync(new Dictionary<string, string?>
+            {
+                ["external_system"] = "sdk",
+                ["external_id"] = suffix,
+            })).Data.Should().ContainSingle(item => item.DocumentId == document.Id);
+
+            var previousTerm = contract.Term;
+            contract = await client.Contracts.RenewAsync(document.Id, new Dictionary<string, object?>
+            {
+                ["term"] = previousTerm,
+                ["updated_at"] = contract.UpdatedAt,
+            });
+            contract.Term.Should().Be(previousTerm + 1);
+            var repeatRenewal = () => client.Contracts.RenewAsync(document.Id,
+                new Dictionary<string, object?> { ["term"] = previousTerm });
+            (await repeatRenewal.Should().ThrowAsync<ApiException>()).Which.StatusCode.Should().Be(400);
+
+            using var instrumentPdf = new MemoryStream(BuildMinimalPdf());
+            instrument = await client.Documents.UploadAsync(instrumentPdf, $"sdk-amendment-{suffix}.pdf");
+            await client.Documents.WaitUntilReadyAsync(instrument.Id, maxWait: TimeSpan.FromMinutes(2));
+            var amendment = (await client.Contracts.SetAsync(instrument.Id, new Dictionary<string, object?>
+            {
+                ["parent_document_id"] = document.Id,
+                ["relation_type"] = "amendment",
+                ["value"] = 456.78m,
+            })).Should().BeOfType<DocumentContractAmendment>().Subject;
+            amendment.Status.Should().Be("pending");
+            (await client.Contracts.GetRelatedAsync(instrument.Id)).Amendments
+                .Should().ContainSingle(item => item.DocumentId == instrument.Id);
+            amendment = (DocumentContractAmendment)await client.Contracts.SetAsync(instrument.Id,
+                new Dictionary<string, object?> { ["value"] = null, ["updated_at"] = amendment.UpdatedAt });
+            (amendment.Terms?.ContainsKey("value") == true).Should().BeFalse();
+            await client.Contracts.SetAsync(instrument.Id,
+                new Dictionary<string, object?> { ["parent_document_id"] = null, ["updated_at"] = amendment.UpdatedAt });
+            (await client.Contracts.GetRelatedAsync(document.Id)).Amendments.Should().BeEmpty();
+
+            contract = (DocumentContract)await client.Contracts.GetAsync(document.Id);
+            contract = await client.Contracts.TerminateAsync(document.Id, new Dictionary<string, object?>
+            {
+                ["reason"] = "SDK lifecycle completed",
+                ["updated_at"] = contract.UpdatedAt,
+            });
+            contract.Status.Should().Be("terminated");
+            var renewTerminated = () => client.Contracts.RenewAsync(document.Id,
+                new Dictionary<string, object?> { ["term"] = contract.Term });
+            (await renewTerminated.Should().ThrowAsync<ApiException>()).Which.StatusCode.Should().Be(400);
+        }
+        finally
+        {
+            try
+            {
+                if (instrument is not null)
+                    await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(instrument.Id));
+            }
+            finally
+            {
+                if (document is not null)
+                    await RetryRateLimitedCleanupAsync(() => client.Documents.DeleteAsync(document.Id));
+            }
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task EnvelopeLifecycle_RoundTrips()
+    {
+        using var client = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        var email = TestEmail("ASSINAFY_TEST_EMAIL_PRIMARY", $"sdk-envelope-{suffix}@example.com");
+        var documents = new List<DocumentDetails>();
+        Signer? signer = null;
+        var createdSigner = false;
+        DocumentEnvelope? envelope = null;
+        try
+        {
+            signer = await client.Signers.FindByEmailAsync(email);
+            if (signer is null)
+            {
+                signer = await client.Signers.CreateAsync(new CreateSignerRequest
+                {
+                    FullName = $"SDK Envelope {suffix[..8]}",
+                    Email = email,
+                });
+                createdSigner = true;
+            }
+            var signerId = signer.Id;
+            for (var index = 0; index < 3; index++)
+            {
+                using var pdf = new MemoryStream(BuildMinimalPdf());
+                var document = await client.Documents.UploadAsync(pdf, $"sdk-envelope-{suffix}-{index}.pdf");
+                documents.Add(document);
+                await client.Documents.WaitUntilReadyAsync(document.Id, maxWait: TimeSpan.FromMinutes(2));
+            }
+            EnvelopeDocumentRequest Member(DocumentDetails document) => new()
+            {
+                Id = document.Id,
+                SignerIds = [signerId],
+                Method = AssignmentMethods.Virtual,
+            };
+            var request = new CreateEnvelopeRequest
+            {
+                Name = $"SDK envelope {suffix}",
+                Message = "Please sign",
+                Signers = [new EnvelopeSignerRequest
+                {
+                    Id = signerId,
+                    VerificationMethod = SignerChannels.Email,
+                    NotificationMethods = [SignerChannels.Email],
+                }],
+                Documents = [Member(documents[0]), Member(documents[1])],
+                MaxTotalCredits = 0,
+            };
+            var estimate = await client.Envelopes.EstimateCostAsync(request);
+            estimate.TotalCredits.Should().Be(0, "this lifecycle only permits free operations");
+            estimate.HasSufficientResources.Should().BeTrue();
+
+            var idempotencyKey = $"sdk-envelope-{suffix}";
+            envelope = await client.Envelopes.CreateAsync(request, idempotencyKey);
+            envelope.Documents.Select(item => item.Id).Should().Equal(documents.Take(2).Select(item => item.Id));
+            (await client.Envelopes.CreateAsync(request, idempotencyKey)).Id.Should().Be(envelope.Id);
+            (await client.Envelopes.ListAsync(new Dictionary<string, string?> { ["search"] = request.Name }))
+                .Data.Should().Contain(item => item.Id == envelope.Id);
+            (await client.Envelopes.GetAsync(envelope.Id)).Documents.Should().HaveCount(2);
+            (await client.Envelopes.ActivitiesAsync(envelope.Id)).Data.Should().NotBeNull();
+            var zip = await client.Envelopes.DownloadAsync(envelope.Id, DocumentArtifactNames.Original);
+            using (var zipStream = new MemoryStream(zip))
+            using (var archive = new System.IO.Compression.ZipArchive(zipStream, System.IO.Compression.ZipArchiveMode.Read))
+                archive.Entries.Where(entry => !entry.FullName.EndsWith('/')).Should().HaveCount(2);
+
+            var reordered = new[] { documents[1].Id, documents[0].Id };
+            envelope = await client.Envelopes.UpdateAsync(envelope.Id, new Dictionary<string, object?>
+            {
+                ["name"] = $"SDK updated {suffix}",
+                ["message"] = null,
+                ["document_ids"] = reordered,
+            });
+            envelope.Name.Should().Be($"SDK updated {suffix}");
+            envelope.Message.Should().BeNull();
+            envelope.Documents.Select(item => item.Id).Should().Equal(reordered);
+            envelope = await client.Envelopes.AddDocumentAsync(envelope.Id, Member(documents[2]), maxTotalCredits: 0);
+            envelope.Documents.Select(item => item.Id).Should().Equal(reordered.Append(documents[2].Id));
+            envelope = await client.Envelopes.RemoveDocumentAsync(envelope.Id, documents[2].Id);
+            envelope.Documents.Select(item => item.Id).Should().Equal(reordered);
+            var cancelled = await client.Envelopes.CancelAsync(envelope.Id);
+            cancelled.Select(item => item.Id).Should().BeEquivalentTo(reordered);
+            cancelled.Should().OnlyContain(item => item.Cancelled);
+            await client.Envelopes.DeleteAsync(envelope.Id);
+            envelope = null;
+        }
+        finally
+        {
+            var cleanupErrors = new List<Exception>();
+            async Task CleanUp(Func<Task> action)
+            {
+                try { await RetryRateLimitedCleanupAsync(action); }
+                catch (Exception exception) { cleanupErrors.Add(exception); }
+            }
+            if (envelope is not null)
+            {
+                await CleanUp(() => client.Envelopes.CancelAsync(envelope.Id));
+                await CleanUp(() => client.Envelopes.DeleteAsync(envelope.Id));
+            }
+            foreach (var document in documents)
+                await CleanUp(() => client.Documents.DeleteAsync(document.Id));
+            if (createdSigner && signer is not null)
+                await CleanUp(() => client.Signers.DeleteAsync(signer.Id));
+            if (cleanupErrors.Count > 0)
+                throw new AggregateException("Sandbox envelope lifecycle cleanup failed.", cleanupErrors);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Live")]
+    public async Task EmbedOriginLifecycle_RoundTrips()
+    {
+        using var client = CreateClient();
+        var suffix = Guid.NewGuid().ToString("N");
+        EmbedOrigin? origin = null;
+        try
+        {
+            var initial = $"https://sdk-{suffix}.example.com";
+            origin = await client.Embed.AddOriginAsync(initial);
+            origin.Origin.Should().Be(initial);
+            (await client.Embed.ListOriginsAsync()).Should().Contain(item => item.Id == origin.Id);
+            var replacement = $"https://sdk-updated-{suffix}.example.com";
+            var updated = await client.Embed.UpdateOriginAsync(origin.Id, replacement);
+            updated.Id.Should().Be(origin.Id);
+            updated.Origin.Should().Be(replacement);
+            (await client.Embed.ListOriginsAsync()).Should().Contain(item => item.Id == origin.Id && item.Origin == replacement);
+            await client.Embed.DeleteOriginAsync(origin.Id);
+            var deletedId = origin.Id;
+            origin = null;
+            (await client.Embed.ListOriginsAsync()).Should().NotContain(item => item.Id == deletedId);
+        }
+        finally
+        {
+            if (origin is not null)
+                await RetryRateLimitedCleanupAsync(() => client.Embed.DeleteOriginAsync(origin.Id));
         }
     }
 

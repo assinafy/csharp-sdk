@@ -167,6 +167,22 @@ public record DocumentListItem
 /// </summary>
 public sealed record DocumentDetails : DocumentListItem
 {
+    /// <summary>Envelope identifier on workspace reads with expand=envelope_id; null for standalone or removed documents.</summary>
+    [JsonPropertyName("envelope_id")]
+    public string? EnvelopeId { get; init; }
+
+    /// <summary>Envelope identity when expand=envelope is requested. A signer code may still reach its envelope after its own document is removed.</summary>
+    [JsonPropertyName("envelope")]
+    public DocumentEnvelopeReference? Envelope { get; init; }
+
+    /// <summary>Whether the signer access code has closed. A closed signing read returns only minimal document and signer details.</summary>
+    [JsonPropertyName("is_signer_access_closed")]
+    public bool? IsSignerAccessClosed { get; init; }
+
+    /// <summary>Whether the signer may request another certified copy and which channel will deliver it.</summary>
+    [JsonPropertyName("certified_copy")]
+    public CertifiedCopyStatus? CertifiedCopy { get; init; }
+
     /// <summary>Whether contract terms are available on this document or its amendment family. Reported only for workspace detail requests when contract tracking is enabled; <see langword="null"/> means unknown.</summary>
     [JsonPropertyName("has_contract")]
     public bool? HasContract { get; init; }
@@ -292,6 +308,10 @@ public sealed record DocumentVerificationResult
     [JsonPropertyName("completed_at")]
     public string? CompletedAt { get; init; }
 
+    /// <summary>ISO-8601 certification time, or null when no certificate was generated.</summary>
+    [JsonPropertyName("certificated_at")]
+    public string? CertificatedAt { get; init; }
+
     /// <summary>ISO-8601 date-time this verification request ran; not the signing or certification time.</summary>
     [JsonPropertyName("verified_at")]
     public string? VerifiedAt { get; init; }
@@ -327,6 +347,13 @@ public sealed record SigningProgress
 /// </summary>
 public sealed class CreateDocumentFromTemplateOptions
 {
+    /// <summary>Optional nonnegative credit ceiling. Creation above it returns 409 CreditCeilingExceeded without charging.</summary>
+    public decimal? MaxTotalCredits { get; set; }
+
+    /// <summary>Optional case-sensitive Idempotency-Key header. Replays return the original document without another charge; the SDK does not retry.</summary>
+    [JsonIgnore]
+    public string? IdempotencyKey { get; set; }
+
     /// <summary>Title for the new document; defaults to the template name.</summary>
     public string? Name { get; set; }
 
@@ -386,4 +413,16 @@ public static class SendDocumentTokenChannels
 {
     /// <summary>Email delivery, the only supported channel.</summary>
     public const string Email = "email";
+}
+
+/// <summary>Envelope identity expanded on a document read.</summary>
+public sealed record DocumentEnvelopeReference
+{
+    /// <summary>Envelope identifier.</summary>
+    [JsonPropertyName("id")]
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>Envelope name.</summary>
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = string.Empty;
 }

@@ -249,7 +249,7 @@ public sealed class EndpointCoverageTests
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddJsonResponse(HttpMethod.Put, "/signers/accept-terms",
-            new { status = 200, message = "Terms accepted" });
+            FakeHttpMessageHandler.ApiOk(new { full_name = "Signer", email = "signer@example.com", has_accepted_terms = true }));
         var resource = new SignerResource(
             Client(handler),
             "acc",

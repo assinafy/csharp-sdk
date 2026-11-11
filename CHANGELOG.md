@@ -1,5 +1,30 @@
 # Changelog
 
+## [2.8.0] - 2026-11-11
+
+### Added
+
+- Multi-document envelopes with estimates, idempotent creation, document management, activities,
+  cancellation, and ZIP downloads.
+- Embedded signing origins and single-use sessions, plus embedded signer settings.
+- Credit ceilings for assignments, templates, envelopes, and the upload helper; per-request
+  idempotency keys for template documents and envelopes.
+- Account usage and notification policies, user push preferences, document envelope expansion,
+  signed page renders, and explicit signer-authenticated document reads.
+- Certified-copy delivery and token downloads, signer branding, webhook test deliveries, and
+  optional 24-hour signing-secret overlap.
+
+### Fixed
+
+- Accept empty signer-confirmation responses and preserve actual terms-acceptance data.
+- Forward signer access codes on original downloads and retain unlimited estimate balances.
+- Read envelope, certification, signer-access, and delivery-duration response fields.
+
+### Documentation
+
+- Document envelope, embedded signing, download-token, credit-ceiling, and notification flows.
+- Keep the Portuguese package guide below 200 lines and provide complete HTTP payload references.
+
 ## [2.7.1] - 2026-11-02
 
 ### Fixed

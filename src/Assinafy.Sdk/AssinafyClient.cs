@@ -40,6 +40,12 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Document upload, lookup, download, activities, and verification.</summary>
     public DocumentResource Documents { get; }
 
+    /// <summary>Multi-document envelopes, cost estimates, activities, and ZIP downloads.</summary>
+    public EnvelopeResource Envelopes { get; }
+
+    /// <summary>Allowed iframe origins and short-lived embedded signing sessions.</summary>
+    public EmbedResource Embed { get; }
+
     /// <summary>Contract terms, amendments, renewals, termination, and workspace contract tracking.</summary>
     public ContractResource Contracts { get; }
 
@@ -117,6 +123,8 @@ public sealed class AssinafyClient : IDisposable
             Accounts = new AccountResource(_http, options.AccountId, authenticate);
             Users = new UserResource(_http, authenticate);
             Documents = new DocumentResource(_http, options.AccountId, authenticate);
+            Envelopes = new EnvelopeResource(_http, options.AccountId, authenticate);
+            Embed = new EmbedResource(_http, options.AccountId, authenticate);
             Contracts = new ContractResource(_http, options.AccountId, authenticate);
             Signers = new SignerResource(_http, options.AccountId, authenticate);
             Assignments = new AssignmentResource(_http, options.AccountId, authenticate);
@@ -329,6 +337,7 @@ public sealed class AssinafyClient : IDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        if (options.MaxTotalCredits is < 0) throw new ValidationException("Maximum total credits must be non-negative.");
         ArgumentNullException.ThrowIfNull(options.FileStream);
         ArgumentException.ThrowIfNullOrWhiteSpace(options.FileName);
         if (options.Signers is null || options.Signers.Count == 0)
@@ -379,6 +388,7 @@ public sealed class AssinafyClient : IDisposable
                 VerificationMethod = signer.VerificationMethod,
                 NotificationMethods = signer.NotificationMethods,
                 Step = signer.Step,
+                Embedded = signer.Embedded,
             });
         }
 
@@ -397,6 +407,7 @@ public sealed class AssinafyClient : IDisposable
                 Method = options.Method ?? AssignmentMethods.Virtual,
                 Signers = signerRefs,
                 Message = options.Message,
+                MaxTotalCredits = options.MaxTotalCredits,
                 ExpiresAt = options.ExpiresAt,
                 CopyReceivers = options.CopyReceivers,
                 Entries = entries,

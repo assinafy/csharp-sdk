@@ -72,6 +72,18 @@ public sealed class ContractResource : BaseResource
         CallAsync<DocumentContract>($"{ContractPath(documentId, accountId)}/related", HttpMethod.Get,
             cancellationToken: cancellationToken);
 
+    /// <summary><c>GET /accounts/{accountId}/documents/{documentId}/contract/related</c> — read the family with optional document expansion.</summary>
+    /// <param name="documentId">Any document in the contract family.</param>
+    /// <param name="expandDocument">Include the root document in the family response.</param>
+    /// <param name="accountId">Workspace; falls back to the client's default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The root contract and its instruments.</returns>
+    public Task<DocumentContract> GetRelatedWithOptionsAsync(string documentId, bool expandDocument,
+        string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallAsync<DocumentContract>(AppendQueryString($"{ContractPath(documentId, accountId)}/related",
+            new Dictionary<string, string?> { ["expand"] = expandDocument ? "document" : null }),
+            HttpMethod.Get, cancellationToken: cancellationToken);
+
     /// <summary>
     /// <c>POST /accounts/{accountId}/documents/{documentId}/contract/renew</c> — start the next term,
     /// reopening an expired contract. Terminated contracts are refused. Supply the current <c>term</c>

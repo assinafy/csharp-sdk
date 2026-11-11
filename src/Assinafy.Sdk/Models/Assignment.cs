@@ -39,7 +39,7 @@ public sealed record NotificationHistoryEntry
     [JsonPropertyName("event")]
     public string Event { get; init; } = string.Empty;
 
-    /// <summary>Delivery status: <c>sent</c> or <c>failed</c>.</summary>
+    /// <summary>Delivery status: <c>sent</c>, <c>delivered</c>, <c>opened</c>, or <c>failed</c>.</summary>
     [JsonPropertyName("status")]
     public string Status { get; init; } = string.Empty;
 
@@ -117,10 +117,15 @@ public sealed record SigningUrl
 
     /// <summary>The direct link the signer uses to open and sign the document.</summary>
     [JsonPropertyName("url")]
-    public string Url { get; init; } = string.Empty;
+    public string? Url { get; init; }
 
     /// <summary>Returns a redacted representation that does not expose the signing link.</summary>
     public override string ToString() => $"{nameof(SigningUrl)} {{ <redacted> }}";
+
+    /// <summary>Whether this signer needs an embed session instead of a signing URL.</summary>
+    [JsonPropertyName("embedded")]
+    public bool Embedded { get; init; }
+
 }
 
 /// <summary>A request for signers to sign a document, with its signers, collected items, progress summary, and signing links.</summary>
@@ -225,6 +230,9 @@ public sealed class SignerRef
     /// <summary>Exactly one notification channel: <c>Email</c> or <c>Whatsapp</c>, compatible with the verification method. Inferred from verification when omitted; defaults to <c>Email</c> when neither is specified.</summary>
     public string[]? NotificationMethods { get; set; }
 
+    /// <summary>Use short-lived iframe sessions instead of returning a signing URL. Requires the Embed feature and Email or Whatsapp verification.</summary>
+    public bool? Embedded { get; set; }
+
     /// <summary>Signing-order step. Signers sharing a step sign in parallel; a digital-certificate signer must be alone in its step. The next step activates once the previous completes. Omit for all-at-once signing.</summary>
     public int? Step { get; set; }
 
@@ -253,6 +261,9 @@ public sealed class AssignmentListParams
 /// <summary>Body for <c>POST /v1/documents/{documentId}/assignments</c> (create assignment / request signatures).</summary>
 public sealed class CreateAssignmentRequest
 {
+    /// <summary>Maximum credits this call may spend; zero permits only free operations. The API refuses a higher cost with 409 CreditCeilingExceeded without charging.</summary>
+    public decimal? MaxTotalCredits { get; set; }
+
     /// <summary>Assignment method — one of <see cref="AssignmentMethods"/> (<c>virtual</c> to sign without input fields, or <c>collect</c> to place input fields on specific pages). <c>DigitalCertificate</c> signers require <c>virtual</c>.</summary>
     public string? Method { get; set; }
 
@@ -360,13 +371,29 @@ public sealed record AssignmentCostEstimate
     [JsonPropertyName("breakdown")]
     public IReadOnlyList<CostBreakdownItem> Breakdown { get; init; } = [];
 
-    /// <summary>The account's current document balance.</summary>
+    /// <summary>The account's remaining document balance, or null when unlimited.</summary>
     [JsonPropertyName("document_balance")]
-    public decimal DocumentBalance { get; init; }
+    public decimal? AvailableDocumentBalance { get; init; }
 
-    /// <summary>The account's current credit balance.</summary>
+    /// <summary>Compatibility balance, returning zero when unlimited. Use AvailableDocumentBalance to distinguish unlimited from exhausted.</summary>
+    [JsonIgnore]
+    public decimal DocumentBalance
+    {
+        get => AvailableDocumentBalance ?? 0;
+        init => AvailableDocumentBalance = value;
+    }
+
+    /// <summary>The account's remaining credit balance, or null when unlimited.</summary>
     [JsonPropertyName("credit_balance")]
-    public decimal CreditBalance { get; init; }
+    public decimal? AvailableCreditBalance { get; init; }
+
+    /// <summary>Compatibility balance, returning zero when unlimited. Use AvailableCreditBalance to distinguish unlimited from exhausted.</summary>
+    [JsonIgnore]
+    public decimal CreditBalance
+    {
+        get => AvailableCreditBalance ?? 0;
+        init => AvailableCreditBalance = value;
+    }
 
     /// <summary>Whether the account has enough documents and credits to create the assignment.</summary>
     [JsonPropertyName("has_sufficient_resources")]
@@ -560,6 +587,9 @@ public sealed class TemplateSigner
 
     /// <summary>The notification channel for the template signer: <c>Email</c> or <c>Whatsapp</c>. If set without <see cref="VerificationMethod"/>, the API infers the verification method.</summary>
     public string[]? NotificationMethods { get; set; }
+
+    /// <summary>Use short-lived iframe sessions instead of returning a signing URL. Requires the Embed feature and Email or Whatsapp verification.</summary>
+    public bool? Embedded { get; set; }
 
     /// <summary>Signing-order step. If supplied for any signer role, supply it for all, forming a contiguous sequence from one. Signers sharing a step sign in parallel; a digital-certificate signer must be alone in its step. Copy receivers ignore this value.</summary>
     public int? Step { get; set; }

@@ -72,6 +72,91 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
+    /// <summary><c>GET /sign</c> — load a signer's document with optional envelope expansion or navigation. Closed codes return a limited payload and certified-copy availability.</summary>
+    /// <param name="signerAccessCode">Required signer credential; workspace credentials are never sent.</param>
+    /// <param name="parameters">Terms flag, envelope expansion, and optional envelope document to open.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document and the current signer's state.</returns>
+    public Task<DocumentDetails> GetWithOptionsAsync(string signerAccessCode, SigningDocumentParams parameters, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        var query = AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"));
+        if (parameters.HasAcceptedTerms.HasValue) query["has_accepted_terms"] = parameters.HasAcceptedTerms.Value ? "true" : "false";
+        if (parameters.ExpandEnvelope) query["expand"] = "envelope";
+        if (parameters.DocumentId is not null) query["document_id"] = RequireId(parameters.DocumentId, "Document ID");
+        return CallAsync<DocumentDetails>(AppendQueryString("sign", query), HttpMethod.Get,
+            cancellationToken: cancellationToken, authenticate: false);
+    }
+
+    /// <summary><c>GET /signers/{signerId}/document?expand=envelope</c> — read the current document and its envelope before certificate or identity-check data confirmation.</summary>
+    /// <param name="signerId">Signer whose current document to read.</param>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document, current signer, and envelope summary.</returns>
+    public Task<DocumentDetails> GetCurrentDocumentWithEnvelopeAsync(string signerId, string signerAccessCode, CancellationToken cancellationToken = default)
+    {
+        var query = AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"));
+        query["expand"] = "envelope";
+        return CallAsync<DocumentDetails>(AppendQueryString($"signers/{PathSegment(signerId, "Signer ID")}/document", query),
+            HttpMethod.Get, cancellationToken: cancellationToken, authenticate: false);
+    }
+
+    /// <summary><c>GET /sign/theme</c> — read the sender's branding before verification or after document deletion. Logo URLs require the signer access code.</summary>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The account name, colors, and optional logo URL.</returns>
+    public Task<AccountTheme> GetThemeAsync(string signerAccessCode, CancellationToken cancellationToken = default) =>
+        CallAsync<AccountTheme>(AppendQueryString("sign/theme", AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"))),
+            HttpMethod.Get, cancellationToken: cancellationToken, authenticate: false);
+
+    /// <summary><c>GET /sign/logo</c> — download the sender's logo before verification or after document deletion.</summary>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The logo image bytes.</returns>
+    public Task<byte[]> DownloadLogoAsync(string signerAccessCode, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(AppendQueryString("sign/logo", AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"))),
+            HttpMethod.Get, cancellationToken, authenticate: false);
+
+    /// <summary><c>POST /sign/certified-copy</c> — send a new 30-minute download link to the original signing contact. Works after signer access closes.</summary>
+    /// <remarks>Email permits one resend per two minutes and ten per day; WhatsApp permits one resend per signature request. The SDK does not retry.</remarks>
+    /// <param name="signerAccessCode">Required signer access code.</param>
+    /// <param name="documentId">Optional other document in the code's envelope that this signer is on.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Remaining availability and the masked destination.</returns>
+    public Task<CertifiedCopyStatus> SendCertifiedCopyAsync(string signerAccessCode, string? documentId = null, CancellationToken cancellationToken = default)
+    {
+        if (documentId is not null) RequireId(documentId, "Document ID");
+        return CallAsync<CertifiedCopyStatus>(AppendQueryString("sign/certified-copy", AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"))),
+            HttpMethod.Post, documentId is null ? null : new { document_id = documentId }, cancellationToken: cancellationToken, authenticate: false);
+    }
+
+    /// <summary><c>GET /signers/downloads/{token}[/pades]</c> — download a certified copy using its sent-link token. Expired or unknown tokens return 302, surfaced as an API exception; no redirect is followed.</summary>
+    /// <param name="token">Token from the completion or resend link. Never log it.</param>
+    /// <param name="pades">Request the PAdES version; 404 when the document has none.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The certified PDF bytes.</returns>
+    public Task<byte[]> DownloadCertifiedCopyAsync(string token, bool pades = false, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync($"signers/downloads/{PathSegment(token, "Download token")}{(pades ? "/pades" : "")}",
+            HttpMethod.Get, cancellationToken, authenticate: false);
+
+    /// <summary><c>POST /signers/downloads/{token}/resend</c> — request a new certified-copy link from an expired link, subject to the same channel and resend limits. Copy receivers return 409.</summary>
+    /// <param name="token">Known download-link token, including expired tokens.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Remaining availability and the masked destination.</returns>
+    public Task<CertifiedCopyStatus> ResendCertifiedCopyAsync(string token, CancellationToken cancellationToken = default) =>
+        CallAsync<CertifiedCopyStatus>($"signers/downloads/{PathSegment(token, "Download token")}/resend", HttpMethod.Post,
+            cancellationToken: cancellationToken, authenticate: false);
+
+    /// <summary><c>GET /signers/{signerId}/documents/{documentId}/download/original</c> — download an original document with its signer access code. Closed codes return 410; certified artifacts use sent-link tokens instead.</summary>
+    /// <param name="signerId">Signer authorized by the access code.</param>
+    /// <param name="documentId">Document reached by the access code.</param>
+    /// <param name="signerAccessCode">Required signer credential.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The original document bytes.</returns>
+    public Task<byte[]> DownloadOriginalAsync(string signerId, string documentId, string signerAccessCode, CancellationToken cancellationToken = default) =>
+        CallBinaryAsync(AppendQueryString($"signers/{PathSegment(signerId, "Signer ID")}/documents/{PathSegment(documentId, "Document ID")}/download/original",
+            AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"))), HttpMethod.Get, cancellationToken, authenticate: false);
+
     /// <summary>
     /// <c>POST /documents/{documentId}/assignments/{assignmentId}?signer-access-code={code}</c>
     /// — submit a signer's field values. For virtual assignments the signer must call
@@ -375,7 +460,7 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary><c>GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}</c> — public download of a signer document artifact.</summary>
+    /// <summary><c>GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}</c> — legacy link without a signer code. Production returns a 302 expired-link response. Use DownloadOriginalAsync or DownloadCertifiedCopyAsync for downloads.</summary>
     /// <param name="signerId">Signer requesting the download.</param>
     /// <param name="documentId">Document to download.</param>
     /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
@@ -398,14 +483,14 @@ public sealed class SigningResource : BaseResource
             authenticate: false);
     }
 
-    /// <summary>Legacy public-download overload. The signer access code is ignored; this public endpoint does not use one.</summary>
+    /// <summary>Legacy download overload. A supplied signer code authorizes only the original artifact; without a code, production returns a 302 expired-link response. Use DownloadOriginalAsync or DownloadCertifiedCopyAsync.</summary>
     /// <param name="signerId">Signer requesting the download.</param>
     /// <param name="documentId">Document to download.</param>
-    /// <param name="signerAccessCode">Ignored. Retained so existing call sites keep compiling; the current public endpoint takes no access code.</param>
+    /// <param name="signerAccessCode">Signer credential for an original artifact; null retains the legacy unauthenticated request.</param>
     /// <param name="artifactName">Which artifact to download; one of the <see cref="DocumentArtifactNames"/> values (<c>original</c>, <c>certificated</c>, <c>certificate-page</c>, <c>pades</c>, <c>bundle</c>). Defaults to <c>certificated</c>.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The raw document artifact bytes.</returns>
-    [Obsolete("Use DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken). The signerAccessCode argument is ignored.")]
+    [Obsolete("Use DownloadOriginalAsync with a signer access code, or DownloadCertifiedCopyAsync with a sent-link token.")]
     public Task<byte[]> DownloadAsync(
         string signerId,
         string documentId,
@@ -413,7 +498,12 @@ public sealed class SigningResource : BaseResource
         string artifactName = DocumentArtifactNames.Certificated,
         CancellationToken cancellationToken = default)
     {
-        return DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken);
+        if (signerAccessCode is null)
+            return DownloadPublicAsync(signerId, documentId, artifactName, cancellationToken);
+
+        return CallBinaryAsync(AppendQueryString(
+            $"signers/{PathSegment(signerId, "Signer ID")}/documents/{PathSegment(documentId, "Document ID")}/download/{PathSegment(artifactName, "Artifact name")}",
+            AccessCodeQuery(RequireId(signerAccessCode, "Signer access code"))), HttpMethod.Get, cancellationToken, authenticate: false);
     }
 
     /// <summary>
@@ -425,6 +515,7 @@ public sealed class SigningResource : BaseResource
         var query = new Dictionary<string, string?>();
         if (parameters is null) return query;
 
+        if (parameters.EnvelopeId is not null) query["envelope_id"] = RequireId(parameters.EnvelopeId, "Envelope ID");
         if (!string.IsNullOrWhiteSpace(parameters.Search)) query["search"] = parameters.Search;
         if (!string.IsNullOrWhiteSpace(parameters.Status)) query["status"] = parameters.Status;
         if (!string.IsNullOrWhiteSpace(parameters.Method)) query["method"] = parameters.Method;

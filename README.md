@@ -5,13 +5,13 @@
 Cliente .NET tipado para a [API Assinafy](https://api.assinafy.com.br/v1/docs): documentos,
 contratos, templates, signatários, assignments, assinatura, tags, campos, webhooks, contas,
 usuários, MFA e OAuth 2.1. Compatível com `net8.0`, `net9.0` e `net10.0`, sem dependências NuGet.
-Para aplicações novas, use .NET 10 LTS. A referência completa de métodos, payloads e erros está em
+Use .NET 10 LTS em produção; .NET 8/9 permanecem para compatibilidade, fora de suporte. A referência completa de métodos, payloads e erros está em
 [docs/API.md](docs/API.md#sdk-method-index).
 
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.7.1
+dotnet add package Assinafy.Sdk --version 2.8.0
 ```
 
 ## Cliente e credenciais
@@ -66,6 +66,7 @@ var signatario = await client.Signers.CreateAsync(new CreateSignerRequest
 var pedido = new CreateAssignmentRequest
 {
     Method = AssignmentMethods.Virtual,
+    MaxTotalCredits = 0, // recusa qualquer cobrança de créditos
     Message = "Revise e assine.",
     Signers =
     [
@@ -112,9 +113,9 @@ Na biometria, obtenha consentimento explícito antes de
 `Signing.StartIdentityVerificationAsync`. Abra a URL completa, inclusive o fragmento, sem log ou
 armazenamento no navegador. `InReview` permite assinar, mas mantém o documento em
 `pending_identity_review`; leia a evidência somente durante a revisão e decida com
-`Assignments.DecideIdentityReviewAsync`. Rejeitar cancela o documento.
+`Assignments.DecideIdentityReviewAsync`. Rejeitar cancela o documento. Evidências e decisões exigem chave de API ou sessão de usuário; OAuth só lê o resumo.
 
-No certificado, confirme CPF/CNPJ e termos, chame `Signing.StartCertificateAsync`, assine o token
+No certificado, cadastre CPF/CNPJ pela workspace, confirme dados/termos, chame `Signing.StartCertificateAsync`, assine o token
 no navegador/dispositivo com Web PKI e envie-o a `Signing.CompleteCertificateAsync`. Essas duas
 rotas existem somente em produção. O artefato `pades` existe quando a assinatura o gerou; `bundle`
 é ZIP. Email, WhatsApp, biometria e certificado A1/A3 são suportados em produção.
@@ -136,7 +137,8 @@ novo access token. Ao desconectar, chame `OAuth.RevokeAsync`. Um `OAuthException
 ## Webhooks
 
 Crie endpoints com `Webhooks.CreateEndpointAsync`; ative `SigningEnabled` e armazene o `Secret`
-retornado. OAuth não pode reler o segredo, mas `RotateEndpointSecretAsync` o substitui imediatamente.
+retornado. OAuth não pode reler o segredo; `RotateEndpointSecretAsync` o substitui imediatamente.
+`RotateEndpointSecretWithOptionsAsync(id, true)` mantém o anterior por 24 horas; `TestEndpointAsync` envia um teste.
 Verifique cada entrega sobre o corpo bruto antes de desserializar:
 
 ```csharp
@@ -161,11 +163,21 @@ falhas consecutivas pausam o endpoint. Objetos excluídos mantêm o estado da ex
 vazias; sujeitos excluídos trazem apenas `type`. Veja o
 [catálogo de eventos](docs/API.md#webhook-payloads).
 
+## Envelopes, assinatura incorporada e cópias
+
+`Envelopes` reúne até 20 PDFs: envie/aguarde cada arquivo, estime com `EstimateCostAsync` e crie com
+`CreateAsync`, uma chave de idempotência e `MaxTotalCredits`. Cada documento mantém sua assinatura.
+Para iframe, registre origem com `Embed.AddOriginAsync`, use `Embedded = true` no signatário e abra a URL
+retornada por `Embed.CreateSessionAsync`; gere outra sessão a cada abertura. Requer o recurso Embed.
+O original exige `Signing.DownloadOriginalAsync` e código; cópias certificadas usam `DownloadCertifiedCopyAsync`
+com o token da mensagem. `SendCertifiedCopyAsync` solicita nova entrega. `Accounts.GetUsageAsync` informa saldos.
+O [guia completo](README.en.md) cobre cancelamento, notificações, preferências push e payloads.
+
 ## Outros recursos e erros
 
 `Templates`, `Tags`, `Fields`, `Contracts`, `Accounts`, `Users`, `Authentication` e `Signatures`
 seguem o mesmo padrão tipado. Contratos usam `updated_at` para concorrência otimista e não devem ser
-reenviados automaticamente. A matriz de 118 operações, payloads completos, OAuth, webhooks e as
+reenviados automaticamente. A matriz de 147 operações, payloads completos, OAuth, webhooks e as
 rotas adicionais de templates/certificado estão em [docs/API.md](docs/API.md).
 
 Todas as falhas do SDK derivam de `AssinafyException`: `ValidationException`, `ApiException`,
@@ -184,5 +196,4 @@ dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj -c Release -o ./artifacts
 Testes de integração usam somente o sandbox e se ignoram sem configuração. Consulte
 [README.en.md](README.en.md) para a referência por recurso, [docs/API.md](docs/API.md) para contratos
 HTTP completos, [CHANGELOG.md](CHANGELOG.md) para versões e [SECURITY.md](SECURITY.md) para segurança.
-
 Licença MIT.

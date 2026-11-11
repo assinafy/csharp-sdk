@@ -26,6 +26,9 @@ public sealed class UploadAndRequestSignaturesSigner
 
     /// <summary>Optional signing-order step for this signer (see <see cref="SignerRef.Step"/>).</summary>
     public int? Step { get; set; }
+
+    /// <summary>Request embedded signing for this signer; requires the Embed plan feature.</summary>
+    public bool? Embedded { get; set; }
 }
 
 /// <summary>
@@ -34,6 +37,9 @@ public sealed class UploadAndRequestSignaturesSigner
 /// </summary>
 public sealed class UploadAndRequestSignaturesOptions
 {
+    /// <summary>Maximum credits for assignment creation; zero permits only free operations. Uploads and signer creation still precede this check.</summary>
+    public decimal? MaxTotalCredits { get; set; }
+
     /// <summary>The file content to upload (required).</summary>
     public required Stream FileStream { get; set; }
 

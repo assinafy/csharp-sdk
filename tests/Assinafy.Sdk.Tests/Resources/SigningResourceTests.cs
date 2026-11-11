@@ -153,7 +153,7 @@ public sealed class SigningResourceTests
     }
 
     [Fact]
-    public async Task DownloadOverloads_UsePublicArtifactRouteWithoutAccessCodeOrUserCredentials()
+    public async Task DownloadOverloads_PreservePublicRouteAndForwardAnExplicitSignerCredential()
     {
         var handler = new FakeHttpMessageHandler();
         handler.AddRawResponse(
@@ -172,16 +172,16 @@ public sealed class SigningResourceTests
         var legacyResult = await resource.DownloadAsync(
             "signer-1",
             "doc-1",
-            signerAccessCode: "ignored",
+            signerAccessCode: "access",
             artifactName: DocumentArtifactNames.Pades);
 #pragma warning restore CS0618
 
         result.Should().NotBeEmpty();
         legacyResult.Should().Equal(result);
         handler.Requests.Should().HaveCount(2);
-        handler.Requests.Should().OnlyContain(sent =>
-            sent.RequestUri!.PathAndQuery == "/v1/signers/signer-1/documents/doc-1/download/pades" &&
-            !sent.Headers.Contains("X-Api-Key"));
+        handler.Requests[0].RequestUri!.PathAndQuery.Should().Be("/v1/signers/signer-1/documents/doc-1/download/pades");
+        handler.Requests[1].RequestUri!.PathAndQuery.Should().Be("/v1/signers/signer-1/documents/doc-1/download/pades?signer-access-code=access");
+        handler.Requests.Should().OnlyContain(sent => !sent.Headers.Contains("X-Api-Key"));
     }
 
     [Theory]

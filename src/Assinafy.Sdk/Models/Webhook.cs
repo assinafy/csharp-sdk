@@ -90,13 +90,17 @@ public sealed record WebhookDispatch
     [JsonPropertyName("attempt")]
     public int? Attempt { get; init; }
 
-    /// <summary>Delivery kind: scheduled, probe for a paused endpoint, or manual retry; absent on older history entries.</summary>
+    /// <summary>Delivery kind: scheduled, probe for a paused endpoint, or manual retry/test; absent on older history entries.</summary>
     [JsonPropertyName("kind")]
     public string? Kind { get; init; }
 
     /// <summary>Whether another attempt follows this one; false for successful deliveries and the last failed attempt.</summary>
     [JsonPropertyName("will_retry")]
     public bool WillRetry { get; init; }
+
+    /// <summary>Milliseconds until the endpoint answered or failed; null when no request was sent or duration was not measured.</summary>
+    [JsonPropertyName("duration_ms")]
+    public long? DurationMs { get; init; }
 
     /// <summary>HTTP status code returned by the endpoint, or <see langword="null"/> when the connection failed.</summary>
     [JsonPropertyName("http_status")]
@@ -229,6 +233,10 @@ public sealed record WebhookEndpointSecret
     [JsonPropertyName("secret")]
     public string Secret { get; init; } = string.Empty;
 
+    /// <summary>ISO-8601 expiry of the replaced secret when rotation used keep_previous: true; otherwise absent.</summary>
+    [JsonPropertyName("previous_secret_expires_at")]
+    public string? PreviousSecretExpiresAt { get; init; }
+
     /// <summary>Returns a redacted representation that does not expose the signing secret.</summary>
     public override string ToString() => $"{nameof(WebhookEndpointSecret)} {{ <redacted> }}";
 }
@@ -291,7 +299,7 @@ public sealed record WebhookEvent
     [JsonPropertyName("event")]
     public string Event { get; init; } = string.Empty;
 
-    /// <summary>Human-readable message, which may contain token placeholders, or <see langword="null"/>.</summary>
+    /// <summary>Reserved by the delivery contract; currently always null.</summary>
     [JsonPropertyName("message")]
     public string? Message { get; init; }
 
