@@ -542,8 +542,8 @@ public sealed class LiveIntegrationTests
             })).Should().BeOfType<DocumentContract>().Subject;
             contract.Value.Should().Be(123.45m);
             contract.Currency.Should().Be("BRL");
-            var staleUpdatedAt = DateTimeOffset.Parse(contract.UpdatedAt!, System.Globalization.CultureInfo.InvariantCulture)
-                .AddSeconds(-1).ToString("O", System.Globalization.CultureInfo.InvariantCulture);
+            var staleUpdatedAt = contract.UpdatedAt;
+            await Task.Delay(TimeSpan.FromSeconds(2)); // Ensure the next write has a later server timestamp.
             contract = (DocumentContract)await client.Contracts.SetAsync(document.Id, new Dictionary<string, object?>
             {
                 ["counterparty_name"] = $"SDK changed {suffix}",

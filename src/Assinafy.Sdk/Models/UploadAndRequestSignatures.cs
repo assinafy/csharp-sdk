@@ -29,6 +29,9 @@ public sealed class UploadAndRequestSignaturesSigner
 
     /// <summary>Request embedded signing for this signer; requires the Embed plan feature.</summary>
     public bool? Embedded { get; set; }
+
+    /// <summary>Optional signing capacity; see <see cref="SignerRef.SignAs"/>. Available on staging.</summary>
+    public string? SignAs { get; set; }
 }
 
 /// <summary>

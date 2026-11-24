@@ -43,6 +43,9 @@ public sealed class AssinafyClient : IDisposable
     /// <summary>Multi-document envelopes, cost estimates, activities, and ZIP downloads.</summary>
     public EnvelopeResource Envelopes { get; }
 
+    /// <summary>Schedule assignments and envelopes, list pending sends, cancel or send them now. Available on staging.</summary>
+    public ScheduledSendResource ScheduledSends { get; }
+
     /// <summary>Allowed iframe origins and short-lived embedded signing sessions.</summary>
     public EmbedResource Embed { get; }
 
@@ -124,6 +127,7 @@ public sealed class AssinafyClient : IDisposable
             Users = new UserResource(_http, authenticate);
             Documents = new DocumentResource(_http, options.AccountId, authenticate);
             Envelopes = new EnvelopeResource(_http, options.AccountId, authenticate);
+            ScheduledSends = new ScheduledSendResource(_http, options.AccountId, authenticate);
             Embed = new EmbedResource(_http, options.AccountId, authenticate);
             Contracts = new ContractResource(_http, options.AccountId, authenticate);
             Signers = new SignerResource(_http, options.AccountId, authenticate);
@@ -320,7 +324,7 @@ public sealed class AssinafyClient : IDisposable
     }
 
     /// <summary>
-    /// Convenience helper: upload a PDF, optionally wait for it to be ready,
+    /// Convenience helper: upload a PDF, DOC, DOCX or ODT, optionally wait for it to be ready,
     /// create signers, and create an assignment in a single call.
     /// </summary>
     /// <remarks>
@@ -329,7 +333,7 @@ public sealed class AssinafyClient : IDisposable
     /// For collect assignments whose entries reference signers created by this helper, use
     /// <see cref="UploadAndRequestSignaturesOptions.EntriesFactory"/>; it runs after all signers are created.
     /// </remarks>
-    /// <param name="options">PDF, signer, assignment, and optional account configuration for the operation.</param>
+    /// <param name="options">File, signer, assignment, and optional account configuration for the operation.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The created document, assignment, and signer identifiers.</returns>
     public async Task<UploadAndRequestSignaturesResult> UploadAndRequestSignaturesAsync(
@@ -389,6 +393,7 @@ public sealed class AssinafyClient : IDisposable
                 NotificationMethods = signer.NotificationMethods,
                 Step = signer.Step,
                 Embedded = signer.Embedded,
+                SignAs = signer.SignAs,
             });
         }
 

@@ -38,11 +38,12 @@ Targets `net8.0`, `net9.0`, and `net10.0`.
 24. [Contract lifecycle management](#contract-lifecycle-management)
 25. [Envelopes](#envelopes)
 26. [Embedded signing](#embedded-signing)
+27. [Scheduled sends, watchers and delivery status](#scheduled-sends-watchers-and-delivery-status)
 
 ## Installation
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.8.0
+dotnet add package Assinafy.Sdk --version 2.9.0
 ```
 
 Use .NET 10 LTS for supported production deployments. The package retains `net8.0` and `net9.0`
@@ -572,7 +573,7 @@ A signature request moves through five stages. Everything else in this SDK suppo
 
 ```mermaid
 flowchart TD
-    A[API key or workspace OAuth connection] --> B[Upload PDF]
+    A[API key or workspace OAuth connection] --> B[Upload PDF, DOC, DOCX or ODT]
     B --> C[Wait for metadata_ready]
     C --> D[Create signers and estimate cost]
     D --> E[Create assignment and send invitations]
@@ -594,7 +595,7 @@ flowchart TD
     K --> L[Download signed PDF, PAdES or bundle]
 ```
 
-1. **Upload** a PDF into a workspace, producing a document in `uploaded` status.
+1. **Upload** a PDF, DOC, DOCX or ODT into a workspace, producing a document in `uploaded` status.
 2. **Wait** for the platform to normalize it and extract pages (`metadata_ready`).
 3. **Create signers** — reusable people records belonging to the workspace.
 4. **Create an assignment**, binding signers to the document. This is what sends the invitations.
@@ -773,7 +774,7 @@ persist and reuse the same key for the same intended creation after an uncertain
 ## Documents
 
 ```csharp
-// Upload — PDF only, 25MB maximum.
+// Upload — PDF, DOC, DOCX or ODT, 25MB maximum; office formats become PDF.
 await using var pdf = File.OpenRead("contract.pdf");
 var document = await client.Documents.UploadAsync(pdf, "contract.pdf");
 
@@ -1064,7 +1065,7 @@ Console.WriteLine(result.SignerName);
 Both routes are production-only deployed extensions: the sandbox does not expose them and they are
 absent from the published OpenAPI document. They require a real production certificate assignment
 and a browser-signed Web PKI token.
-`Signing.GetAsync` returns `400` for certificate signers before data confirmation and terms
+`Signing.GetAsync` rejects certificate signers before data confirmation and terms
 acceptance; its `hasAcceptedTerms` parameter cannot replace those steps. Download `pades` after
 completion to receive the qualified PAdES signature. The certificate holder must match the
 CPF/CNPJ already stored on the workspace signer; confirmation cannot change that identity.
@@ -1439,6 +1440,72 @@ the token even when signing is not ready (409). Session creation allows thirty a
 per hour (429), and returns 409 when the assignment is unavailable, pending, completed, or lacks
 registered origins. Keep API credentials and signer access codes out of the embedding application page.
 
+## Scheduled sends, watchers and delivery status
+
+These methods are available on the staging API at
+`https://api.angry-pisco.stage.assinafy.com.br/v1`. Configure that `BaseUrl` explicitly.
+The [staging reference](docs/STAGING.md) contains every request, response, error and allowed
+`sign_as` value; the production API does not yet publish these operations.
+
+Upload and wait for the document, create or reuse its contacts, then estimate a normal assignment
+or envelope before scheduling it. Scheduling sends no invitation and charges nothing. The due
+job checks every five minutes and repeats membership, plan, document and balance validation as
+the scheduling member. A failed send charges nothing and emails that member, or the workspace
+owners if the member has left.
+
+```csharp
+var request = new CreateAssignmentRequest
+{
+    Method = AssignmentMethods.Virtual,
+    MaxTotalCredits = 0,
+    Signers = [new SignerRef
+    {
+        Id = "signer-id", VerificationMethod = SignerChannels.Email,
+        NotificationMethods = [SignerChannels.Email], SignAs = "Witness",
+    }],
+};
+var estimate = await client.Assignments.EstimateCostAsync("document-id", request);
+if (!estimate.HasSufficientResources)
+    throw new InvalidOperationException(estimate.BlockingReason);
+var scheduled = await client.ScheduledSends.ScheduleAssignmentAsync(
+    "document-id", request, DateTimeOffset.UtcNow.AddHours(3));
+var page = await client.ScheduledSends.ListAsync(new Dictionary<string, string?>
+{
+    ["document_id"] = "document-id", ["per-page"] = "20",
+});
+await client.ScheduledSends.CancelAsync(scheduled.Id);
+```
+
+`ScheduleEnvelopeAsync` takes the same `CreateEnvelopeRequest` as `Envelopes.CreateAsync` plus a
+`DateTimeOffset`. Send times must be one hour to ninety days ahead; any expiration must be at
+least two hours after the scheduled time. A document can have only one pending/processing send.
+Schedule creation has no idempotency key. All scheduling routes, including listing, require
+`documents:write` for OAuth. `SendNowAsync` creates immediately with the normal costs and credit
+ceiling; a refusal leaves the send pending. `CancelAsync` accepts only pending sends. Neither
+operation is retried. `ScheduledSend.Status` is pending, processing, sent, cancelled or failed;
+sent means assignment/envelope creation succeeded and invitations were queued.
+
+Set `SignerRef.SignAs` when creating an assignment (also accepted by the upload helper). The
+capacity is fixed at creation and defaults to `Sign`; it records the sender's statement on the
+certificate page without verifying authority. Envelope and template signer inputs do not accept it.
+
+```csharp
+var capacities = await client.Assignments.GetSignerCapacitiesAsync("document-id");
+await client.Documents.SetWatchersAsync("document-id", ["watcher-contact-id"]);
+var watchers = await client.Documents.ListWatchersAsync("document-id");
+await client.Documents.SetWatchersAsync("document-id", []); // Clear the list.
+var delivery = await client.Assignments.GetNotificationHistoryAsync("document-id");
+var reminder = await client.Envelopes.EstimateResendCostAsync("envelope-id", "signer-id");
+```
+
+Watchers are up to ten existing workspace contacts with email. They receive end-of-document
+notifications without a signing link or file. Set the list before closing the document; deleted
+contacts are omitted from reads. Watcher routes accept API keys/user sessions, not third-party OAuth.
+`SignerNotificationHistory.NotificationHistory` includes nullable `DeliveredAt` and `OpenedAt`
+ISO timestamps. Email records its first delivery/open/click; WhatsApp records the latest delivery/read.
+An open is a delivery hint, not proof that someone read or signed. Envelope reminder estimates
+charge each method once across the envelope and do not check whether a reminder can currently send.
+
 ## Webhooks
 
 An account registers one webhook endpoint, or up to three on paid plans. Every active endpoint
@@ -1687,15 +1754,13 @@ await client.Authentication.DeleteApiKeyAsync();
 
 | Value | Contents |
 |---|---|
-| `original` | The uploaded PDF, unchanged |
+| `original` | The PDF used for signing: uploaded PDF or converted DOC/DOCX/ODT |
 | `certificated` | The signed and certificated PDF (default) |
 | `certificate-page` | The standalone certificate page |
 | `pades` | The signed PDF in PAdES format |
 | `bundle` | ZIP containing the original PDF, signed PDF, certificate page, and PAdES file when available |
 
-**Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (0.45 credits per signer, paid plans
-only), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI, 0.5 credits per signer
-on top of its notification), and `IdDocumentFaceMatchBasic` (verification only; identity document,
+**Channels** (`SignerChannels`) — `Email` (free), `Whatsapp` (paid plans; cost depends on destination), `DigitalCertificate` (verification only; ICP-Brasil A1/A3 via Web PKI; estimate its cost plus notification), and `IdDocumentFaceMatchBasic` (verification only; identity document,
 face match and liveness, account feature and valid CPF required; 1.5/1/0.5/0.25 credits per signer
 on Free/Standard/Pro/other plans, plus notification).
 Values are capitalized exactly as shown. Assignments and templates accept exactly

@@ -11,7 +11,7 @@ Use .NET 10 LTS em produção; .NET 8/9 permanecem para compatibilidade, fora de
 ## Instalação
 
 ```bash
-dotnet add package Assinafy.Sdk --version 2.8.0
+dotnet add package Assinafy.Sdk --version 2.9.0
 ```
 
 ## Cliente e credenciais
@@ -33,19 +33,17 @@ conectada por OAuth, informe `Token` em vez de `ApiKey`; os dois são mutuamente
 inclua uma chave de API em aplicativo móvel, navegador, repositório ou log. `BaseUrl` aceita apenas
 HTTPS e o caminho `/v1`. Reutilize um `AssinafyClient`: ele é thread-safe e mantém o pool HTTP.
 Resultados com credenciais ou links bearer ocultam esses valores em `ToString()`.
-
 Se fornecer um `HttpClient`, construa o handler com `AssinafyClient.CreatePrimaryHandler()` para
 desativar cookies e redirecionamentos, mantenha `BaseAddress` igual a `BaseUrl` e seja o dono do
 tempo de vida do transporte. Credenciais são anexadas por requisição, nunca aos headers padrão.
 
 Respostas REST usam `{ status, message, data }`; o SDK devolve `data` tipado. OAuth usa JSON plano.
-Listas paginadas retornam `PaginatedResult<T>`. Todo método aceita `CancellationToken`. O SDK não
-repete chamadas; somente `Documents.WaitUntilReadyAsync` trata `404`, `429` e `5xx` como transitórios.
+Listas paginadas retornam `PaginatedResult<T>`. Todo método aceita `CancellationToken`. O SDK não repete chamadas; somente `Documents.WaitUntilReadyAsync` trata `404`, `429` e `5xx` como transitórios.
 
 ## Fluxo completo de assinatura
 
 1. Autentique a workspace com chave de API ou token OAuth.
-2. Envie o PDF e aguarde `metadata_ready`.
+2. Envie PDF, DOC, DOCX ou ODT (até 25 MB/2000 páginas) e aguarde `metadata_ready`; office vira PDF.
 3. Crie signatários e estime custo/créditos.
 4. Crie o assignment; essa chamada envia os convites.
 5. O signatário confirma dados e termos, conclui a verificação e assina.
@@ -90,7 +88,6 @@ var assignment = await client.Assignments.CreateAsync(documento.Id, pedido);
 `AssignmentMethods.Virtual` cobre assinatura remota; `Collect` exige `Entries` posicionando campos.
 `UploadAndRequestSignaturesAsync` oferece o mesmo fluxo como conveniência, mas não é transacional.
 Em falha parcial, os recursos já criados permanecem disponíveis para inspeção ou limpeza.
-
 ## Verificação, notificação e assinatura
 
 Cada signatário usa exatamente um canal de notificação (`Email` ou `Whatsapp`). Email e WhatsApp
@@ -109,8 +106,7 @@ Carregue a sessão com `Signing.GetAsync`, confirme dados/termos com `Signers.Co
 OTP com `Signers.VerifyAsync` e assine com `Signing.SignAsync` (campos em `collect`, lista vazia em
 `virtual`). `Signing.DeclineAsync` registra a recusa. Código ausente ou vazio falha antes da rede.
 
-Na biometria, obtenha consentimento explícito antes de
-`Signing.StartIdentityVerificationAsync`. Abra a URL completa, inclusive o fragmento, sem log ou
+Na biometria, obtenha consentimento explícito antes de `Signing.StartIdentityVerificationAsync`. Abra a URL completa, inclusive o fragmento, sem log ou
 armazenamento no navegador. `InReview` permite assinar, mas mantém o documento em
 `pending_identity_review`; leia a evidência somente durante a revisão e decida com
 `Assignments.DecideIdentityReviewAsync`. Rejeitar cancela o documento. Evidências e decisões exigem chave de API ou sessão de usuário; OAuth só lê o resumo.
@@ -173,6 +169,10 @@ O original exige `Signing.DownloadOriginalAsync` e código; cópias certificadas
 com o token da mensagem. `SendCertifiedCopyAsync` solicita nova entrega. `Accounts.GetUsageAsync` informa saldos.
 O [guia completo](README.en.md) cobre cancelamento, notificações, preferências push e payloads.
 
+No staging, `ScheduledSends` agenda assignments/envelopes; `SignerRef.SignAs` registra a qualidade do signatário.
+`Documents.SetWatchersAsync` define observadores e `Assignments.GetNotificationHistoryAsync` lê entrega/abertura.
+Veja os fluxos no [guia inglês](README.en.md#scheduled-sends-watchers-and-delivery-status) e todos os [payloads](docs/STAGING.md).
+
 ## Outros recursos e erros
 
 `Templates`, `Tags`, `Fields`, `Contracts`, `Accounts`, `Users`, `Authentication` e `Signatures`
@@ -196,4 +196,3 @@ dotnet pack src/Assinafy.Sdk/Assinafy.Sdk.csproj -c Release -o ./artifacts
 Testes de integração usam somente o sandbox e se ignoram sem configuração. Consulte
 [README.en.md](README.en.md) para a referência por recurso, [docs/API.md](docs/API.md) para contratos
 HTTP completos, [CHANGELOG.md](CHANGELOG.md) para versões e [SECURITY.md](SECURITY.md) para segurança.
-Licença MIT.

@@ -15,15 +15,36 @@ public sealed class DocumentResourceTests
         => new(FakeHttpMessageHandler.CreateClient(handler), accountId);
 
     [Fact]
-    public async Task Upload_ThrowsForNonPdfFile()
+    public async Task Upload_ThrowsForUnsupportedFile()
     {
         var handler = new FakeHttpMessageHandler();
         var resource = CreateResource(handler);
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes("data"));
 
-        var act = () => resource.UploadAsync(stream, "document.docx");
+        var act = () => resource.UploadAsync(stream, "document.txt");
 
         await act.Should().ThrowAsync<ValidationException>().WithMessage("*PDF*");
+    }
+
+    [Theory]
+    [InlineData("document.PDF", "application/pdf")]
+    [InlineData("document.doc", "application/msword")]
+    [InlineData("document.DOCX", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")]
+    [InlineData("document.odt", "application/vnd.oasis.opendocument.text")]
+    public async Task Upload_SendsSupportedFileWithItsMimeType(string fileName, string contentType)
+    {
+        var handler = new FakeHttpMessageHandler();
+        handler.AddJsonResponse(HttpMethod.Post, "/v1/accounts/acc/documents",
+            FakeHttpMessageHandler.ApiOk(new { id = "doc-1", status = "uploaded" }));
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes("file-content"));
+
+        var result = await CreateResource(handler).UploadAsync(stream, fileName);
+
+        result.Id.Should().Be("doc-1");
+        handler.Requests.Single().RequestUri!.AbsolutePath.Should().Be("/v1/accounts/acc/documents");
+        handler.RequestBodies.Single().Should().Contain($"Content-Type: {contentType}")
+            .And.Contain(fileName).And.Contain("file-content");
+        stream.CanRead.Should().BeTrue();
     }
 
     [Fact]

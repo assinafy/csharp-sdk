@@ -228,6 +228,7 @@ public sealed class AssinafyClientTests
             {
                 FullName = "Test Signer", GovernmentId = "52998224725",
                 VerificationMethod = verificationMethod,
+                SignAs = "Witness",
                 NotificationMethods = [verificationMethod == SignerChannels.Whatsapp ? SignerChannels.Whatsapp : SignerChannels.Email],
             }],
         });
@@ -242,6 +243,8 @@ public sealed class AssinafyClientTests
         using var assignmentBody = JsonDocument.Parse(handler.RequestBodies[2]);
         assignmentBody.RootElement.GetProperty("signers")[0].GetProperty("verification_method").GetString()
             .Should().Be(verificationMethod);
+        assignmentBody.RootElement.GetProperty("signers")[0].GetProperty("sign_as").GetString()
+            .Should().Be("Witness");
     }
 
     [Fact]

@@ -71,47 +71,57 @@ public abstract class BaseResource
     /// <summary>Query-parameter name carrying a signer's access code on signer-facing endpoints.</summary>
     private protected const string SignerAccessCodeParam = "signer-access-code";
 
-    /// <summary>Largest PDF upload the API accepts, shared by the document and template upload routes.</summary>
+    /// <summary>Largest upload the API accepts, shared by the document and template upload routes.</summary>
     private protected const long MaximumUploadBytes = 25L * 1024L * 1024L;
 
     /// <summary>
-    /// Reject a PDF upload the API would refuse. Checks the extension and, for seekable streams,
+    /// Reject an upload the API would refuse. Checks the extension and, for seekable streams,
     /// the bytes remaining from the current position against <see cref="MaximumUploadBytes"/>;
     /// the API enforces its own limit for every stream.
     /// </summary>
     /// <param name="fileStream">Stream whose remaining length is measured when seekable.</param>
-    /// <param name="fileName">Source file name, which must carry a <c>.pdf</c> extension.</param>
+    /// <param name="fileName">Source file name, including its extension.</param>
     /// <param name="subject">Noun used in the size-limit message, e.g. <c>Document</c> or <c>Template</c>.</param>
-    private protected static void ValidatePdfUpload(Stream fileStream, string fileName, string subject)
+    /// <param name="allowOffice">Whether DOC, DOCX and ODT are accepted for conversion to PDF.</param>
+    /// <returns>The MIME type matching the accepted file extension.</returns>
+    private protected static string ValidateUpload(Stream fileStream, string fileName, string subject, bool allowOffice = false)
     {
         ArgumentNullException.ThrowIfNull(fileStream);
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
 
-        if (!fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
-            throw new ValidationException(
-                "Only PDF files are supported.",
-                new Dictionary<string, object?> { ["fileName"] = fileName });
+        var contentType = Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".pdf" => "application/pdf",
+            ".doc" when allowOffice => "application/msword",
+            ".docx" when allowOffice => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".odt" when allowOffice => "application/vnd.oasis.opendocument.text",
+            _ => throw new ValidationException(
+                allowOffice ? "Only PDF, DOC, DOCX and ODT files are supported." : "Only PDF files are supported.",
+                new Dictionary<string, object?> { ["fileName"] = fileName }),
+        };
 
-        if (!fileStream.CanSeek) return;
+        if (!fileStream.CanSeek) return contentType;
 
         var remainingBytes = fileStream.Length - fileStream.Position;
         if (remainingBytes > MaximumUploadBytes)
             throw new ValidationException(
                 $"{subject} file size must not exceed 25MB.",
                 new Dictionary<string, object?> { ["fileName"] = fileName, ["size"] = remainingBytes });
+        return contentType;
     }
 
     /// <summary>
-    /// Build the single-part <c>file</c> multipart body used by the PDF upload routes. The caller-owned
+    /// Build the single-part <c>file</c> multipart body used by the upload routes. The caller-owned
     /// stream is left open; the returned content is disposed with the request that carries it.
     /// </summary>
-    /// <param name="fileStream">PDF content to send.</param>
+    /// <param name="fileStream">File content to send.</param>
     /// <param name="uploadName">File name sent as the part's <c>filename</c>.</param>
-    private protected static MultipartFormDataContent BuildPdfUploadContent(Stream fileStream, string uploadName)
+    /// <param name="contentType">Validated MIME type for the file.</param>
+    private protected static MultipartFormDataContent BuildUploadContent(Stream fileStream, string uploadName, string contentType)
     {
         var content = new MultipartFormDataContent();
         var part = new NonDisposingStreamContent(fileStream);
-        part.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        part.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         content.Add(part, "file", uploadName);
         return content;
     }

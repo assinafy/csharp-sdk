@@ -5,7 +5,7 @@ This reference combines the checked-in official production OpenAPI snapshot with
 The checked-in production snapshot uses low-entropy `example-*` credential and token placeholders and RFC-reserved `example.com` email addresses. Its API structure and schemas match the production contract.
 
 - Source: https://api.assinafy.com.br/v1/docs/openapi.json
-- Snapshot SHA-256: `eb47cf0dee3bd9c259f5b50c65ee4176b9a36ab1342dc92189f771f1688b52a5`
+- Snapshot SHA-256: `5822edb443591eca587ed893b1741e5b02f42e65ccfb73828099e1c0012efe85`
 - OpenAPI: `3.1.0`; API info version: `1.0.0`
 - API surface: 147 documented production operations across 112 paths, 62 component schemas, and 31 webhook event payloads.
 
@@ -612,9 +612,11 @@ Claude, Claude Code and ChatGPT connect to Assinafy on their own through their c
 
 Show Assinafy's signing screen **inside your own app**, in an iframe, so your signers never leave your product. Your backend asks Assinafy for a short-lived signing URL, your page loads it in an iframe, and the frame tells your page when the signer is done.
 
+On the browser side, use the official SDK, [`@assinafy/embed-sdk`](https://github.com/assinafy/embed-sdk) (step 4). It mounts the iframe, runs the handshake, follows the frame's height and gives you typed events. Its README also has examples for React, Next.js, plain HTML and mobile WebViews.
+
 ### Before you start
 
-- Your plan must include the **Embed** feature. Without it the calls below answer `403` with code `PlanRestricted`. Contact sales or your account manager to have it enabled.
+- Your plan must include the **Embed** feature: the Standard and Pro plans and enterprise contracts do. Without it the calls below answer `403` with code `PlanRestricted`.
 - Minting sessions needs an **API key** (or a user bearer token). Tokens issued to an OAuth application cannot mint embed sessions.
 - Everything that creates sessions runs on **your backend**. Never ship your API key to the browser.
 
@@ -698,9 +700,66 @@ Refusals:
 
 This only happens when you create the assignment right after uploading, before Assinafy has finished preparing the file: retry the mint after a few seconds. Once the assignment exists on a prepared document (including documents created from a template), the document is already signable. Don't treat the `document_metadata_ready` webhook as a signal to mint: it can fire before the assignment exists, and minting without an assignment returns `404`.
 
-### 4. Load the iframe and listen to it
+### 4. Show the frame with the SDK
 
-The frame and your page talk through `postMessage`. Every message is `{ "v": 1, "type": "assinafy:<event>", "payload": ... }`.
+Install the SDK:
+
+```shell
+npm install @assinafy/embed-sdk
+```
+
+Ask **your** backend for a freshly minted URL (step 3) and hand it to the SDK:
+
+```js
+import { create } from "@assinafy/embed-sdk";
+
+const { url } = await fetch("/api/signing-session", { method: "POST" }).then((r) => r.json());
+
+const signing = create({ sessionUrl: url });
+
+signing.on("ready", () => {
+  // The frame verified your origin and shows the code or signing screen.
+});
+signing.on("signed", ({ document_id, via }) => {
+  signing.destroy();
+  // Refresh your screen; confirm the outcome on your backend (see "Webhooks are the source of truth").
+});
+signing.on("declined", () => {
+  signing.destroy();
+});
+signing.on("error", ({ code, message }) => {
+  signing.destroy();
+  // See the error codes below.
+});
+
+signing.mount("#signing"); // a CSS selector or an HTMLElement
+```
+
+- `mount` creates a full-width iframe inside the element. It starts 600 px high and follows the content's height (200 px minimum).
+- Call `destroy()` when the flow ends or the user leaves the screen: it removes the iframe, its listeners and timers. An instance serves one session URL; to try again, mint a new URL and call `create` again.
+- The SDK takes the Assinafy origin from the session URL, so the same code works in production and in the sandbox. It refuses session URLs that are not HTTPS and accepts messages only from its own iframe and that origin.
+- If the frame does not answer the handshake within 12.5 seconds, the SDK itself emits `error` with code `handshake_timeout`.
+- `signed` and `declined` reach your handlers once per document, even when the frame re-sends them after a reload.
+
+Without a bundler, load the browser build, which exposes `window.Assinafy`:
+
+```html
+<div id="signing"></div>
+<script
+  src="https://cdn.jsdelivr.net/npm/@assinafy/embed-sdk@1.0.1/dist/index.global.js"
+  integrity="sha384-lSSpERrUWuEMJPmEUUdpk4LPI2V3JvcOAYpipt/Sboxw3yDkxbD1Rk3BZxd3Rho0"
+  crossorigin="anonymous"
+></script>
+<script>
+  // const signing = Assinafy.create({ sessionUrl: url }); then on(...) and mount(...) as above
+</script>
+```
+
+For React Native, Swift or Kotlin, host your own HTTPS page with the SDK, register its origin (step 1) and open it in a WebView. Pass only the result to the app through the WebView bridge.
+
+### Without the SDK: the frame protocol
+
+If you cannot use the SDK, talk to the frame yourself. The frame and your page talk through `postMessage`. Every message is `{ "v": 1, "type": "assinafy:<event>", "payload": ... }`.
 
 The handshake:
 
@@ -782,7 +841,9 @@ Accept messages **only** from the Assinafy origin **and** from your own iframe w
 
 The iframe starts at 600 px high; the frame then reports its height with `resize` and the snippet follows it.
 
-#### Events from the frame
+### Events and errors
+
+The SDK hands these events to your `on` handlers with the same names and payloads; without the SDK they arrive as `assinafy:<event>` messages.
 
 | Event | Payload | When |
 |---|---|---|
@@ -802,8 +863,11 @@ Error codes:
 | `document_unavailable` | The document was cancelled, declined or expired, or is not ready for signing yet |
 | `already_signed` | The signer already signed |
 | `access_closed` | The signer's access is closed |
+| `handshake_timeout` | SDK only: the frame did not answer within 12.5 seconds. Check that nothing blocks the iframe, then mint a new session |
 
-Good to know:
+Decide from `code`; `message` is descriptive and may be empty. Treat unknown codes as a generic error.
+
+Good to know, when you talk to the frame without the SDK:
 
 - `session_expired`, `already_signed`, `document_unavailable`, `not_embedded` and `origin_not_allowed` can arrive **before** the handshake. The frame has not verified your origin yet, so it posts them to any parent (`"*"`) and they carry only `code` and `message`, never document data. Your origin and source checks still apply to them.
 - `signed` and `declined` are terminal, but may be delivered **more than once** (for example after the frame reloads on the done screen). Handle them idempotently.
@@ -914,13 +978,13 @@ Verification and notification are **coupled** — you may send one, both or neit
 | Code | Requirements | Cost per signer (verification + its notification) |
 |------|--------------|---------------------------------------------------|
 | `Email` | Signer must have an email address. | 0 credits (the Email notification) |
-| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits (the WhatsApp notification, which this method requires) |
-| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**, and the assignment must be `virtual` (no placed fields); a `collect` assignment, or a template with placed signer fields, returns `400`. | 0.5 credits + its notification |
-| `IdDocumentFaceMatchBasic` | Account must have the **identity document verification** feature, enabled on request. Signer must have a full name and a valid CPF in `government_id` (a CNPJ is refused). | Your plan's verification price (see below) + its notification |
+| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | Your plan's WhatsApp notification price (see **Notification methods**), which this method requires |
+| `DigitalCertificate` | Account must have the **Digital Certificate** feature (Standard and Pro plans and enterprise contracts; in the sandbox, enabled on request). Signer must have a CPF in `government_id`. Each digital-certificate signer must be **alone in its signing step**, and the assignment must be `virtual` (no placed fields); a `collect` assignment, or a template with placed signer fields, returns `400`. | 0.45 credits + its notification |
+| `IdDocumentFaceMatchBasic` | Account must have the **identity document verification** feature (Standard and Pro plans and enterprise contracts; in the sandbox, enabled on request). Signer must have a full name and a valid CPF in `government_id` (a CNPJ is refused). | Your plan's verification price (see below) + its notification |
 
-> **How verification is priced.** `Email`, `Whatsapp` and `DigitalCertificate` verification carry no price of their own — you are billed for the **notification** they are paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs 0.45 credits against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.
+> **How verification is priced.** `Email`, `Whatsapp` and `DigitalCertificate` verification carry no price of their own — you are billed for the **notification** they are paired with (plus, for `DigitalCertificate`, the signature itself). Because verification and notification are coupled, choosing `Whatsapp` verification also chooses the WhatsApp notification, so a WhatsApp-verified signer costs your plan's WhatsApp notification price against 0 credits for an email-verified one. The column above is that combined per-signer cost, which is what the **Estimate assignment cost** endpoint returns.
 
-> **Digital Certificate cost.** Unlike `Email` and `Whatsapp` verification (whose only cost is the notification), the digital-certificate signature itself is charged **0.5 credits per digital-certificate signer**, on top of the notification cost; in an envelope, on every document the signer signs. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
+> **Digital Certificate cost.** Unlike `Email` and `Whatsapp` verification (whose only cost is the notification), the digital-certificate signature itself is charged **0.45 credits per digital-certificate signer**, on top of the notification cost; in an envelope, on every document the signer signs. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `SignatureDigitalCertificate` code.
 
 > **Identity document verification cost.** `IdDocumentFaceMatchBasic` is charged per signer, on top of the notification cost, at a price that depends on your plan (below); in an envelope, once per signer for the whole envelope. The charge is applied when the assignment is created, and appears in the **Estimate assignment cost** breakdown under the `VerificationIdDocumentFaceMatchBasic` code.
 
@@ -943,7 +1007,14 @@ The notification method is what delivers the signing invitation to the signer. E
 | Code | Requirements | Cost (per signer) |
 |------|--------------|-------------------|
 | `Email` | Signer must have an email address. | 0 credits |
-| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | 0.45 credits |
+| `Whatsapp` | Signer must have a `whatsapp_phone_number`; available only on paid subscriptions. | Depends on your plan (below) |
+
+> **WhatsApp notification cost.** The WhatsApp notification is charged per signer at a price that depends on your plan:
+
+| Plan | Price per signer |
+|------|------------------|
+| Pro | 0.4 credits |
+| Other plans and enterprise contracts | 0.45 credits |
 
 ### Coupling rules
 
@@ -970,7 +1041,7 @@ Exactly one notification method is allowed per signer — `notification_methods`
 Notification cost is charged **per signer**, on top of the document cost. For example:
 
 - 2 signers notified by email = 0 credits
-- 2 signers notified by WhatsApp = 0.9 credits
+- 2 signers notified by WhatsApp = 0.9 credits at 0.45 credits each (see the WhatsApp price for your plan above)
 
 Verification follows the same arithmetic, because it is the notification that is billed: 2 signers **verified** by WhatsApp are necessarily notified by WhatsApp, and therefore also cost 0.9 credits. The exceptions are `DigitalCertificate` and `IdDocumentFaceMatchBasic`, which add their own per-signer charge on top of the notification.
 
@@ -1150,6 +1221,8 @@ User account endpoints.
 
 ## SDK method index
 
+Staging methods and payloads are documented in [STAGING.md](STAGING.md).
+
 | Resource | Method | Full signature | Summary |
 |---|---|---|---|
 | AccountResource | `ListAsync` | `Task<IReadOnlyList<Account>> ListAsync(CancellationToken cancellationToken = default)` | GET /accounts — list the workspace accounts the authenticated user belongs to. |
@@ -1194,7 +1267,7 @@ User account endpoints.
 | ContractResource | `RenewAsync` | `Task<DocumentContract> RenewAsync(string documentId, IDictionary<string, object?> request, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/documents/{documentId}/contract/renew — start the next term, reopening an expired contract. Terminated contracts are refused. Supply the current term or a later end_date so a repeated call cannot renew twice. The SDK never retries. |
 | ContractResource | `TerminateAsync` | `Task<DocumentContract> TerminateAsync(string documentId, IDictionary<string, object?>? request = null, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/documents/{documentId}/contract/terminate — close a contract and stop its lifecycle alerts. |
 | DocumentResource | `ListStatusesAsync` | `Task<IReadOnlyList<DocumentStatusInfo>> ListStatusesAsync( CancellationToken cancellationToken = default)` | GET /documents/statuses — list all possible document status codes and whether each is deletable. |
-| DocumentResource | `UploadAsync` | `Task<DocumentDetails> UploadAsync( Stream fileStream, string fileName, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/documents — upload a PDF to a workspace. This method validates the file extension and, for seekable streams, the 25MB cap against the bytes remaining from the current position. The API enforces size for every stream and additionally enforces a 2000-page limit server-side. |
+| DocumentResource | `UploadAsync` | `Task<DocumentDetails> UploadAsync( Stream fileStream, string fileName, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/documents — upload a PDF, DOC, DOCX or ODT to a workspace; office formats are converted to PDF. This method validates the file extension and, for seekable streams, the 25MB cap against the bytes remaining from the current position. The API enforces size for every stream and additionally enforces a 2000-page limit server-side. |
 | DocumentResource | `ListAsync` | `Task<PaginatedResult<DocumentListItem>> ListAsync( IDictionary<string, string?>? queryParams = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{account_id}/documents — list documents in the workspace with optional filters (status, method, search, sort, page, per-page). |
 | DocumentResource | `GetAsync` | `Task<DocumentDetails> GetAsync(string documentId, CancellationToken cancellationToken = default)` | GET /documents/{document_id} — fetch full document details including assignment and artifacts. |
 | DocumentResource | `DeleteAsync` | `Task DeleteAsync(string documentId, CancellationToken cancellationToken = default)` | DELETE /documents/{documentId} — delete a document. Only certain status codes are deletable (see ListStatusesAsync). |
@@ -1342,6 +1415,18 @@ User account endpoints.
 | WebhookResource | `RotateEndpointSecretAsync` | `Task<WebhookEndpointSecret> RotateEndpointSecretAsync( string endpointId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/secret/rotate — replace the signing secret. The old secret stops working immediately, so update the receiver at once. Returns 400 when signing is disabled. Available to OAuth applications with the webhooks:write scope. |
 | WebhookResource | `RotateEndpointSecretWithOptionsAsync` | `Task<WebhookEndpointSecret> RotateEndpointSecretWithOptionsAsync( string endpointId, bool keepPrevious, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/secret/rotate — replace the signing secret with an optional 24-hour overlap. With keepPrevious, deliveries carry signatures from both keys until PreviousSecretExpiresAt. Rotating again stops the previously retained key. OAuth scope webhooks:write. |
 | WebhookResource | `TestEndpointAsync` | `Task<WebhookDispatch> TestEndpointAsync( string endpointId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{account_id}/webhooks/endpoints/{endpoint_id}/test — send one signed webhook_test delivery, including to an inactive or paused endpoint, without lifting or counting toward its pause. The receiver has 10 seconds to respond. Limited to ten tests per user per ten minutes. OAuth scope webhooks:write. |
+| AssignmentResource | `GetSignerCapacitiesAsync` | `Task<IReadOnlyList<SignerCapacity>> GetSignerCapacitiesAsync(string documentId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/signer-capacities — read capacities in assignment signer order; empty before assignment. Requires documents:read. Available on staging. |
+| AssignmentResource | `GetNotificationHistoryAsync` | `Task<IReadOnlyList<SignerNotificationHistory>> GetNotificationHistoryAsync(string documentId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/notification-history — read each signer's delivery and open times; empty before assignment. Requires documents:read. Available on staging. |
+| DocumentResource | `ListWatchersAsync` | `Task<IReadOnlyList<Signer>> ListWatchersAsync(string documentId, CancellationToken cancellationToken = default)` | GET /documents/{documentId}/watchers — list contacts following the document without signing. API key/user session only. Available on staging. |
+| DocumentResource | `SetWatchersAsync` | `Task<IReadOnlyList<Signer>> SetWatchersAsync(string documentId, IReadOnlyList<string> watcherIds, CancellationToken cancellationToken = default)` | PUT /documents/{documentId}/watchers — replace up to ten workspace contacts who receive an email when the document ends. Empty clears; closed documents refuse changes. API key/user session only. Available on staging. |
+| EnvelopeResource | `EstimateResendCostAsync` | `Task<ResendCostEstimate> EstimateResendCostAsync(string envelopeId, string signerId, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/envelopes/{envelopeId}/signers/{signerId}/estimate-resend-cost — estimate one reminder covering the whole envelope without sending or charging. Available on staging. |
+| ScheduledSendResource | `ScheduleAssignmentAsync` | `Task<ScheduledSend> ScheduleAssignmentAsync(string documentId, CreateAssignmentRequest request, DateTimeOffset sendAt, CancellationToken cancellationToken = default)` | POST /documents/{documentId}/scheduled-sends — retain an assignment request for later. Nothing is sent or charged now; checks and charges run as the scheduling member when due. No retries. |
+| ScheduledSendResource | `ListAsync` | `Task<PaginatedResult<ScheduledSend>> ListAsync(IDictionary<string, string?>? queryParams = null, string? accountId = null, CancellationToken cancellationToken = default)` | GET /accounts/{accountId}/scheduled-sends — list all scheduled-send states, newest first. Requires documents:write because failures can reveal balance and membership information. |
+| ScheduledSendResource | `ScheduleEnvelopeAsync` | `Task<ScheduledSend> ScheduleEnvelopeAsync(CreateEnvelopeRequest request, DateTimeOffset sendAt, string? accountId = null, CancellationToken cancellationToken = default)` | POST /accounts/{accountId}/scheduled-sends — retain an envelope request for later. Requires Envelopes; nothing is created or charged now. Each call creates a send; idempotency keys are not supported. |
+| ScheduledSendResource | `CancelAsync` | `Task<ScheduledSend> CancelAsync(string scheduledSendId, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{accountId}/scheduled-sends/{scheduledSendId}/cancel — cancel a pending send without charging. Other states return 409. |
+| ScheduledSendResource | `SendNowAsync` | `Task<ScheduledSend> SendNowAsync(string scheduledSendId, string? accountId = null, CancellationToken cancellationToken = default)` | PUT /accounts/{accountId}/scheduled-sends/{scheduledSendId}/send — send a pending request now as its scheduling member. Normal create checks and charges apply; refusal leaves it pending. No retries. |
+| PublicDocumentResource | `GetAsync` | `Task<PublicDocumentInfo> GetAsync(string documentId, CancellationToken cancellationToken = default)` | Legacy GET /public/documents/{document_id} projection. Obsolete; use GetDetailsAsync for the complete DocumentDetails response. |
+| SigningResource | `DownloadAsync` | `Task<byte[]> DownloadAsync(string signerId, string documentId, string? signerAccessCode = null, string artifactName = DocumentArtifactNames.Certificated, CancellationToken cancellationToken = default)` | Legacy GET /signers/{signer_id}/documents/{document_id}/download/{artifact_name}. Obsolete; a signer code authorizes originals, and absent codes receive an unfollowed 302. Use DownloadOriginalAsync or DownloadCertifiedCopyAsync. |
 
 ## C# client and helper contracts
 
@@ -1659,7 +1744,7 @@ Errors: an invalid or expired signer access code uses the standard `401` JSON er
 | Assignments | GET | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/images/{name}` | none | 200, 403, 404, 401, 500 | bearerAuth or apiKeyAuth |
 | Assignments | POST | `/v1/documents/{documentId}/assignments/{assignmentId}/signers/{signerId}/identity-verification/review` | application/json | 200, 400, 403, 404, 401, 500 | bearerAuth or apiKeyAuth |
 | Authentication | POST | `/v1/login` | application/json | 200, 400, 500 | public |
-| Authentication | PUT | `/v1/authentication/request-password-reset` | application/json | 200, 500 | public |
+| Authentication | PUT | `/v1/authentication/request-password-reset` | application/json | 200, 400, 500 | public |
 | Authentication | PUT | `/v1/authentication/reset-password` | application/json | 200, 400, 500 | public |
 | Authentication | PUT | `/v1/authentication/change-password` | application/json | 200, 400, 403, 401, 500 | bearerAuth or apiKeyAuth |
 | Authentication | POST | `/v1/authentication/mfa/verify` | application/json | 200, 400, 401, 500 | public |
@@ -2736,7 +2821,7 @@ All schemas, parameters, examples, security requirements, and response codes are
                     "example": "615605f50e968054a5b7c9b8"
                   },
                   "verification_method": {
-                    "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, needs `method: virtual` (a `collect` assignment with a `DigitalCertificate` signer returns `400`), and is charged 0.5 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Omit to default to `Email`.",
+                    "description": "How the signer's identity is verified before signing. `Email` (default) sends a one-time code to the signer's email; `Whatsapp` sends the code over WhatsApp — the verification itself is not billed, but it requires the WhatsApp notification channel, so the signer costs 0.45 credits (available only on paid subscriptions); `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate (A1/A3) — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id`, must be alone in its signing step, needs `method: virtual` (a `collect` assignment with a `DigitalCertificate` signer returns `400`), and is charged 0.45 credits per signer. A CPF requires that person's certificate (an e-CPF, or an e-CNPJ naming them as legal representative); a CNPJ requires an e-CNPJ for that company, from any of its representatives. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Omit to default to `Email`.",
                     "type": "string",
                     "enum": [
                       "Email",
@@ -2972,7 +3057,7 @@ All schemas, parameters, examples, security requirements, and response codes are
     "Assignments"
   ],
   "summary": "Estimate assignment cost",
-  "description": "Estimate the cost of creating an assignment without creating it, returning a cost breakdown and the current account balances. Signer IDs are not required — only the verification/notification method affects cost. Each assignment consumes 1 document from the plan allowance; if exhausted, an extra document is charged from credits (`needs_extra_document` = true). `blocking_reason` may be `PendingPayment`, `InsufficientDocuments` or `InsufficientCredits`.\n\n### Pricing\n\nPer-unit costs (in credits) used to build the estimate:\n\n| Item | Cost |\n|------|------|\n| Extra document | 1 credit |\n| Email notification | 0 credits |\n| WhatsApp notification | 0.45 credits |\n| Digital certificate signature (per signer) | 0.5 credits |\n| Identity document verification (per signer) | depends on the plan, see the table below |\n\n| Plan | Price per signer |\n|------|------------------|\n| Free | 1.5 credits |\n| Standard | 1 credit |\n| Pro | 0.5 credits |\n| Other plans and enterprise contracts | 0.25 credits |\n\n`Email` and `Whatsapp` verification are not priced separately — their only line in the `breakdown` is their notification. A `Whatsapp`-verified signer therefore shows up as a WhatsApp notification, because that channel is mandatory for that verification method. A `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code. An `IdDocumentFaceMatchBasic` signer likewise adds your plan's verification price on top of its notification, under the `VerificationIdDocumentFaceMatchBasic` code.",
+  "description": "Estimate the cost of creating an assignment without creating it, returning a cost breakdown and the current account balances. Signer IDs are not required — only the verification/notification method affects cost. Each assignment consumes 1 document from the plan allowance; if exhausted, an extra document is charged from credits (`needs_extra_document` = true). `blocking_reason` may be `PendingPayment`, `InsufficientDocuments` or `InsufficientCredits`.\n\n### Pricing\n\nPer-unit costs (in credits) used to build the estimate:\n\n| Item | Cost |\n|------|------|\n| Extra document | 1 credit |\n| Email notification | 0 credits |\n| WhatsApp notification | depends on the plan, see the table below |\n| Digital certificate signature (per signer) | 0.45 credits |\n| Identity document verification (per signer) | depends on the plan, see the table below |\n\nWhatsApp notification, per plan:\n\n| Plan | Price per signer |\n|------|------------------|\n| Pro | 0.4 credits |\n| Other plans and enterprise contracts | 0.45 credits |\n\nIdentity document verification, per plan:\n\n| Plan | Price per signer |\n|------|------------------|\n| Free | 1.5 credits |\n| Standard | 1 credit |\n| Pro | 0.5 credits |\n| Other plans and enterprise contracts | 0.25 credits |\n\n`Email` and `Whatsapp` verification are not priced separately — their only line in the `breakdown` is their notification. A `Whatsapp`-verified signer therefore shows up as a WhatsApp notification, because that channel is mandatory for that verification method. A `DigitalCertificate` signer adds the digital-certificate signature cost **on top of** its notification cost; it appears in the `breakdown` under the `SignatureDigitalCertificate` code. An `IdDocumentFaceMatchBasic` signer likewise adds your plan's verification price on top of its notification, under the `VerificationIdDocumentFaceMatchBasic` code.",
   "operationId": "f3910833e526a79d16f6437ad6a8d215",
   "parameters": [
     {
@@ -3887,7 +3972,7 @@ All schemas, parameters, examples, security requirements, and response codes are
     "Authentication"
   ],
   "summary": "Request password reset",
-  "description": "Send the user an email with instructions to reset their password. Used when the password was forgotten or never set.",
+  "description": "Send the user an email with instructions to reset their password. Used when the password was forgotten or never set. An address with no account gets the same `200` and no email, so the answer never tells whether an address has an account. An `email` that is not text answers `400`.",
   "operationId": "0a598df068cda77f8ad7539ef1c1b656",
   "requestBody": {
     "required": true,
@@ -3940,6 +4025,9 @@ All schemas, parameters, examples, security requirements, and response codes are
         }
       }
     },
+    "400": {
+      "$ref": "#/components/responses/ValidationError"
+    },
     "500": {
       "$ref": "#/components/responses/ServerError"
     }
@@ -3956,7 +4044,7 @@ All schemas, parameters, examples, security requirements, and response codes are
     "Authentication"
   ],
   "summary": "Reset password",
-  "description": "Reset the user's password using the token received by email.",
+  "description": "Reset the user's password using the token received by email. A wrong, expired or non-text token, and an address with no account, answer `400`. The new password needs at least 6 characters. A reset ends every session of the user (login tokens issued before it answer `401`) and revokes every connected OAuth app; the user's API key keeps working.",
   "operationId": "143dfddb05b05834f9cdbd82a0b890ac",
   "requestBody": {
     "required": true,
@@ -5124,7 +5212,7 @@ All schemas, parameters, examples, security requirements, and response codes are
     "Documents"
   ],
   "summary": "Upload and create document",
-  "description": "Create a document from an uploaded file. Maximum file size 25MB; maximum 2000 pages.",
+  "description": "Create a document from an uploaded file: PDF, or a Word or OpenDocument text file (`.doc`, `.docx`, `.odt`), which is converted to PDF. Maximum file size 25MB; maximum 2000 pages.",
   "operationId": "bcff2fa45a9fdeccf18fba36cbe98bb5",
   "parameters": [
     {
@@ -5141,7 +5229,7 @@ All schemas, parameters, examples, security requirements, and response codes are
           ],
           "properties": {
             "file": {
-              "description": "The PDF file to upload.",
+              "description": "The file to upload: PDF, DOC, DOCX or ODT.",
               "type": "string",
               "format": "binary"
             }
@@ -14010,7 +14098,7 @@ All schemas, parameters, examples, security requirements, and response codes are
                     "example": "+5548999999999"
                   },
                   "verification_method": {
-                    "description": "Verification method for this signer. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id` (a CPF requires that person's certificate; a CNPJ requires an e-CNPJ for that company), must be alone in its signing step, and is charged 0.5 credits per signer. It is refused with `400` when the template has placed signer fields, because certificate signers sign only virtual assignments. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Only applies to signers (not copy receivers).",
+                    "description": "Verification method for this signer. If provided without notification_methods, the notification method is inferred. Defaults to Email. `DigitalCertificate` has the signer sign with their own ICP-Brasil certificate — it requires the Digital Certificate feature, the signer must have a CPF or CNPJ in `government_id` (a CPF requires that person's certificate; a CNPJ requires an e-CNPJ for that company), must be alone in its signing step, and is charged 0.45 credits per signer. It is refused with `400` when the template has placed signer fields, because certificate signers sign only virtual assignments. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires the ID Document + Face Match feature, the signer must have a valid CPF in `government_id`, and is charged a per-signer fee. Only applies to signers (not copy receivers).",
                     "type": "string",
                     "enum": [
                       "Email",
@@ -14274,7 +14362,7 @@ All schemas, parameters, examples, security requirements, and response codes are
                     "example": "fa8c14f32d732271e071998246e"
                   },
                   "verification_method": {
-                    "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (0.5 credits) on top of the notification cost, and returns `400` when the template has placed signer fields. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged a per-signer fee.",
+                    "description": "Verification method. If provided without notification_methods, the notification method is inferred. Defaults to Email. Verification is never billed on its own — the cost comes from the notification it is paired with, so `Whatsapp` verification requires the WhatsApp notification and costs 0.45 credits per signer. `DigitalCertificate` adds the per-signer signature cost (0.45 credits) on top of the notification cost, and returns `400` when the template has placed signer fields. `IdDocumentFaceMatchBasic` verifies the signer from a photo of their government ID, a photo of them holding it and a liveness check — it requires its account feature, requires the signer to have a valid CPF in `government_id`, and is charged a per-signer fee.",
                     "type": "string",
                     "enum": [
                       "Email",
@@ -17904,6 +17992,7 @@ All schemas, parameters, examples, security requirements, and response codes are
             "type": "string"
           },
           "fields": {
+            "description": "The fields placed on this page. A page with none adds nothing, as on an assignment.",
             "type": "array",
             "items": {
               "required": [
@@ -17925,8 +18014,7 @@ All schemas, parameters, examples, security requirements, and response codes are
                 }
               },
               "type": "object"
-            },
-            "minItems": 1
+            }
           }
         },
         "type": "object"
@@ -27176,11 +27264,12 @@ Deliveries are HTTP POST bodies, not REST envelopes. Verify the Standard Webhook
                 "items": {
                   "properties": {
                     "code": {
-                      "description": "Machine-readable restriction code. `PendingDocuments` only appears together with `ActivePaidSubscription`, never alone.",
+                      "description": "Machine-readable restriction code. `PendingDocuments` only appears together with `ActivePaidSubscription`, never alone. `SharedWorkspacePaidPlan` (user deletion only): a workspace that stays with other members has a paid plan the request neither cancels nor keeps; `force` does not lift it.",
                       "type": "string",
                       "enum": [
                         "ActivePaidSubscription",
-                        "PendingDocuments"
+                        "PendingDocuments",
+                        "SharedWorkspacePaidPlan"
                       ],
                       "example": "ActivePaidSubscription"
                     },
@@ -28541,7 +28630,7 @@ Deliveries are HTTP POST bodies, not REST envelopes. Verify the Standard Webhook
 ```json
 {
   "type": "apiKey",
-  "description": "Signer access code used by signer-facing (Signing) endpoints instead of a user token: the code in the signer's signing link, sent as the `signer-access-code` query or body parameter. It can be used again and has no expiry; it stops working when the signing request is removed. Treat it as a secret.",
+  "description": "Signer access code used by signer-facing (Signing) endpoints instead of a user token: the code in the signer's signing link, sent as the `signer-access-code` query or body parameter, always as text (a number or any other JSON type counts as no code). It can be used again and has no expiry; it stops working when the signing request is removed. Treat it as a secret.",
   "name": "signer-access-code",
   "in": "query"
 }

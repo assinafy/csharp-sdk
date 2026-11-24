@@ -32,13 +32,13 @@ public sealed class DocumentResource : BaseResource
     }
 
     /// <summary>
-    /// <c>POST /accounts/{account_id}/documents</c> — upload a PDF to a workspace.
+    /// <c>POST /accounts/{account_id}/documents</c> — upload a PDF, DOC, DOCX or ODT to a workspace. Office documents are converted to PDF.
     /// This method validates the file extension and, for seekable streams, the 25MB cap against
     /// the bytes remaining from the current position. The API enforces size for every stream and
     /// additionally enforces a 2000-page limit server-side.
     /// </summary>
-    /// <param name="fileStream">The PDF file content to upload.</param>
-    /// <param name="fileName">File name for the upload; must end in <c>.pdf</c> (case-insensitive).</param>
+    /// <param name="fileStream">The file content to upload.</param>
+    /// <param name="fileName">File name ending in .pdf, .doc, .docx or .odt (case-insensitive).</param>
     /// <param name="accountId">Workspace account to upload into; falls back to the client default.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The uploaded document and its initial processing state.</returns>
@@ -48,11 +48,11 @@ public sealed class DocumentResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        ValidatePdfUpload(fileStream, fileName, "Document");
+        var contentType = ValidateUpload(fileStream, fileName, "Document", allowOffice: true);
 
         var id = AccountId(accountId);
 
-        using var content = BuildPdfUploadContent(fileStream, fileName);
+        using var content = BuildUploadContent(fileStream, fileName, contentType);
 
         var result = await CallContentAsync<DocumentDetails>(
             $"accounts/{id}/documents",
@@ -567,5 +567,28 @@ public sealed class DocumentResource : BaseResource
     private static string SignerDocumentPath(string documentId, string suffix, string signerAccessCode) =>
         AppendQueryString($"documents/{PathSegment(documentId, "Document ID")}{suffix}",
             AccessCodeQuery(RequireId(signerAccessCode, "Signer access code")));
+
+    /// <summary><c>GET /documents/{documentId}/watchers</c> — list contacts following the document without signing. API key/user session only. Available on staging.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Watchers in their configured order, excluding deleted contacts.</returns>
+    public Task<IReadOnlyList<Signer>> ListWatchersAsync(string documentId, CancellationToken cancellationToken = default) =>
+        CallListBodyAsync<Signer>($"documents/{PathSegment(documentId, "Document ID")}/watchers",
+            HttpMethod.Get, cancellationToken: cancellationToken);
+
+    /// <summary><c>PUT /documents/{documentId}/watchers</c> — replace up to ten workspace contacts who receive an email when the document ends. Empty clears; closed documents refuse changes. API key/user session only. Available on staging.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="watcherIds">Existing contacts with email addresses. Watchers receive no document link or file.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The document's updated watchers.</returns>
+    public Task<IReadOnlyList<Signer>> SetWatchersAsync(string documentId, IReadOnlyList<string> watcherIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(watcherIds);
+        if (watcherIds.Count > 10 || watcherIds.Any(string.IsNullOrWhiteSpace))
+            throw new ValidationException("Provide at most ten nonempty watcher IDs.");
+        return CallListBodyAsync<Signer>($"documents/{PathSegment(documentId, "Document ID")}/watchers",
+            HttpMethod.Put, new { watcher_ids = watcherIds }, cancellationToken);
+    }
 
 }

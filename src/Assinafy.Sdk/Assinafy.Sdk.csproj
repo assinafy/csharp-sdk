@@ -23,7 +23,7 @@
 
   <PropertyGroup>
     <PackageId>Assinafy.Sdk</PackageId>
-    <Version>2.8.0</Version>
+    <Version>2.9.0</Version>
     <Authors>Assinafy</Authors>
     <Company>Assinafy</Company>
     <Product>Assinafy .NET SDK</Product>
@@ -44,7 +44,7 @@
     <!-- Validates that the net8/net9/net10 assets stay API-compatible with each other, and that
          this release stays compatible with the previous 2.x package. -->
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>2.7.1</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion>2.8.0</PackageValidationBaselineVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -53,6 +53,7 @@
     <None Include="..\..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\..\SECURITY.md" Pack="true" PackagePath="\" />
     <None Include="..\..\docs\API.md" Pack="true" PackagePath="docs" />
+    <None Include="..\..\docs\STAGING.md" Pack="true" PackagePath="docs" />
     <None Include="..\..\docs\openapi.json" Pack="true" PackagePath="docs" />
   </ItemGroup>
 

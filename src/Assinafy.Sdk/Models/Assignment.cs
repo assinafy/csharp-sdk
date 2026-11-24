@@ -58,6 +58,38 @@ public sealed record NotificationHistoryEntry
     /// <summary>ISO-8601 timestamp of the failed attempt, or <see langword="null"/>.</summary>
     [JsonPropertyName("failed_at")]
     public string? FailedAt { get; init; }
+
+    /// <summary>First email delivery, or latest WhatsApp delivery time; available from the notification-history endpoint.</summary>
+    [JsonPropertyName("delivered_at")]
+    public string? DeliveredAt { get; init; }
+
+    /// <summary>First email open/click, or latest WhatsApp read time. A hint, not proof that a person read the message.</summary>
+    [JsonPropertyName("opened_at")]
+    public string? OpenedAt { get; init; }
+}
+
+/// <summary>A document signer's notification attempts with delivery and open timestamps.</summary>
+public sealed record SignerNotificationHistory
+{
+    /// <summary>Signer identifier.</summary>
+    [JsonPropertyName("signer_id")]
+    public string SignerId { get; init; } = string.Empty;
+
+    /// <summary>Notification attempts in the order supplied by the API.</summary>
+    [JsonPropertyName("notification_history")]
+    public IReadOnlyList<NotificationHistoryEntry> NotificationHistory { get; init; } = [];
+}
+
+/// <summary>The sender's statement of the capacity in which a document signer signs.</summary>
+public sealed record SignerCapacity
+{
+    /// <summary>Signer identifier.</summary>
+    [JsonPropertyName("signer_id")]
+    public string SignerId { get; init; } = string.Empty;
+
+    /// <summary>Capacity set at assignment creation; Sign when none was specified.</summary>
+    [JsonPropertyName("sign_as")]
+    public string SignAs { get; init; } = string.Empty;
 }
 
 /// <summary>Aggregate signing progress for an assignment.</summary>
@@ -223,6 +255,9 @@ public sealed class SignerRef
 {
     /// <summary>The ID of an existing signer in the account.</summary>
     public string? Id { get; set; }
+
+    /// <summary>Capacity printed on the certificate page as the sender's statement, for example Witness or LegalRepresentative. Null means Sign. Staging availability; fixed at assignment creation.</summary>
+    public string? SignAs { get; set; }
 
     /// <summary>Verification method from <see cref="SignerChannels"/>. Inferred from the notification method when omitted; defaults to <c>Email</c> when neither is specified. <c>DigitalCertificate</c> requires a <c>virtual</c> assignment.</summary>
     public string? VerificationMethod { get; set; }

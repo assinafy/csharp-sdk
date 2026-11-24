@@ -152,7 +152,7 @@ public sealed class EnvelopeResource : BaseResource
     private string EnvelopePath(string envelopeId, string? accountId) =>
         $"accounts/{AccountId(accountId)}/envelopes/{PathSegment(envelopeId, "Envelope ID")}";
 
-    private static void ValidateRequest(CreateEnvelopeRequest request)
+    internal static void ValidateRequest(CreateEnvelopeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentException.ThrowIfNullOrWhiteSpace(request.Name);
@@ -170,4 +170,15 @@ public sealed class EnvelopeResource : BaseResource
         if (string.IsNullOrWhiteSpace(request.Id) || request.SignerIds is not { Count: > 0 } || request.SignerIds.Any(string.IsNullOrWhiteSpace))
             throw new ValidationException("An envelope document ID and signer IDs are required.");
     }
+
+    /// <summary><c>POST /accounts/{accountId}/envelopes/{envelopeId}/signers/{signerId}/estimate-resend-cost</c> — estimate one reminder covering the whole envelope without sending or charging. Available on staging.</summary>
+    /// <param name="envelopeId">Envelope identifier.</param>
+    /// <param name="signerId">An envelope signer.</param>
+    /// <param name="accountId">Workspace; falls back to the configured default.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Cost and balances. Does not check whether a reminder is currently allowed.</returns>
+    public Task<ResendCostEstimate> EstimateResendCostAsync(string envelopeId, string signerId,
+        string? accountId = null, CancellationToken cancellationToken = default) =>
+        CallAsync<ResendCostEstimate>($"{EnvelopePath(envelopeId, accountId)}/signers/{PathSegment(signerId, "Signer ID")}/estimate-resend-cost",
+            HttpMethod.Post, cancellationToken: cancellationToken);
 }

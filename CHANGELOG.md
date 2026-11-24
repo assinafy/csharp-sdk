@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.9.0] - 2026-11-24
+
+### Added
+
+- Staging scheduled assignments and envelopes, with listing, cancellation and immediate sending.
+- Staging document watchers, signer capacities, delivery timestamps and envelope reminder estimates.
+- Assignment signer capacities in creation, estimates and the upload helper.
+
+### Fixed
+
+- Accept DOC, DOCX and ODT uploads with their correct content types for server-side PDF conversion.
+
+### Changed
+
+- Update test dependencies and document the new request/response payloads and application flows.
+
 ## [2.8.0] - 2026-11-11
 
 ### Added

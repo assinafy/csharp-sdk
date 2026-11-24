@@ -30,7 +30,7 @@ public sealed class TemplateResource : BaseResource
         string? accountId = null,
         CancellationToken cancellationToken = default)
     {
-        ValidatePdfUpload(fileStream, fileName, "Template");
+        var contentType = ValidateUpload(fileStream, fileName, "Template");
 
         if (name is not null)
             ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -40,7 +40,7 @@ public sealed class TemplateResource : BaseResource
             : $"{name}.pdf";
         var id = AccountId(accountId);
 
-        using var content = BuildPdfUploadContent(fileStream, uploadName);
+        using var content = BuildUploadContent(fileStream, uploadName, contentType);
 
         var result = await CallContentAsync<TemplateDetails>(
             $"accounts/{id}/templates",

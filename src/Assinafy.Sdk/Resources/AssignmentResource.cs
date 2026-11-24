@@ -234,6 +234,22 @@ public sealed class AssignmentResource : BaseResource
     private static string IdentityReviewPath(string documentId, string assignmentId, string signerId) =>
         $"documents/{PathSegment(documentId, "Document ID")}/assignments/{PathSegment(assignmentId, "Assignment ID")}/signers/{PathSegment(signerId, "Signer ID")}/identity-verification";
 
+    /// <summary><c>GET /documents/{documentId}/signer-capacities</c> — read capacities in assignment signer order; empty before assignment. Requires documents:read. Available on staging.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The capacities fixed at assignment creation.</returns>
+    public Task<IReadOnlyList<SignerCapacity>> GetSignerCapacitiesAsync(string documentId, CancellationToken cancellationToken = default) =>
+        CallListBodyAsync<SignerCapacity>($"documents/{PathSegment(documentId, "Document ID")}/signer-capacities",
+            HttpMethod.Get, cancellationToken: cancellationToken);
+
+    /// <summary><c>GET /documents/{documentId}/notification-history</c> — read each signer's delivery and open times; empty before assignment. Requires documents:read. Available on staging.</summary>
+    /// <param name="documentId">Document identifier.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Notification attempts per signer. Opens are hints, not proof of reading.</returns>
+    public Task<IReadOnlyList<SignerNotificationHistory>> GetNotificationHistoryAsync(string documentId, CancellationToken cancellationToken = default) =>
+        CallListBodyAsync<SignerNotificationHistory>($"documents/{PathSegment(documentId, "Document ID")}/notification-history",
+            HttpMethod.Get, cancellationToken: cancellationToken);
+
     internal static Dictionary<string, object?> BuildPayload(CreateAssignmentRequest request)
     {
         ValidateEntries(request.Entries);
@@ -283,6 +299,7 @@ public sealed class AssignmentResource : BaseResource
                 signer["verification_method"] = reference.VerificationMethod;
             if (reference.NotificationMethods is not null)
                 signer["notification_methods"] = reference.NotificationMethods;
+            if (reference.SignAs is not null) signer["sign_as"] = reference.SignAs;
             return signer;
         }).ToList();
 
@@ -359,6 +376,7 @@ public sealed class AssignmentResource : BaseResource
             result["notification_methods"] = reference.NotificationMethods;
 
         if (reference.Embedded.HasValue) result["embedded"] = reference.Embedded.Value;
+        if (reference.SignAs is not null) result["sign_as"] = reference.SignAs;
 
         if (reference.Step.HasValue)
             result["step"] = reference.Step.Value;
